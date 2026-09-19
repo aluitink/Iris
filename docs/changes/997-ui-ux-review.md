@@ -1,5 +1,19 @@
 # 997: General UI/UX Review
 
+## Pass 7 (2026-09-19)
+
+Post-S5b verification pass. Two-part pass: (1) an **authless (signed-out) pass** covering every route, and (2) a **signed-in spot-check** as andrew:Password1 across the routes most likely to have regressed (the 147.2 parallel-fan-out community feed and the S5b visibility area).
+
+**Authless pass (signed-out):** all 8 authenticated routes (`/home`, `/compose`, `/notifications`, `/directory`, `/communities`, `/profile`, `/settings`, `/search`) correctly redirect to `/login`. The signed-out nav shows only Log in / Register (no authenticated links — no data leak). The 404 page (`/nonexistent-page-xyz`) renders publicly with "Not found" + "Sorry, there's nothing at this address" and no error overlay (the 404-overlay fix is holding). The register page is accessible signed-out. 0 console errors/warnings anywhere.
+
+**Signed-in spot-check:** login → `/home` works (home timeline renders ~20 posts + "Load more", 0 console errors). Communities page renders (description, "+ Create a community", Following/All tabs, empty state, 6 community cards). Community detail (`technology`) renders header + tabs + "Community Feed" with ~20 posts + "Load more", and is **stable across a hard refresh** — the 147.2 parallel fan-out does not regress on reload. Profile page renders (header, 5 tabs, Your posts list; Following tab renders the follows list). Compose deep-link (`/compose?community=…`) pre-selects the target community, all fields present, stable across a hard refresh.
+
+**Console errors (all remote-availability, not Iris bugs):** 3× HTTP 500 from `/ap/v1/proxy/https://lemmy.ml/…` (lemmy.ml down/rate-limiting) on the community detail; 2× HTTP 403 from `/ap/v1/proxy/https://lemmy.luit.ink/c/interop` (remote forbidding the proxy fetch) on the profile Following tab. All other proxy fetches (lemmy.world, piefed.world, lemmy.zip, thelemmy.club, feddit.org, lemmy.dbzer0.com) return 200. The proxy correctly forwards upstream status codes and the app degrades gracefully (content renders; remote media shows fallbacks). Same class as Pass 6's transient `ERR_NETWORK_CHANGED` — external availability, not a regression.
+
+**Minor observation (not a defect):** the community detail fetches `/ap/v1/c/technology`, `/members`, and `/feed` 3× across 2 page loads (initial + hard refresh) — consistent with the pre-existing Blazor hydration double-fetch pattern. All return 200; no errors; no user-visible impact.
+
+**0 new defects.**
+
 ## Pass 6 (2026-09-19)
 
 Post-147.2-follow-up verification pass. Reviewed all 8 signed-in routes: Home, Compose, Profile, Settings, Communities, Search, Notifications, Directory, plus a community-detail feed (the code path changed by the 147.2 parallel fan-out). All pages load and render correctly. Home timeline renders boosted posts with like/boost counts and "Load more" pagination. Communities list and detail (Feed tab) render; the community feed resolved correctly to an empty state for a memberless community. Console: 1 transient `net::ERR_NETWORK_CHANGED` on the first community-feed fetch (resolved cleanly on retry — a network blip, not a code defect). No new defects. The 147.2 parallel fan-out does not regress the UI.
@@ -52,6 +66,7 @@ None.
 
 - Build: 0 warnings, 0 errors (unchanged)
 - Tests: 1,346 passed, 0 failed, 25 skipped (unchanged)
+- Live verification (Pass 7): Authless pass — all 8 authenticated routes redirect to `/login`, 404 page + register accessible, 0 console errors. Signed-in spot-check (andrew:Password1) — Home, Communities, Community detail (hard-refresh stable), Profile, Compose deep-link (hard-refresh stable); 0 new defects; only console errors were remote-instance availability (lemmy.ml 500, lemmy.luit.ink 403), not Iris bugs.
 - Live verification (Pass 6): All 8 signed-in routes + community-detail feed reviewed via MCP Playwright as andrew:Password1; 0 new defects; 1 transient `ERR_NETWORK_CHANGED` (network blip, not a code defect) on first community-feed fetch, resolved on retry.
 - Live verification (Pass 3): Home, Settings, Compose reviewed via MCP Playwright as andrew:Password1; 0 new defects; design tokens render correctly; 1 known cosmetic 404 proxy error.
 - Live verification (Pass 2): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; 0 new defects. Console: 2 known cosmetic 404 proxy errors.
