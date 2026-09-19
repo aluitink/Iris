@@ -49,33 +49,33 @@ if the pass spans multiple sessions.
 
 | # | Route | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|----|----|----|
-| 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | done | done | |
-| 2 | `/actor` | | done | | | | | | done | done | done | done | |
-| 3 | `/admin` | | | done | | | | | done | done | done | done | |
-| 4 | `/admin/dashboard` | | | done | | | | | done | done | done | done | |
-| 5 | `/admin/instance` | | | done | | | | | done | done | done | done | |
-| 6 | `/admin/moderation` | | | done | | | | | done | done | done | done | |
-| 7 | `/admin/users` | | | done | | | | | done | done | done | done | |
-| 8 | `/communities` | done | done | | | | known | | done | done | done | done | |
-| 9 | `/community` | | done | | | | known | | done | done | done | done | |
-| 10 | `/compose` | | done | | | | known | | done | done | done | done | |
-| 11 | `/directory` | | done | | | | | | done | done | done | done | |
-| 12 | `/home` | | done | | | | known | | done | done | done | done | known |
-| 13 | `/login` | | done | | | | | | done | done | done | done | |
-| 14 | `/notifications` | | done | | | | known | | done | done | done | done | |
-| 15 | `/object` | | done | | | | | | done | done | done | done | |
-| 16 | `/profile` | | done | | | | known | | done | done | done | done | |
-| 17 | `/register` | | done | | | | | | done | done | done | done | |
-| 18 | `/search` | | done | | | | done | | done | done | done | done | |
-| 19 | `/settings` | | done | | | | | | done | done | done | done | |
+| 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | done | done | done |
+| 2 | `/actor` | | done | | | | | | done | done | done | done | done |
+| 3 | `/admin` | | | done | | | | | done | done | done | done | done |
+| 4 | `/admin/dashboard` | | | done | | | | | done | done | done | done | done |
+| 5 | `/admin/instance` | | | done | | | | | done | done | done | done | done |
+| 6 | `/admin/moderation` | | | done | | | | | done | done | done | done | done |
+| 7 | `/admin/users` | | | done | | | | | done | done | done | done | done |
+| 8 | `/communities` | done | done | | | | known | | done | done | done | done | done |
+| 9 | `/community` | | done | | | | known | | done | done | done | done | done |
+| 10 | `/compose` | | done | | | | known | | done | done | done | done | done |
+| 11 | `/directory` | | done | | | | | | done | done | done | done | done |
+| 12 | `/home` | | done | | | | known | | done | done | done | done | done |
+| 13 | `/login` | | done | | | | | | done | done | done | done | done |
+| 14 | `/notifications` | | done | | | | known | | done | done | done | done | done |
+| 15 | `/object` | | done | | | | | | done | done | done | done | done |
+| 16 | `/profile` | | done | | | | known | | done | done | done | done | done |
+| 17 | `/register` | | done | | | | | | done | done | done | done | done |
+| 18 | `/search` | | done | | | | done | | done | done | done | done | done |
+| 19 | `/settings` | | done | | | | | | done | done | done | done | done |
 
 ### Cross-page scenarios
 
 | # | Scenario | Status | Notes |
 |---|---|---|---|
-| 13 | New-user first-run walk | | |
-| 14 | Multi-account interaction | | |
-| 15 | Lemmy-sourced content rendering | | |
-| 16 | Global error boundary | | |
+| 13 | New-user first-run walk | done | Registered `newuser1`; landed on home with empty-state CTA → directory → followed andrew → timeline populated → composed + posted (HTTP 202). No dead ends, no confusing states. |
+| 14 | Multi-account interaction | done | newuser1's follow of andrew generated a follow-request notification; follow accepted (timeline populated). Cross-account notification flow works. |
+| 15 | Lemmy-sourced content rendering | done (code inspection) | No Lemmy content currently in feed (Lemmy proxy 403). Lemmy rendering code (`LemmyVoteBar`, `LemmyPostScore`, `LemmyVoteState`) verified in Phase 138.25/138.26; code present and correct in `ObjectView.razor`. |
+| 16 | Global error boundary | defect | 404 page renders correctly ("Sorry, there's nothing at this address") but Blazor WASM unhandled-error overlay also appears at bottom. Root cause: `MainLayout`'s `AuthorizeView` throws `InvalidOperationException` when `CascadingAuthenticationState` is not available (the `NotFound` section in `App.razor` uses `MainLayout` but doesn't wrap it in `CascadingAuthenticationState`). The `ErrorBoundary` in `MainLayout` is correctly configured but doesn't catch this because the exception happens in the layout's header, outside the `ErrorBoundary`'s scope. |
 
-**Resume checkpoint:** All 19 routes verified for items 1-9 and 11 (responsive). Item 10 (contrast) verified via JS contrast-ratio checker on 8 routes — 0 violations (dark theme). Item 12 (design tokens): CSS spot-check found ~30 hardcoded values outside the token system (spacing: 4px, 6px, 14px, 28px, 36px, 64px; font-size: 0.7rem, 1.4rem, 1.05rem, 2rem, 2.75rem, 1.8rem; color: #fff, #1c1f26, #3a3f4b, #9aa3b2, #e6e9ef, rgba(0,0,0,0.7)); also `--space-85` referenced but not defined. The token system (Phase 113) is well-established for the core UI; the hardcoded values are in secondary surfaces (tombstone icons, actor card avatars, settings subsections, admin tables, media overlays). Remaining: item 10 for 11 routes + 4 cross-page scenarios + fix ~30 hardcoded CSS values (item 12).
+**Resume checkpoint:** All 19 routes × all 12 checklist items verified (items 1-9, 11, 12 done; item 10 contrast verified on all 19 routes — 0 violations; directory false positive ruled out). Item 12 (design tokens): all ~30 hardcoded CSS values migrated to design tokens (commit `1a78295`); `--space-85` defined; new overlay tokens added. All 4 cross-page scenarios (13-16) complete: 13 (new-user walk) done, 14 (multi-account) done, 15 (Lemmy rendering) done via code inspection, 16 (error boundary) defect found (404 page shows Blazor WASM error overlay due to `MainLayout`'s `AuthorizeView` missing `CascadingAuthenticationState`). **139.4 complete.**
