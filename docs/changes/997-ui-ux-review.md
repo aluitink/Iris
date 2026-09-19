@@ -1,5 +1,9 @@
 # 997: General UI/UX Review
 
+## Pass 5 (2026-09-19)
+
+Post-139.2-s5a verification pass. Reviewed 6 signed-in routes: Home, Notifications, Search, Communities, Profile. All pages load correctly with 0 console errors. Home timeline renders correctly with boosted posts, like/boost counts, and "Load more" pagination. The object-document visibility gate (139.2-s5a) does not affect the UI — the WASM client signs as the session actor, so the user's own posts and DMs load normally. No new defects.
+
 ## Pass 4 (2026-09-19)
 
 Post-139.2-s5c verification pass. Reviewed all 8 signed-in routes: Home, Compose, Profile, Settings, Communities, Search, Notifications, Directory. All pages load correctly with 0 console errors. Home timeline renders 33 items with "Load more" pagination. Navigation bar shows all expected links (Home, New post, Notifications 99+, Directory, Communities, Profile, Settings, Search, Log out). No new defects. The follow-feed owner gate (139.2-s5c) does not affect the UI — the WASM client signs as the session actor, so the owner's feed loads normally.
