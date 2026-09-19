@@ -98,13 +98,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Active Slice
 
-*(none — 138.27 S2 vote-bar gate generalization is complete)*
+- **138.27 S2 vote-bar gate generalization + UI/UX polish — code complete, live Playwright verification pending.** The vote-bar gate is now data-driven (138.27 S2 done); boost-card parity, notification full-card render, signed-out auth bar, and mobile overflow fixes are in. `dotnet build` clean; `dotnet test` green (LiveInterop 5 failures are the known external Lemmy 403, not Iris). **Remaining:** clean-entry MCP Playwright pass (authless + signed-in, console check) to close the slice in the recurring UI/UX review. [change doc](docs/changes/14813-phase148-votebar-generalization-and-ui-polish.md)
 
 ## Up Next
 
 1. **139.3-F2 follow-up — Filter edges referencing a removed actor at read time.** A deleted actor can still appear in followers/following + community member lists and still count toward like counters (these read `Edges` with no actor join). Add a read-path filter that excludes edges whose actor no longer exists in the actor store (a read-path filter, not a DB sweep). Server-side. [change doc](docs/changes/1393-11-retention-right-to-deletion.md)
 2. **138.25 follow-up — UI surfacing of Lemmy metadata terms.** `iris:locked` → disable the reply composer; `iris:featured` → show a pinned indicator; `iris:communityNsfw` → CW gate for community posts. Server renders the terms (138.25 done); the UI surfacing is the follow-up. Client-only. [change doc](docs/changes/13825-phase138-lemmy-metadata-rendering.md)
-3. **General UI/UX review** (recurring) — Next pass after improvements land. Pass 8 (2026-09-19): post-139.2-s5a/s5b verification — 0 new defects. [change doc](docs/changes/997-ui-ux-review.md)
+3. **General UI/UX review** (recurring) — Next pass after improvements land. Pass 9: verify the 138.27-S2 vote-bar generalization + boost/notification card parity + auth-bar + mobile overflow fixes from a clean entry (authless + signed-in, console check), then continue the recurring review. Pass 8 (2026-09-19): post-139.2-s5a/s5b verification — 0 new defects. [change doc](docs/changes/997-ui-ux-review.md)
 4. **139.2 Scenario 5 (audience/visibility) — ALL surfaces done.** The S1 read-path gap is **closed** for the public feed, global search, the follow feed, the object-document endpoint (local + federated-in), and the federation read path. The **follow-feed owner gate** (S5c) is done (403 for non-owners). The **object-document visibility gate** (S5a/s5b) is now done for **all** non-tombstone content objects — local AND federated-in. The **federation visibility policy** (S5b) is done. Remaining (deferred product decision, not a defect): a `cc`-to-follower-set model for followers-only posts (scalability optimization, not a privacy fix — the current per-follower `cc` model is correct; should be its own phase). See [change doc](docs/changes/1392-5a5b-object-document-federated-gate.md).
 
 ## Inbox
