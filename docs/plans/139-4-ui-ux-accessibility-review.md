@@ -49,7 +49,7 @@ if the pass spans multiple sessions.
 
 | # | Route | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|----|----|----|
-| 1 | `/` (Home) | n/a | done | done | done | done | known | done | | | | | |
+| 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | | done | |
 | 2 | `/actor` | | done | | | | | | | | | | |
 | 3 | `/admin` | | | done | | | | | | | | | |
 | 4 | `/admin/dashboard` | | | done | | | | | | | | | |
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-7 (done/known/n/a as applicable). Remaining: all routes items 8-12 (a11y: keyboard nav, ARIA landmarks, color contrast, responsive layout, design token consistency) + 4 cross-page scenarios (new-user walk, multi-account, Lemmy rendering, global error boundary).
+**Resume checkpoint:** All 19 routes verified for items 1-7. Route 1 (`/`) also verified for items 8 (keyboard nav), 9 (ARIA landmarks), 11 (responsive: hamburger menu at 375px/768px). Remaining: routes 2-19 items 8-12 (a11y) + route 1 item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
