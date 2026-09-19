@@ -1,6 +1,10 @@
 # 997: General UI/UX Review
 
-## Summary
+## Pass 2 (2026-09-19)
+
+Reviewed Home, Notifications, Profile (own + remote), Compose (end-to-end post), Communities (list + detail). All pages consistent and functional. 0 new defects. Console: 2 errors (known cosmetic 404 proxy noise for deleted remote posts). Compose end-to-end post verified (HTTP 202). Recurring item stays at top of Up Next.
+
+## Pass 1
 
 Reviewed the Iris user interface via MCP Playwright as andrew:Password1. This is a recurring review; this pass covers Home, Notifications, Profile (own + remote), Compose (end-to-end post), and Communities (list + detail). All pages are consistent and functional. No defects found; two minor observations logged.
 
@@ -31,5 +35,6 @@ None.
 ## Verification
 
 - Build: 0 warnings, 0 errors (unchanged)
-- Tests: 2,401 passed, 0 failed (unchanged)
-- Live verification: All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; Community detail feed 0 console errors/warnings.
+- Tests: 1,346 passed, 0 failed, 25 skipped (unchanged)
+- Live verification (Pass 2): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; 0 new defects. Console: 2 known cosmetic 404 proxy errors.
+- Live verification (Pass 1): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; Community detail feed 0 console errors/warnings.
