@@ -64,7 +64,8 @@ if the pass spans multiple sessions.
 | 13 | `/login` | | done | | | | | | | | | | |
 | 14 | `/notifications` | | done | | | | known | | | | | | |
 | 15 | `/object` | | done | | | | | | | | | | |
-| 16 | `/profile` | | done | | | | known | | | | | | |
+| 16 | `/profile` | | done | | | | known | | done | done | | done | |
+| 15 | `/object` | | done | | | | | | | | | | |
 | 17 | `/register` | | done | | | | | | | | | | |
 | 18 | `/search` | | done | | | | done | | | | | | |
 | 19 | `/settings` | | done | | | | | | | | | | |
@@ -78,4 +79,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-7. Routes 1 (`/`) and 10 (`/compose`) also verified for items 8,9,11. Remaining: routes 2-9,11-19 items 8-12 (a11y) + item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-7. Routes 1, 10, 16 also verified for items 8,9,11. Remaining: routes 2-9,11-15,17-19 items 8-12 (a11y) + item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
