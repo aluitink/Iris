@@ -45,9 +45,37 @@ if the pass spans multiple sessions.
 
 ## Progress tracking
 
-This area's primary tracker is the **route × checklist-item table** referenced above (build it as a
-real table when work starts: 18 routes × 12 per-route items + the 4 cross-page scenarios). Mark each
-cell `done`, `skipped(<reason>)`, or leave blank for not-started; do not restart the table each
-session.
+### Route table (19 routes)
 
-**Resume checkpoint:** none started yet — begin with route 1 of the page-coverage table, item 1.
+| # | Route | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|----|----|----|
+| 1 | `/` (Home) | n/a | done | done | done | done | known | done | | | | | |
+| 2 | `/actor` | | | | | | | | | | | | |
+| 3 | `/admin` | | | | | | | | | | | | |
+| 4 | `/admin/dashboard` | | | | | | | | | | | | |
+| 5 | `/admin/instance` | | | | | | | | | | | | |
+| 6 | `/admin/moderation` | | | | | | | | | | | | |
+| 7 | `/admin/users` | | | | | | | | | | | | |
+| 8 | `/communities` | | | | | | | | | | | | |
+| 9 | `/community` | | | | | | | | | | | | |
+| 10 | `/compose` | | | | | | | | | | | | |
+| 11 | `/directory` | | done | | | | | | | | | | |
+| 12 | `/home` | | | | | | | | | | | | |
+| 13 | `/login` | | | | | | | | | | | | |
+| 14 | `/notifications` | | | | | | | | | | | | |
+| 15 | `/object` | | | | | | | | | | | | |
+| 16 | `/profile` | | | | | | | | | | | | |
+| 17 | `/register` | | | | | | | | | | | | |
+| 18 | `/search` | | done | | | | done | | | | | | |
+| 19 | `/settings` | | done | | | | | | | | | | |
+
+### Cross-page scenarios
+
+| # | Scenario | Status | Notes |
+|---|---|---|---|
+| 13 | New-user first-run walk | | |
+| 14 | Multi-account interaction | | |
+| 15 | Lemmy-sourced content rendering | | |
+| 16 | Global error boundary | | |
+
+**Resume checkpoint:** Route 1 (`/`) items 1-7 done. Next: Route 2 (`/actor`) item 1, or continue Route 1 items 8-12 (keyboard nav, ARIA, contrast, responsive, design tokens) if doing a full a11y pass.
