@@ -16,8 +16,16 @@
     </Found>
     <NotFound>
         <PageTitle>Not found</PageTitle>
-        <LayoutView Layout="typeof(Layout.MainLayout)">
-            <p role="alert">Sorry, there's nothing at this address.</p>
-        </LayoutView>
+        <div class="page">
+            <header class="main-header">
+                <a class="brand" href="/">
+                    <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span class="brand-text">Iris</span>
+                </a>
+            </header>
+            <main class="main-content">
+                <p role="alert">Sorry, there's nothing at this address.</p>
+            </main>
+        </div>
     </NotFound>
 </Router>
