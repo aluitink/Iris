@@ -5,6 +5,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Core.Signing;
 using Iris.Server.InMemory;
+using Iris.Server.Services;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
@@ -17,12 +18,15 @@ namespace Iris.Server.Tests;
 /// (1) a public post (as:Public in to) is visible in the public feed, the author's outbox,
 ///     and global search on the origin instance;
 /// (2) a direct/DM post (specific actor in to, no as:Public, no cc) is stored in the author's
-///     outbox on the origin instance — pinning the current behavior that the read path does NOT
-///     filter by visibility (a known gap: the post is also visible in the public feed and search);
+///     outbox on the origin instance and hidden from the origin's public feed + global search for
+///     a non-recipient (the S5 read-path filter);
 /// (3) a public post federated to a remote instance is visible in the remote instance's object
 ///     store and resolvable by deep link;
-/// (4) a direct/DM post federated to a remote instance is stored on the remote (the current
-///     behavior — federation does not suppress non-public content; a known gap).
+/// (4) a direct/DM post federated to a remote instance is stored on the remote (the S5(b) policy —
+///     federation does NOT suppress non-public content on receipt; the content is stored with its
+///     <c>to</c>/<c>cc</c> intact and the read-path visibility filter hides it from non-recipients on
+///     the receiving instance's public feed + global search, while the named local recipient can
+///     still see it).
 /// </summary>
 [Collection("CrossInstanceVisibility")]
 public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
@@ -121,10 +125,10 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         Assert.Contains(noteIri.Value, searchItems);
     }
 
-    // --- 2. Direct/DM post: stored in outbox (pin current no-visibility-filter behavior) --
+    // --- 2. Direct/DM post: stored in outbox, hidden from public feed + search (S5) --------
 
     [Fact]
-    public async Task DirectPost_StoredInOutbox_VisibleInPublicFeed_CurrentGap()
+    public async Task DirectPost_StoredInOutbox_HiddenFromPublicFeedAndSearch()
     {
         var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
@@ -205,10 +209,10 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         Assert.Equal(noteIri.Value, storedNote!.Id);
     }
 
-    // --- 4. Direct/DM post federated to remote IS stored (pin current no-suppression gap) -
+    // --- 4. Direct/DM post federated to remote IS stored (S5(b): no suppression on receipt) -
 
     [Fact]
-    public async Task DirectPost_FederatedToRemote_StoredOnRemote_CurrentGap()
+    public async Task DirectPost_FederatedToRemote_StoredOnRemote_AudienceIntact()
     {
         var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
@@ -232,15 +236,170 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         await DeliverDirectlyAsync(aliceIri, _aliceKey,
             new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
 
-        // CURRENT BEHAVIOR (known gap): the direct post is stored on the remote instance.
-        // Iris's CreateActivityHandler stores the embedded object unconditionally — it does not
-        // check the to/cc audience and does not suppress non-public content. The federation
-        // audience rewrite (RewriteOutboundAudienceAsync) also appends all followers to cc,
-        // clobbering the original direct visibility.
+        // S5(b) policy (pinned here): the direct post IS stored on the remote instance — federation
+        // does not suppress non-public content on receipt. The CreateActivityHandler stores the
+        // embedded object unconditionally (no inbound audience check), and the inbound path does NOT
+        // run the outbound audience rewrite (RewriteOutboundAudienceAsync is outbound-only), so the
+        // stored note keeps its original to/cc intact. The read-path visibility filter (S5) is what
+        // hides it from non-recipients on B's public feed + search — see the S5(b) read-path tests
+        // below.
         Assert.True(
             await _bPersistence.Objects.TryGetObjectAsync(noteIri, out var storedNote),
-            "B stored the federated direct post (current behavior — no visibility-based suppression).");
+            "B stored the federated direct post (S5(b): no visibility-based suppression on receipt).");
         Assert.NotNull(storedNote);
+
+        // The stored note's audience is intact: `to` still names bob (the original recipient), and it
+        // was NOT clobbered by an outbound-rewrite (no extra followers appended to cc on the inbound
+        // storage path).
+        var stored = storedNote!;
+        Assert.NotNull(stored.To);
+        Assert.Contains(stored.To!, e => e.ResolveObjectIri() is { } iri && iri.Value == bobIri.Value);
+    }
+
+    // --- 5. S5(b) federation visibility policy: read-path on the receiving instance ---------
+    //
+    // The S5(b) decision (pinned by this test family): a non-public post (direct / followers-only)
+    // federated to a remote instance is STORED on the remote with its to/cc intact (no suppression
+    // on receipt), and the read-path visibility filter (S5) hides it from the remote instance's
+    // public feed + global search for any requester who is not a named recipient — while the named
+    // local recipient (bob, on B) can still see it. This is the federation counterpart to the S5
+    // local read-path filter: the same predicate applies whether the content originated locally or
+    // arrived by federation.
+
+    [Fact]
+    public async Task FederatedDm_HiddenFromRemotePublicFeed_ForAnonymous()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-dm-feed-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-dm-feed marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // The DM is in bob's outbox on B (the CreateActivityHandler records it in the recipient's
+        // outbox), so it is a candidate for B's public feed. But an anonymous request to B's public
+        // feed must NOT surface it — its audience (to=[bob], no as:Public) names a recipient, so it
+        // is non-public and the S5 filter drops it for a requester who is not bob.
+        var feedResp = await _bHttp.GetAsync($"https://{BHost}/ap/v1/public/feed?limit=100");
+        feedResp.EnsureSuccessStatusCode();
+        var feedDoc = JsonDocument.Parse(await feedResp.Content.ReadAsStringAsync());
+        var feedItems = GetItemIds(feedDoc.RootElement);
+        Assert.DoesNotContain(noteIri.Value, feedItems);
+    }
+
+    [Fact]
+    public async Task FederatedDm_VisibleInRemotePublicFeed_ToNamedRecipient()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-dm-recv-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-dm-recv marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // bob is the named recipient (to=[bob]) and a local actor on B. When bob requests B's public
+        // feed (signed, so the requester resolves to bob), the S5 filter keeps the DM — the
+        // recipient can see content addressed to them, even when it arrived by federation.
+        var feed = new PublicFeedService(_bPersistence);
+        var items = await feed.GetPublicFeedAsync(100, requesterIri: bobIri);
+        var ids = items
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToList();
+        Assert.Contains(noteIri.Value, ids);
+    }
+
+    [Fact]
+    public async Task FederatedDm_NotFoundInRemoteGlobalSearch_ForAnonymous()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-dm-search-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-dm-search marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // An anonymous request to B's global search must NOT find the DM — the S5 filter hides
+        // non-public content from anonymous requesters on the search surface too.
+        var searchResp = await _bHttp.GetAsync($"https://{BHost}/ap/v1/search?q=s5b-dm-search");
+        searchResp.EnsureSuccessStatusCode();
+        var searchDoc = JsonDocument.Parse(await searchResp.Content.ReadAsStringAsync());
+        var searchItems = GetItemIds(searchDoc.RootElement);
+        Assert.DoesNotContain(noteIri.Value, searchItems);
+    }
+
+    [Fact]
+    public async Task FederatedDm_FoundInRemoteGlobalSearch_ByNamedRecipient()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-dm-srch-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-dm-srch marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // bob is the named recipient and a local actor on B. When bob searches B's global search
+        // (signed, so the requester resolves to bob), the S5 filter keeps the DM — the recipient can
+        // find content addressed to them, even when it arrived by federation.
+        var search = new GlobalSearchService(_bPersistence);
+        var items = await search.SearchAsync("s5b-dm-srch", requesterIri: bobIri);
+        var ids = items
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToList();
+        Assert.Contains(noteIri.Value, ids);
     }
 
     // --- Helpers --------------------------------------------------------------------------
