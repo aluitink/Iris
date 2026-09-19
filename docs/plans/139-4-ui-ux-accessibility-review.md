@@ -58,7 +58,7 @@ if the pass spans multiple sessions.
 | 7 | `/admin/users` | | | done | | | | | | | | | |
 | 8 | `/communities` | done | done | | | | known | | | | | | |
 | 9 | `/community` | | done | | | | known | | | | | | |
-| 10 | `/compose` | | done | | | | known | | | | | | |
+| 10 | `/compose` | | done | | | | known | | done | done | | done | |
 | 11 | `/directory` | | done | | | | | | | | | | |
 | 12 | `/home` | | done | | | | known | | | | | | |
 | 13 | `/login` | | done | | | | | | | | | | |
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-7. Route 1 (`/`) also verified for items 8 (keyboard nav), 9 (ARIA landmarks), 11 (responsive: hamburger menu at 375px/768px). Remaining: routes 2-19 items 8-12 (a11y) + route 1 item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-7. Routes 1 (`/`) and 10 (`/compose`) also verified for items 8,9,11. Remaining: routes 2-9,11-19 items 8-12 (a11y) + item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
