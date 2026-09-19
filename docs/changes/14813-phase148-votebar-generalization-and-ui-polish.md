@@ -101,9 +101,25 @@ available on every signed-out page.
 - `Iris.LiveInterop.Tests`: 5 failures, all `Lemmy container not reachable: 403` — known external
   Lemmy-instance availability (documented in UI/UX Pass 7/8 as remote-availability, not an Iris
   bug). Unrelated to this change.
-- Live verification via MCP Playwright: **pending** — this slice was completed as a coherent
-  code commit; the live Playwright pass (clean entry, authless + signed-in, console check) is the
-  next step before the slice is marked fully closed in the recurring UI/UX review.
+- **Live verification via MCP Playwright (2026-09-19) — COMPLETE.** Clean entry (cookies +
+  localStorage cleared, fresh WASM load) on `https://iris.luit.ink`:
+  - **Signed-out** (`/`): public feed renders; boost cards show "Boosted by" + "Content unavailable
+    — view original post" + EngagementBar; the new **auth bar** (Log in / Sign up) is present at the
+    bottom; the landing hero is gone. 14 console errors, all the known remote-availability class
+    (proxy 401s for remote actor avatars + one direct CORS fetch) — not Iris bugs.
+  - **Signed-in as andrew** (technology community, Lemmy content): **16 vote bars** (Upvote/Downvote/
+    score, e.g. `↑16 ↓1 15` + "5 comments"), boost-card **tinted banner strips** + moderation
+    (Block/Mute) buttons on boosted authors, "Boosted by" headers. 3 console errors, all the known
+    external `lemmy.ml` 500 (remote instance down) — not Iris bugs.
+  - **Notifications**: full-card render confirmed — 20 rows, 4 Announce cards all with a full object
+    card (`.object-card__object`); an Announce shows "Boosted by" + the boosted post's own timestamp
+    **only** (boost time suppressed — `object-boost-time` count 0, no duplicate); Create/reply cards
+    render the full reply/post card with tinted banner. **0 console errors.**
+  - **Home (signed-in)**: stable across hard-refresh (28 object items before and after); all show
+    EngagementBar (0 vote bars — andrew's feed is Mastodon content, so no vote-bar leak). **0 console
+    errors.**
+  - No new defects. The only console errors on any page were the known external remote-availability
+    class (lemmy.ml 500, proxy 401/CORS) — consistent with Pass 7/8, not Iris regressions.
 
 ## Decision (recorded)
 
