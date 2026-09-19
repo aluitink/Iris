@@ -35,11 +35,13 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
     internal const string BHost = "vis-b.domain.local";
     internal const string Alice = "alice";
     internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
     private readonly CrossInstanceVisibilitySharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private KeyPair _aliceKey;
+    private KeyPair _carolKey;
     private HttpClient _aHttp;
     private HttpClient _bHttp;
 
@@ -49,6 +51,7 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
         _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
         _aliceKey = null!;
+        _carolKey = null!;
         _aHttp = null!;
         _bHttp = null!;
     }
@@ -60,6 +63,9 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         var aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         _aPersistence.Keys.TryGetKey(new Iri($"{aliceActorIri.Value}#key-1"), out var aliceKey);
         _aliceKey = (KeyPair)aliceKey!;
+        var carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
+        _bPersistence.Keys.TryGetKey(new Iri($"{carolActorIri.Value}#key-1"), out var carolKey);
+        _carolKey = (KeyPair)carolKey!;
         _aHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
         _bHttp = new HttpClient(_fixture.ServerB.CreateHandler(), disposeHandler: false);
         return Task.CompletedTask;
@@ -77,8 +83,10 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
     {
         var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var carolIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
         TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
         TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Carol, new Iri($"{carolIri.Value}#key-1"));
         // alice (A) follows bob (B) so that public posts from alice federate to bob.
         aPersistence.Follows.RecordFollowAsync(aliceIri, bobIri).GetAwaiter().GetResult();
     }
@@ -402,7 +410,149 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         Assert.Contains(noteIri.Value, ids);
     }
 
+    // --- 6. S5b object-document gate: federated-in non-public content is gated on the
+    //        receiving instance (139.2-s5a/s5b — the same privacy boundary applies whether
+    //        content originated locally or arrived by federation).
+    //
+    // A non-public (DM / followers-only) post federated to a remote instance is stored on the
+    // remote with its to/cc intact (no suppression on receipt), and the read-path visibility
+    // filter (S5) hides it from the remote instance's object-document endpoint for any requester
+    // who is not a named recipient — while the named local recipient (bob, on B) and the author
+    // (alice, on A, signed) can still see it. A 404 (not 403) hides the object's existence.
+
+    [Fact]
+    public async Task FederatedDm_ObjectDocument_404_ForAnonymous()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-objdoc-anon-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-objdoc-anon marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // The DM is stored on B (S5b: no suppression on receipt). But an anonymous request to B's
+        // object-document endpoint (via ?iri= for the foreign IRI) must NOT serve it — its audience
+        // (to=[bob], no as:Public) names a recipient, so it is non-public and the S5 filter hides it
+        // from a requester who is not a named recipient. A 404 hides the object's existence.
+        var resp = await _bHttp.GetAsync(
+            $"https://{BHost}/ap/v1/object?iri={Uri.EscapeDataString(noteIri.Value)}");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task FederatedDm_ObjectDocument_200_ForNamedRecipient()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-objdoc-recv-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-objdoc-recv marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // bob is the named recipient (to=[bob]) and a local actor on B. When bob requests B's
+        // object-document endpoint (signed, so the requester resolves to bob), the S5 filter keeps
+        // the DM — the recipient can see content addressed to them, even when it arrived by
+        // federation. The ?iri= param is required because the note's IRI is on A's host (foreign),
+        // so path-based reconstruction on B would not match the stored IRI. The object is served (200).
+        var bobKey = _bobKeyForTest();
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(bobKey);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(bobIri, bobKey.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var bobClient = factory.Create(
+            new ActivityPubClientOptions { ActorId = bobIri, EnableRetry = false },
+            new LazyHandler(() => _fixture.ServerB.CreateHandler()));
+
+        using var req = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://{BHost}/ap/v1/object?iri={Uri.EscapeDataString(noteIri.Value)}");
+        using var resp = await bobClient.SendAsync(req);
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+    }
+
+    [Fact]
+    public async Task FederatedDm_ObjectDocument_404_ForNonRecipientLocalActor()
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var carolIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
+        var noteIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s5b-objdoc-nonrec-{Guid.NewGuid():N}");
+
+        var create = new Create
+        {
+            Id = noteIri.Value,
+            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri.Value,
+                Content = ["s5b-objdoc-nonrec marker"],
+                AttributedTo = [new Link { Href = new Uri(aliceIri.Value) }],
+                To = [new Link { Href = new Uri(bobIri.Value) }],
+            }],
+        };
+
+        await DeliverDirectlyAsync(aliceIri, _aliceKey,
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}/inbox"), create, () => _fixture.ServerB);
+
+        // carol is a local actor on B but NOT a named recipient (to=[bob], carol is not in to/cc
+        // and is not the author). When carol requests B's object-document endpoint (signed, so the
+        // requester resolves to carol), the S5 filter hides the DM — carol is not a recipient and
+        // not the author. A 404 hides the object's existence. The ?iri= param is required because
+        // the note's IRI is on A's host (foreign), so path-based reconstruction on B would not
+        // match the stored IRI.
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(_carolKey);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(carolIri, _carolKey.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var carolClient = factory.Create(
+            new ActivityPubClientOptions { ActorId = carolIri, EnableRetry = false },
+            new LazyHandler(() => _fixture.ServerB.CreateHandler()));
+
+        using var req = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://{BHost}/ap/v1/object?iri={Uri.EscapeDataString(noteIri.Value)}");
+        using var resp = await carolClient.SendAsync(req);
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
     // --- Helpers --------------------------------------------------------------------------
+
+    private KeyPair _bobKeyForTest()
+    {
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _bPersistence.Keys.TryGetKey(new Iri($"{bobIri.Value}#key-1"), out var k);
+        return (KeyPair)k!;
+    }
 
     private static async Task<bool> DeliverDirectlyAsync(
         Iri actorIri, KeyPair key, Iri inbox, Activity activity, Func<TestServer> target)
@@ -464,6 +614,9 @@ public sealed class CrossInstanceVisibilitySharedHost : SharedTwoHostFixture
         var bob = TestSeeder.SeedPersonWithKey(
             bPersistence, CrossInstanceVisibilityIntegrationTests.BHost,
             CrossInstanceVisibilityIntegrationTests.Bob);
+        TestSeeder.SeedPersonWithKey(
+            bPersistence, CrossInstanceVisibilityIntegrationTests.BHost,
+            CrossInstanceVisibilityIntegrationTests.Carol);
 
         var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
         var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
