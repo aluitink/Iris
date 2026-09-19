@@ -1,5 +1,9 @@
 # 997: General UI/UX Review
 
+## Pass 3 (2026-09-19)
+
+Post-139.4 verification pass. Reviewed Home, Settings, Compose after the design token migration (~30 hardcoded CSS values migrated to tokens) and the 404 page error overlay fix. All pages consistent and functional. 0 new defects. Console: 1 known cosmetic 404 proxy error (haunted.computer). Dark theme, spacing, and typography all render correctly with the new design tokens.
+
 ## Pass 2 (2026-09-19)
 
 Reviewed Home, Notifications, Profile (own + remote), Compose (end-to-end post), Communities (list + detail). All pages consistent and functional. 0 new defects. Console: 2 errors (known cosmetic 404 proxy noise for deleted remote posts). Compose end-to-end post verified (HTTP 202). Recurring item stays at top of Up Next.
@@ -36,5 +40,6 @@ None.
 
 - Build: 0 warnings, 0 errors (unchanged)
 - Tests: 1,346 passed, 0 failed, 25 skipped (unchanged)
+- Live verification (Pass 3): Home, Settings, Compose reviewed via MCP Playwright as andrew:Password1; 0 new defects; design tokens render correctly; 1 known cosmetic 404 proxy error.
 - Live verification (Pass 2): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; 0 new defects. Console: 2 known cosmetic 404 proxy errors.
 - Live verification (Pass 1): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; Community detail feed 0 console errors/warnings.
