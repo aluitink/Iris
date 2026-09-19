@@ -50,8 +50,8 @@ if the pass spans multiple sessions.
 | # | Route | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|----|----|----|
 | 1 | `/` (Home) | n/a | done | done | done | done | known | done | | | | | |
-| 2 | `/actor` | | | | | | | | | | | | |
-| 3 | `/admin` | | | | | | | | | | | | |
+| 2 | `/actor` | | done | | | | | | | | | | |
+| 3 | `/admin` | | | done | | | | | | | | | |
 | 4 | `/admin/dashboard` | | | | | | | | | | | | |
 | 5 | `/admin/instance` | | | | | | | | | | | | |
 | 6 | `/admin/moderation` | | | | | | | | | | | | |
@@ -61,11 +61,11 @@ if the pass spans multiple sessions.
 | 10 | `/compose` | | | | | | | | | | | | |
 | 11 | `/directory` | | done | | | | | | | | | | |
 | 12 | `/home` | | | | | | | | | | | | |
-| 13 | `/login` | | | | | | | | | | | | |
+| 13 | `/login` | | done | | | | | | | | | | |
 | 14 | `/notifications` | | | | | | | | | | | | |
-| 15 | `/object` | | | | | | | | | | | | |
+| 15 | `/object` | | done | | | | | | | | | | |
 | 16 | `/profile` | | | | | | | | | | | | |
-| 17 | `/register` | | | | | | | | | | | | |
+| 17 | `/register` | | done | | | | | | | | | | |
 | 18 | `/search` | | done | | | | done | | | | | | |
 | 19 | `/settings` | | done | | | | | | | | | | |
 
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** Route 1 (`/`) items 1-7 done. Next: Route 2 (`/actor`) item 1, or continue Route 1 items 8-12 (keyboard nav, ARIA, contrast, responsive, design tokens) if doing a full a11y pass.
+**Resume checkpoint:** Routes 1,2,3,11,13,15,17,18,19 partially done (items 2-7 as applicable). Admin routes 4-7 not yet checked (same authz gating expected as route 3). Remaining: routes 4-7, 8, 9, 10, 12, 14, 16 (items 2-7) + all routes items 8-12 (a11y: keyboard, ARIA, contrast, responsive, tokens) + 4 cross-page scenarios.
