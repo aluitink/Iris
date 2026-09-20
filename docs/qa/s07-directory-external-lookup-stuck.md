@@ -25,3 +25,5 @@ Directory → external lookup of a known remote handle → the resolved actor ca
 **Re-verification evidence (Pass 28, 2026-09-20, andrew):** same lookup (`lemmyadmin@lemmy.luit.ink`) → `POST /ap/v1/proxy/…/webfinger` **200** + `POST /ap/v1/proxy/…/u/lemmyadmin` **200**, but the UI **still stays on the spinner** (no result card, no error, 0 console errors). STILL OPEN.
 
 **Re-verification evidence (Pass 33, 2026-09-20, andrew, deployed `456b0d9`):** Directory → external lookup of `lemmyadmin@lemmy.luit.ink` → status shows `finally (result=https://lemmy.luit.ink/u/lemmyadmin, error=null)`, resolved actor card **renders** (link to `/actor?iri=https://lemmy.luit.ink/u/lemmyadmin`), **0 console errors**. **FIXED.**
+
+**Re-verification evidence (Pass 41, 2026-09-20, andrew, deployed `59ff4ec`):** Directory → external lookup of `lemmyadmin@lemmy.luit.ink` → resolved actor card **renders** (link to `/actor?iri=https://lemmy.luit.ink/u/lemmyadmin`), **0 console errors**. **FIXED** (re-confirmed).
