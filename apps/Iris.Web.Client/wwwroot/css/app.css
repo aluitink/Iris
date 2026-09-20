@@ -3877,6 +3877,12 @@ body > #app {
     min-height: 0;
 }
 
+.notification-card__actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+}
+
 .notification-card__target {
     font-size: var(--font-size-sm);
     color: var(--text);

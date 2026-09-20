@@ -1,5 +1,7 @@
+@using Iris.Client
 @using Iris.Core
 @using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using Microsoft.AspNetCore.Components.Web
@@ -7,6 +9,7 @@
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 @inject UiContext Ui
+@inject IActorSessionAccessor Session
 
 <div class="notification-card @(IsNew ? "notification-card--new" : "")" data-type="@(Activity?.Type?.FirstOrDefault())">
     <div class="notification-card__header">
@@ -52,6 +55,18 @@
     <div class="notification-card__body">
         @RenderCardBody()
     </div>
+
+    @if (IsPendingFollowRequest)
+    {
+        <div class="notification-card__actions">
+            <button class="btn btn-primary btn-sm" @onclick="OnAcceptFollow" disabled="@_deciding">
+                @(_deciding && _decidingAction == "accept" ? "Accepting…" : "Accept")
+            </button>
+            <button class="btn btn-sm" @onclick="OnRejectFollow" disabled="@_deciding">
+                @(_deciding && _decidingAction == "reject" ? "Declining…" : "Decline")
+            </button>
+        </div>
+    }
 </div>
 
 @code {
@@ -91,6 +106,86 @@
     /// The activity's <c>published</c> timestamp, when present.
     /// </summary>
     private DateTime? Published => Activity?.Published;
+
+    private bool _deciding;
+    private string? _decidingAction;
+
+    /// <summary>
+    /// Whether this notification is a pending inbound Follow (the actor sent a follow request that has
+    /// not yet been accepted or rejected). Such rows show Accept / Decline buttons.
+    /// </summary>
+    private bool IsPendingFollowRequest =>
+        Activity is { Type: { } t } && t.FirstOrDefault() == "Follow";
+
+    private async Task OnAcceptFollow()
+    {
+        if (Activity?.Actor?.FirstOrDefault()?.ResolveObjectIri() is not { } requesterIri
+            || Session.ActorId is not { } selfIri)
+        {
+            return;
+        }
+
+        _deciding = true;
+        _decidingAction = "accept";
+        StateHasChanged();
+
+        try
+        {
+            if (Session.LocalModeration is { } mod)
+            {
+                var result = await mod.AcceptFollowRequestAsync(selfIri, requesterIri);
+                if (result.IsSuccess)
+                {
+                    _deciding = false;
+                    _decidingAction = null;
+                    IsNew = false;
+                    StateHasChanged();
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _deciding = false;
+            _decidingAction = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnRejectFollow()
+    {
+        if (Activity?.Actor?.FirstOrDefault()?.ResolveObjectIri() is not { } requesterIri
+            || Session.ActorId is not { } selfIri)
+        {
+            return;
+        }
+
+        _deciding = true;
+        _decidingAction = "reject";
+        StateHasChanged();
+
+        try
+        {
+            if (Session.LocalModeration is { } mod)
+            {
+                var result = await mod.RejectFollowRequestAsync(selfIri, requesterIri);
+                if (result.IsSuccess)
+                {
+                    _deciding = false;
+                    _decidingAction = null;
+                    IsNew = false;
+                    StateHasChanged();
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _deciding = false;
+            _decidingAction = null;
+            StateHasChanged();
+        }
+    }
 
     /// <summary>
     /// Per-row cache of the actor document (keyed by actor IRI value), populated on init. The row
