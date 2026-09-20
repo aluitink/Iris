@@ -153,9 +153,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **3 open + 2 new. No blockers (all S2/S3-sev).** (Pass 96: S4 re-confirmed 22nd pass; S17 re-confirmed 39 outbox requests; S16-UX re-confirmed 1 votes NO badge. S23 still open — Accept/Decline 404s. S22 FIXED.)
-- **Top priority:** S23 (Accept/Decline buttons hit 404 — `POST /local/v1/u/{handle}/requests/accept/{iri}` and `.../reject/{iri}` not registered), S4 (remote communities missing from Following tab — 22nd pass), S17 (profile tabs over-fetch — 39 outbox requests for 3 tabs), S16-UX (poll "You voted" badge missing on object detail page). S2 (proxy 401 — 2 errors, no change) / S14 (proxy 401 + CSP on actor detail) still blocked on dev.
-- **Last pass:** 96 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8, S3 (UI) fixed; S18 partially fixed; S20 FIXED; S21 FIXED; S22 FIXED; S19 facet 1 FIXED; S19 facet 3 FIXED; S19 facet 2 PARTIALLY FIXED (buttons visible but 404 — blocked by S23). Remaining open: S2, S4 (remote), S14, S16-UX, S17, S18 (partial), S19 (facet 2 — blocked by S23), S23 (Accept/Decline 404).
+- **3 open. No blockers (all S2/S3-sev).** (Pass 96: S4 re-confirmed 22nd pass; S17 re-confirmed 39 outbox requests; S16-UX re-confirmed 1 votes NO badge. S23 FIXED (routes registered after redeploy). S22 FIXED.)
+- **Top priority:** S4 (remote communities missing from Following tab — 22nd pass), S17 (profile tabs over-fetch — 39 outbox requests for 3 tabs), S16-UX (poll "You voted" badge missing on object detail page). S2 (proxy 401 — 2 errors, no change) / S14 (proxy 401 + CSP on actor detail) still blocked on dev.
+- **Last pass:** 96 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8, S3 (UI) fixed; S18 partially fixed; S20 FIXED; S21 FIXED; S22 FIXED; S19 facet 1 FIXED; S19 facet 3 FIXED; S19 facet 2 FIXED (S23 resolved); S23 FIXED. Remaining open: S2, S4 (remote), S14, S16-UX, S17, S18 (partial).
 
 ## Paused Questions
 
