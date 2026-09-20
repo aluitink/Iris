@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `b5eef5c` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `cd7a5dd` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **S15 — Compose visibility hint misleading (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** Hint is now visibility-aware (Public/Followers/Direct) + type-aware (Note/Article/Poll). [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
+- **S3 — Object-detail 404s local post collections (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** `ContentIri` property resolves to the Note IRI for Create/Update activities; all collection walks use it. [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
 
 ## Dev Queue
 
@@ -138,7 +138,6 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S3** (S3) — object-detail 404s local post collections: [s03](docs/qa/s03-object-detail-create-iri-404.md)
 - **S13** (S3) — remote-Lemmy object-detail 404 noise: [s13](docs/qa/s13-remote-lemmy-404-noise.md)
 
 
@@ -164,6 +163,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S3 — Object-detail 404s local post collections (2026-09-20):** `ContentIri` property resolves to the Note IRI for Create/Update activities; all collection walks (replies, likes, shares, reply href) use it. Live-verified: `/object?iri=…/creates/{id}` → 0 console errors. All suites green (Web 106). [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
 - **S15 — Compose visibility hint misleading (2026-09-20):** Hint extracted into `ComposeHint` computed property; visibility-aware (Public/Followers/Direct) + type-aware (Note/Article/Poll). All 6 cases live-verified. All suites green (Web 106). [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
 - **S10 — Article "(long-form)" mislabeled (2026-09-20):** Selector now says "Article"; formatting tip + compose hint are type-aware and honest about the shared 500-char limit. Live-verified: selector + tip + hint all correct. All suites green (Web 106). [change doc](docs/changes/1579-article-longform-mislabeled.md)
 - **S12a — Case-sensitive same-instance mention → dead link (2026-09-20):** `ActorDocumentHandler` falls back to a case-insensitive `preferredUsername` match (same-instance origin filtered) on exact-case miss, so `@Alice` resolves to the canonical `/ap/v1/u/alice`. Live-verified: `/ap/v1/u/Alice` → 200 (canonical alice). All suites green (Server 1380, Web 106). [change doc](docs/changes/1578-mention-case-sensitive-dead-link.md)
