@@ -293,6 +293,7 @@ else
         {
             builder.OpenComponent<ObjectView>(0);
             builder.AddComponentParameter(1, nameof(ObjectView.Item), item);
+            builder.AddComponentParameter(2, nameof(ObjectView.ShowModeration), true);
             builder.CloseComponent();
         };
 

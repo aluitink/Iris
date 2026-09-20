@@ -231,14 +231,6 @@
                     {
                         <time class="object-time object-boost-time" title="@boostTime.ToString("o")">@RelativeTime(boostTime)</time>
                     }
-                    @if (IsBoostOfReply)
-                    {
-                        // 152 — the boosted post was itself a reply; the card renders the ORIGINAL post it
-                        // answers to, so note that context under the "Boosted by" line.
-                        <span class="object-action object-boost-reply-hint">
-                            @("replying to " + (ReplyContextLabel(BoostedReplyParent) ?? "original post"))
-                        </span>
-                    }
                 </div>
             }
             @if (AnnounceTargetIri is { } targetIri)

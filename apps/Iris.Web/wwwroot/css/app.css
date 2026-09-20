@@ -835,6 +835,23 @@ ul.object-list li {
     min-width: 0;
 }
 
+/* 153 — full-width banner strip behind the entire header row (avatar + handle + timestamp),
+   tinted per author via --card-hue (set on the card). The darker, low-saturation band gives
+   the header "color and splash" while keeping the handle legible. Scoped to .object-item and
+   gated on :has([style*="--card-hue"]) so only content cards (which set --card-hue) get the
+   strip; Like/Follow/Actor cards (which lack the hue) and non-card headers (actor detail,
+   notification rows) are unaffected. */
+.object-item:has([style*="--card-hue"]) > .object-header {
+    background:
+        linear-gradient(
+            90deg,
+            hsl(var(--card-hue, 220) 45% 30% / 0.55),
+            hsl(var(--card-hue, 220) 45% 30% / 0.12)
+        );
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2);
+}
+
 .object-header-actor {
     display: flex;
     align-items: center;
@@ -845,17 +862,6 @@ ul.object-list li {
        flexible member — without this the group's min-content size (full handle width)
        wins and the header overflows the card on mobile. */
     flex-shrink: 1;
-    /* 153 — thin banner strip behind the avatar + handle, tinted per author via --card-hue (set on the
-       card). The darker, low-saturation band gives the header "color and splash" while keeping the
-       handle legible. Only shows when the card sets --card-hue (content cards). */
-    background:
-        linear-gradient(
-            90deg,
-            hsl(var(--card-hue, 220) 45% 30% / 0.55),
-            hsl(var(--card-hue, 220) 45% 30% / 0.12)
-        );
-    border-radius: var(--radius-sm);
-    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the

@@ -26,15 +26,14 @@ public partial class ObjectView
     public bool SuppressParentContext { get; set; }
 
     /// <summary>
-    /// Whether to render the per-card moderation buttons (Block / Mute / Report) for the post's author
-    /// (155). Defaults to <c>true</c> so the common card keeps its moderation controls in the main feed,
-    /// the object detail page, and elsewhere. Set to <c>false</c> where moderation is offered at the
-    /// actor level instead of per post — the actor detail page's posts feed, which already carries
-    /// actor-level Block / Mute / Report controls in its header, renders its outbox cards with this off
-    /// so the per-post buttons don't duplicate them.
+    /// Whether to render the per-card moderation buttons (Block / Mute / Report) for the post's author.
+    /// Defaults to <c>false</c> so feed cards stay clean — moderation is reserved for the actor detail
+    /// page (the <see cref="ActorCard"/> in the page header carries the Block / Mute / Report actions
+    /// at the actor level). Set to <c>true</c> where the card is the primary moderation surface (the
+    /// object detail page, the profile's own-posts tab, search results, and the reply thread).
     /// </summary>
     [Parameter]
-    public bool ShowModeration { get; set; } = true;
+    public bool ShowModeration { get; set; } = false;
 
     /// <summary>
     /// Suppress the card's <c>.object-time</c> timestamp. Set by <c>NotificationRow</c> for a

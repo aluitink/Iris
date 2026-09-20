@@ -106,12 +106,12 @@ else
     public RenderFragment? ChildContent { get; set; }
 
     /// <summary>
-    /// When <c>true</c> (the default), the card renders the moderation menu (Block / Mute / Report)
-    /// when the signed-in user is not the target actor. Set to <c>false</c> in contexts where the
-    /// host already provides its own moderation controls.
+    /// When <c>true</c>, the card renders the moderation menu (Block / Mute / Report) when the signed-in
+    /// user is not the target actor. Defaults to <c>false</c> so list/directory cards stay clean —
+    /// moderation is reserved for the actor detail page, which sets this to <c>true</c>.
     /// </summary>
     [Parameter]
-    public bool ShowModeration { get; set; } = true;
+    public bool ShowModeration { get; set; } = false;
 
     /// <summary>
     /// When <c>true</c> (the default), the card renders the cached per-actor counters (posts /
