@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 45 (2026-09-20) — S16 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S16: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Profile page: A:0/B:0/**0 votes**, NO "You voted" badge. Object page: A:1/B:0/**1 votes**, NO "You voted" badge. **Regression:** vote count differs between profile (0) and object (1); badge missing from both (was visible on profile in Pass 42).
+- **Result:** 0 new; **S16-UX re-confirmed OPEN** (regression: inconsistent vote counts + badge missing everywhere).
+- **Checkpoint:** next pass targets S19 (community page 404), S3 (Create persistence), S20 (Home Communities tab), S2/S14 (blocked).
+
+---
+
 ## Pass 44 (2026-09-20) — S17/S20/S4 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
