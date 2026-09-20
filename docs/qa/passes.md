@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 52 (2026-09-20) — S21/S19 re-verify + Edit community silent no-op on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S21: Created new community `qa-pass51-test` via `/communities` → "+ Create a community". **Following tab** (immediately after creation): shows only "technology" + "qa-pass46-test" — `qa-pass51-test` **NOT present** (no auto-follow, 2nd consecutive pass). "All on this instance" tab: shows `qa-pass51-test`. `/c/qa-pass51-test` → **404** in Blazor SPA ("Sorry, there's nothing at this address."). Owner view via community card → `/community?iri=…/c/qa-pass51-test`: tabs **Feed, Members (0), Owners, Peers, Requests**. Owners: andrew. Members: "No members yet." **S19:** Requests tab: alert *"We couldn't load the join requests. Please try again."* — **NO network request fired** (UI error without API call). API: `GET /ap/v1/c/qa-pass51-test/requests` → **404**. `GET /ap/v1/c/qa-pass51-test/members` → **200**. `GET /local/v1/c/qa-pass51-test/owners` → **200**. **NEW — Edit community Save is silent no-op:** "Edit community" form (Name, Description, Icon, "Require approval for join requests" checkbox). Clicking Save fires `POST /ap/v1/c/qa-pass51-test/outbox` → **202 Accepted**, but request body contains **only the original Group document** (no `requireApproval`, no changes). DB `Objects` document **unchanged** after Save. The "Require approval for join requests" setting is **not persisted** — entire Edit community feature is a silent no-op.
+- **Result:** 0 new; **S21 re-confirmed OPEN** (no auto-follow — 2nd pass; /c/{handle} 404 — 5th pass); **S19 re-confirmed OPEN** (Requests tab UI error without API call; /ap/v1/c/{name}/requests 404). **New facet:** Edit community Save is a silent no-op — checkbox state not included in Update activity, DB unchanged.
+- **Checkpoint:** next pass targets S3 (Create persistence), S2/S14 (blocked), S4 (remote interop missing from Following).
+
+---
+
 ## Pass 51 (2026-09-20) — S19 Follows tab re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
