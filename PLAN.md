@@ -164,7 +164,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **14 open + S6 fix committed, not yet live. No blockers (all S2/S3-sev).**
 - **Top priority:** S2/S14 (signed-out proxy bypass), S16 (poll votes not persisted), then the S2-sev bugs S4–S12.
-- **Last pass:** 25 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md).
+- **Last pass:** 25 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass begins at the stale-build gate (deployed `5da2a1d` ≠ HEAD `f51246a`), then the page inventory from the checkpoint route.
 
 ## Paused Questions
 
