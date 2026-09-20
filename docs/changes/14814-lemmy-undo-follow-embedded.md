@@ -76,11 +76,13 @@ Two delivery paths, both fixed:
   `CommunityFollowsCommunityUnfollowPropagationIntegrationTests`, etc.).
 - **Full fast suite** (`dotnet test --filter "Category!=Slow"`): **1401 passed, 0 failed**.
 
-## Live re-verify (to complete the slice)
+## Live re-verify (COMPLETE, 2026-09-20)
 
-Rebuild + redeploy, then via the live harness: `follow` → (capture minted id) → `undo`; confirm the
-`Undo` delivers to Lemmy **200** (no dead-letter in `docker logs irisweb-iris-web-1`) and the
-`community_follower` row is removed.
+Rebuilt + redeployed (`b2e4f6c`), then via the live harness:
+1. `follow` s7test → Lemmy `c/interop` → **202**; Lemmy `community_follower` count went **1 → 2**.
+2. `undo` (of the minted Follow) → **202**; the delivered Undo now carries the embedded Follow.
+3. Lemmy `community_follower` count went **2 → 1** — the un-follow reached Lemmy. No 400, no
+   dead-letter in `docker logs irisweb-iris-web-1`.
 
 ## Files
 
