@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 36 (2026-09-20) — S11/S19/S18/S2 re-verify
+
+- **Build/Live:** deployed `bb28dcf` (== HEAD? n — HEAD is `62a3897` merge of QA docs; no code change since `bb28dcf`).
+- **Explored:** signed-out `/` (S2/S14: 11 console errors — 6× proxy 401, 2× CORS, 2× ERR_FAILED). S11: body-less poll → no request fired (S11a); poll with body → no request fired (S11b untestable, no object created). S19: technology Requests tab → "couldn't load" dead-end, no request fires. S18: registered `qa36test`, followed andrew → Unflip to Unfollow, qa36test in Followers(3), Home empty; hard-refresh shows "Follow" again (state not persisted).
+- **Result:** 0 new; **4 re-confirmed OPEN** (S11a, S11b, S19, S18, S2). S18 has a new facet: follow state lost on hard-refresh.
+- **Checkpoint:** next pass explores S4 (communities following remote), S8 (all-on-instance list), S13 (remote Lemmy 404 noise), S15 (visibility hint), S16 (poll votes).
+
+---
+
 ## Pass 35 (2026-09-20) — S12/S9/S17/S3/S10 re-verify
 
 - **Build/Live:** deployed `bb28dcf` (== HEAD? y). Container `irisweb-iris-web-1` healthy.

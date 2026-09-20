@@ -36,7 +36,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 
 | ID | Title | Class | Sev | Status | Doc |
 |---|---|---|---|---|---|
-| S2 | Signed-out remote reads bypass the proxy (CORS/blank avatars) | bug | S2 | open | [s02](s02-signed-out-proxy-bypass.md) |
+| S2 | Signed-out remote reads bypass the proxy (CORS/blank avatars) | bug | S2 | open (proxy 401s unsigned GETs) | [s02](s02-signed-out-proxy-bypass.md) |
 | S3 | Object-detail 404s a local post's collections (Create-activity IRI) | bug | S3 | open | [s03](s03-object-detail-create-iri-404.md) |
 | S4 | Communities "Following" tab drops followed REMOTE communities | UX / bug | S2 | open | [s04](s04-communities-following-remote.md) |
 | S5 | Search lists a stale orphaned local actor (localhost IRI) | bug / data-integrity | S2 | fixed (2026-09-20, `456b0d9`) | [s05](s05-search-localhost-orphan-actor.md) |

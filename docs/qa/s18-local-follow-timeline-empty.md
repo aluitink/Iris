@@ -1,8 +1,8 @@
 # S18 — Following a local account: follow "succeeds" but the follower's Home timeline stays empty
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (re-confirmed Pass 34, 2026-09-20)
-- **Found:** Pass 29 (2026-09-20) — re-confirmed Pass 34
+- **Status:** open (re-confirmed Pass 36, 2026-09-20, on deployed `bb28dcf`)
+- **Found:** Pass 29 (2026-09-20) — re-confirmed Passes 34, 36
 - **Related:** [s11](s11-poll-silent-noop-and-outbox.md) (outbox/timeline data), the Home timeline
 
 ## Symptom
@@ -45,3 +45,5 @@ Clean entry, fresh local account A, follow local account B (who has public posts
 - The stored Follow activity has a valid `to`/`cc`.
 
 **Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** Registered fresh account `qa34test`, followed local `andrew` (774 posts). Follow button flipped to "Unfollow". `qa34test` → Home → **"Your timeline is empty."** after 5s + Refresh. andrew's posts do not appear. STILL OPEN.
+
+**Re-verification evidence (Pass 36, 2026-09-20, andrew, deployed `bb28dcf`):** Registered fresh account `qa36test`, followed local `andrew` (777 posts). Follow button flipped to "Unfollow"; `qa36test` appears in andrew's Followers (3) tab. `qa36test` → Home → **"Your timeline is empty. Follow people to see their posts here."** after 3s. andrew's posts do not appear. Additionally: on hard-refresh of andrew's actor page, the button shows **"Follow"** again (not "Unfollow") even though the follower edge exists — the follow state is not persisted server-side or the UI re-checks against an incomplete data source. STILL OPEN.
