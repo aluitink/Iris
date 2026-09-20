@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 82 (2026-09-20) — S20 re-verify (Communities tab visual-only, 8th pass)
+
+- **Build/Live:** Container 12:15:50. Healthy.
+- **Explored:** S20: `/home` → Communities tab → 0 new API requests, feed content identical to Posts tab.
+- **Result:** 0 new; **S20 re-confirmed OPEN** (visual-only toggle — 8th consecutive pass).
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S19 facet 2 (re-verify after deploy).
+
+---
+
 ## Pass 81 (2026-09-20) — S19 facet 2 re-verify (deployment gap)
 
 - **Build/Live:** Container built 12:15:50. Dev commit `8b6a234` (Accept/Decline buttons) landed 12:31:16 — AFTER build.

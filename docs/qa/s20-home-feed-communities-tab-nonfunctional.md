@@ -57,3 +57,5 @@ Clean entry, logged in:
 **Re-verification evidence (Pass 73, 2026-09-20, andrew, Dev fix deployed):** `/home` → Posts tab loads feed (`GET /ap/v1/u/andrew/feed` → 200, `?page=2` → 200). Click **Communities** tab → **0 new API requests** (no `?source=` parameter, no community-specific call). Feed content identical to Posts tab. 0 console errors. STILL OPEN (6th consecutive pass confirming visual-only toggle).
 
 **Re-verification evidence (Pass 77, 2026-09-20, andrew, Dev fix deployed):** `/home` → Posts tab loads feed (`GET /ap/v1/u/andrew/feed` → 200, `?page=2` → 200). Click **Communities** tab → **0 new API requests** (no `?source=` parameter, no community-specific call). Feed content identical to Posts tab. 0 console errors. STILL OPEN (7th consecutive pass confirming visual-only toggle).
+
+**Re-verification evidence (Pass 82, 2026-09-20, andrew, container 12:15:50):** `/home` → Posts tab loads feed (8 boosted posts visible). Click **Communities** tab → **0 new API requests** (no `source=` parameter in any request). Feed content **identical to Posts tab** (same 8 posts). 0 console errors. STILL OPEN (8th consecutive pass confirming visual-only toggle).
