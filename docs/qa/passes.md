@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 60 (2026-09-20) — S2/S14 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S2: Signed-out `/` → **2 console errors**: 2× proxy 401 (mastodon.social/users/deadline, mastodon.social/users/arstechnica). **Identical to Pass 54** — the proxy still 401s unsigned GETs for Mastodon username-path actors. No CORS/direct-fallback errors. S14: Signed-out `/actor?iri=https://mastodon.social/users/deadline` → **5 console errors**: 1× proxy 401 + 4× CSP-violation on the direct fallback (`connect-src 'self'`). Page shows **"Failed to load actor. It may not exist or the server is unreachable."** **Identical failure mode to Pass 54 and Pass 32.**
+- **Result:** 0 new; **S2 re-confirmed OPEN** (proxy 401 for unsigned Mastodon GETs persists — no change from Pass 54). **S14 re-confirmed OPEN** (proxy 401 + CSP violations on actor detail — identical to Pass 54 and Pass 32).
+- **Checkpoint:** next pass targets S20 (Communities tab visual-only), S17 (profile over-fetch), S4 (remote interop missing from Following).
+
+---
+
 ## Pass 59 (2026-09-20) — S3 Create persistence re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
