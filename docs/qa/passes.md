@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 57 (2026-09-20) — S19 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S19: Community `qa-pass46-test` (andrew, owner) → "Edit community" → checked "Require approval for join requests" checkbox → clicked Save. **DB verification:** `SELECT "Id", "ObjectType", "CreatedAt" FROM "Objects" WHERE "Document" @> '{"type":"Update"}' AND "Document"->>'actor' = 'https://iris.luit.ink/ap/v1/u/andrew'` → **0 rows** (no Update activity persisted). Reopened Edit community form → checkbox `edit-community-approve-members` is **unchecked** (state did not persist). The Edit community Save is a **silent no-op** — the checkbox state is not included in the Update activity, and the DB document is unchanged. 3 console errors (502 on lemmy.ml proxy — unrelated to S19). **Notifications → All tab:** 3 follow requests visible (qa39test 2h ago, qa36test 3h ago, qa34test 4h ago) — **ALL have NO Accept/Decline buttons** (only "View andrew's profile" link).
+- **Result:** 0 new; **S19 re-confirmed OPEN** (Edit community no-op re-confirmed on different community `qa-pass46-test`; notification action buttons still missing — 3 follow requests pending, none actionable).
+- **Checkpoint:** next pass targets S21 (no auto-follow + /c/{handle} 404), S3 (Create persistence), S2/S14 (proxy 401).
+
+---
+
 ## Pass 56 (2026-09-20) — S16-UX/S4 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
