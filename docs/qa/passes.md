@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 77 (2026-09-20) — S20/S16-UX re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed. Container healthy.
+- **Explored:** S20: `/home` Communities tab → 0 new API requests, 0 console errors. S16-UX: Poll object detail: A:1/B:0/**1 votes**, NO "You voted" badge.
+- **Result:** 0 new; **S20 re-confirmed OPEN** (7th pass, visual-only toggle). **S16-UX re-confirmed OPEN** (badge missing on object detail; vote count consistent).
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S19 (Edit community no-op).
+
+---
+
 ## Pass 76 (2026-09-20) — S17/S19 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed. Container healthy.
