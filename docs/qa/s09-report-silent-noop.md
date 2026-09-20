@@ -1,8 +1,8 @@
 # S9 — Report/flag is a silent no-op (no feedback, duplicate flags)
 
 - **Class:** UX / bug — **Severity:** S2
-- **Status:** open (re-confirmed Pass 35, 2026-09-20, on deployed `bb28dcf`)
-- **Found:** Pass 16 (2026-09-20) — re-confirmed Passes 27, 35
+- **Status:** fixed (2026-09-20, verified Pass 38 on rebuilt container after `d729c66` deploy)
+- **Found:** Pass 16 (2026-09-20) — re-confirmed Passes 27, 35; **fixed + verified Pass 38**
 
 ## Symptom
 
@@ -25,3 +25,5 @@ Report an actor (detail page) and a post (card): a confirmation is shown, the co
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** flagged bob from his post card → **no toast, no state change, 0 console errors**; the flag **was** recorded (visible under Settings → Moderation → Reported) and was subsequently cleaned up. STILL OPEN.
 
 **Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** flagged bob from his actor-detail page → **no toast, no button state change, 0 console errors**; clicked Report again (duplicate accepted, no de-dupe). Settings → Moderation → "Loading moderation lists…" **stuck indefinitely** (could not confirm the flag was recorded; 0 console errors). STILL OPEN.
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`d729c66`):** flagged bob from his actor-detail page → button immediately changes to **"Reported ✓"** and becomes **disabled** (can't re-click). 0 console errors. **FIXED.**

@@ -1,8 +1,8 @@
 # S11 — Poll broken (two parts)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (both parts re-confirmed Pass 36, 2026-09-20, on deployed `bb28dcf`)
-- **Found:** Pass 17 (2026-09-20) — re-confirmed Passes 27, 34, 36
+- **Status:** fixed (2026-09-20, verified Pass 38 on rebuilt container post-`d729c66`)
+- **Found:** Pass 17 (2026-09-20) — re-confirmed Passes 27, 34, 36; **fixed + verified Pass 38**
 
 ## S11a — Poll without a body is a silent no-op
 
@@ -30,3 +30,5 @@
 **Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** (a) body-less poll (question "QA Pass 34 poll test" + 2 options, no Content) → Post → **no confirmation, 0 console errors** — S11a still open. (b) poll WITH body ("Poll test with body") → 202, object at `…/creates/06GBV3RTQ8T7RAEBA7V3TP7EZ4`, `type=["Question","Object"]` in outbox (first item), but **NOT visible** in Profile "Your posts" — S11b still open.
 
 **Re-verification evidence (Pass 36, 2026-09-20, andrew, deployed `bb28dcf`):** (a) body-less poll (question "S11 body-less poll test" + 2 options A/B, no Content) → Post → **no confirmation, 0 console errors, no network request fired** (no outbox POST) — S11a still open. (b) poll WITH body ("S11 poll with body test" + question "S11 test poll pass 36" + options Yes/No) → Post → **no confirmation, 0 console errors, no network request fired** — the post was NOT sent at all this time (previously 202'd). S11b cannot be re-confirmed independently since no object was created, but the filter issue is unchanged in code.
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`d729c66`):** (a) body-less poll (question "QA Pass 38 bodyless poll test" + 2 options Yes/No, no Content) → Post → **0 console errors, poll appears in Profile "Your posts" with options and "just now" timestamp** — S11a FIXED. (b) the poll is visible in "Your posts" (S11b FIXED — `Question` now included in `IsContentItem`). **BOTH PARTS FIXED.**
