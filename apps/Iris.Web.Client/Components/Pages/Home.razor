@@ -74,6 +74,12 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Filters the public feed to content items only (Create of a Note/Article/<see cref="Page"/> —
+    /// a Lemmy community post is a <c>Page</c> — or a bare content object, plus Announce). Social
+    /// activities are excluded. Mirrors <see cref="HomeTimeline"/>'s content filter so a followed
+    /// Lemmy community's posts (a <c>Page</c>) appear in the public feed too.
+    /// </summary>
     private static bool IsContentItem(IObjectOrLink item)
     {
         if (item is Create create)
@@ -82,7 +88,7 @@
             {
                 foreach (var obj in objects)
                 {
-                    if (obj is Note || obj is Article)
+                    if (obj is Note || obj is Article || obj is Page)
                     {
                         return true;
                     }
@@ -97,7 +103,7 @@
             return true;
         }
 
-        if (item is Note || item is Article)
+        if (item is Note || item is Article || item is Page)
         {
             return true;
         }
