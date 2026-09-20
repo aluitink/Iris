@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `c205d47` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `1fc5737` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** S3 fixed. S19 facets 1+3 fixed (Requests tab + Edit Save). S21/S20 re-verified working (stale WASM in QA browser). S19 facet 2 (notification Accept/Decline) remains open. S2/S14 proxy seam still 401s unsigned GETs.
 
