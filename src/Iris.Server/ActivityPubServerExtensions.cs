@@ -5038,26 +5038,21 @@ public static class ActivityPubServerExtensions
             .IsFollowingAsync(followerIri, targetIri.Value, ct)
             .ConfigureAwait(false);
 
-        // The actor's home instance records the follow edge in its own follow store regardless of
-        // whether the target is local — the actor's `following` collection lists even a remote target.
-        // A follow of a local person additionally makes the target's `followers` collection list the
-        // follower (the same edge, read inversely); a follow of a local community records the
-        // community's follows + followers sets (the inverse of FollowActivityHandler's community
-        // branch, F-24) instead of a person-follow edge (the stores are disjoint).
-        await persistence.Follows
-            .RecordFollowAsync(followerIri, targetIri.Value, ct)
+        var isCommunityTarget = await persistence.Communities
+            .TryGetCommunityAsync(targetIri.Value, out _, ct)
             .ConfigureAwait(false);
 
-        if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out var community, ct).ConfigureAwait(false)
-            && community is not null)
+        if (isCommunityTarget)
         {
+            // A follow of a local community records the community's follows + followers sets (the inverse
+            // of FollowActivityHandler's community branch, F-24) instead of a person-follow edge (the
+            // stores are disjoint). A follow of a local community is a join (members are followers —
+            // change 221). When the community manually approves members, the membership (followers) edge
+            // is withheld and a pending join request is recorded so the creator's requests tab lists it;
+            // the creator's Accept/Reject grants or drops the membership (RecordJoinDecisionLocalAsync).
+            // Otherwise the membership edge is recorded immediately (an auto-accepted join).
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
 
-            // A follow of a local community is a join (members are followers — change 221). When the
-            // community manually approves members, the membership (followers) edge is withheld and a
-            // pending join request is recorded so the creator's requests tab lists it; the creator's
-            // Accept/Reject grants or drops the membership (RecordJoinDecisionLocalAsync). Otherwise the
-            // membership edge is recorded immediately (an auto-accepted join).
             if (await IsManuallyApprovingMembersAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
             {
                 await persistence.Communities
@@ -5071,14 +5066,26 @@ public static class ActivityPubServerExtensions
         }
         else if (!alreadyFollowing && await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
         {
-            // A local follow of a person who manually approves followers is held for approval (Phase 100):
-            // record a pending follow-request edge so the target's follow-approval queue
-            // (GET /local/v1/u/{handle}/requests) lists it. The provisional Follow edge (recorded above)
-            // is independent and is drained/confirmed when the target Accepts or Rejects (the follow-
-            // decision path). Mirrors the inbox-side FollowActivityHandler gate (the remote-follow path).
+            // A local follow of a person who manually approves followers is held for approval (Phase 100).
+            // S34: the Follow edge is WITHHELD — only the pending follow-request edge is recorded so the
+            // target's follow-approval queue (GET /local/v1/u/{handle}/requests) lists it, and the target's
+            // public `followers` collection (backed by the Follow edge) does not surface the requester
+            // before the owner accepts. Accept materializes the Follow edge (ApplyFollowDecisionEdgeAsync);
+            // Reject drains the request without ever recording the edge. This mirrors the inbox-side
+            // FollowActivityHandler gate (the remote-follow path, which records the edge after the gate).
             // Gated on !alreadyFollowing so a re-follow does not re-create a stale request edge.
             await persistence.Follows
                 .RecordFollowRequestAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            // The actor's home instance records the follow edge in its own follow store regardless of
+            // whether the target is local — the actor's `following` collection lists even a remote
+            // target. A follow of a local (auto-accepting) person additionally makes the target's
+            // `followers` collection list the follower (the same edge, read inversely).
+            await persistence.Follows
+                .RecordFollowAsync(followerIri, targetIri.Value, ct)
                 .ConfigureAwait(false);
         }
 

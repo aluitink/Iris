@@ -296,6 +296,13 @@ public sealed class FollowRequestQueueIntegrationTests : IDisposable
             await persistence.Follows.HasFollowRequestAsync(followerIri, _actorIri),
             "a pending follow-request edge should be recorded for a local follow of a gated actor");
 
+        // S34: the Follow edge is WITHHELD while the request is pending — a local gated follow must not
+        // surface the requester in the target's public `followers` collection (backed by the Follow
+        // edge) before the owner accepts. Only the pending request edge is recorded here.
+        Assert.False(
+            await persistence.Follows.IsFollowingAsync(followerIri, _actorIri),
+            "the Follow edge should be withheld for a pending local follow of a gated actor (S34)");
+
         var modClient = BuildLocalModerationClient(_actorIri, "alice", "alice");
         var result = await modClient.GetFollowRequestsAsync(_actorIri);
         Assert.True(result.IsSuccess, $"queue list should succeed, got HTTP {(int)result.StatusCode}");
