@@ -222,12 +222,13 @@ public sealed class GlobalSearchServiceTests
         var persistence = new InMemoryPersistenceProvider();
         // A local actor and a remote actor that DOES carry a preferredUsername (like a Mastodon user).
         // The old preferredUsername heuristic would include the remote actor in "This instance"; the
-        // IRI-prefix check correctly excludes it.
+        // canonical-IRI check correctly excludes it (a preferredUsername marks a LOCAL actor, and this
+        // one's IRI is on a foreign origin — it is not canonical for this instance).
         await PutActorAsync(persistence, "alice");
-        var remoteIri = new Iri($"https://mastodon.social/users/remote_user");
+        var foreignIri = new Iri($"https://mastodon.social/users/remote_user");
         await persistence.ActorStore.PutActorAsync(new Person
         {
-            Id = remoteIri.Value,
+            Id = foreignIri.Value,
             PreferredUsername = "remote_user",
             Name = ["Remote User"],
         });
@@ -235,14 +236,12 @@ public sealed class GlobalSearchServiceTests
         var instanceBase = new Iri($"https://{AHost}");
         var service = new GlobalSearchService(persistence, instanceBase);
 
-        // "All known actors" returns both.
+        // "All known actors" (the mixed path) keeps only canonical local actors: the foreign-origin
+        // preferredUsername actor is not canonical for this instance, so it is dropped (S5 rule).
         var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
-        Assert.Equal(2, all.Length);
-        Assert.Contains($"https://{AHost}/ap/v1/u/alice", all);
-        Assert.Contains(remoteIri.Value, all);
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(all));
 
-        // "This instance" (localOnly + instance base) excludes the remote actor even though it has a
-        // preferredUsername — the IRI doesn't start with the instance base.
+        // "This instance" (localOnly + instance base) excludes it too.
         var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
         Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
     }
@@ -299,13 +298,95 @@ public sealed class GlobalSearchServiceTests
         var instanceBase = new Iri($"https://{AHost}");
         var service = new GlobalSearchService(persistence, instanceBase);
 
-        // Without localOnly: both match "gardener".
+        // Without localOnly (the mixed path): the foreign-origin preferredUsername actor is not
+        // canonical for this instance, so only the local gardener surfaces (S5 rule).
         var all = (await service.SearchAsync("gardener", type: "Actor")).Select(ToId).ToArray();
-        Assert.Equal(2, all.Length);
+        Assert.Equal($"https://{AHost}/ap/v1/u/gardener", Assert.Single(all));
 
-        // With localOnly + instance base: only the local actor.
+        // With localOnly + instance base: only the local actor (the same result).
         var local = (await service.SearchAsync("gardener", type: "Actor", localOnly: true)).Select(ToId).ToArray();
         Assert.Equal($"https://{AHost}/ap/v1/u/gardener", Assert.Single(local));
+    }
+
+    // --- S5: a stale local actor on a foreign base (localhost) is dropped from the mixed path ---
+
+    [Fact]
+    public async Task Search_MixedPath_WithInstanceBase_DropsStaleLocalActorOnForeignBase()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // The canonical local alice (on the instance's public base) and a STALE orphaned alice
+        // persisted under a dev base — the SAME public host, but the dev default (http://localhost:8088)
+        // instead of the advertised https base. This is the exact S5 shape: a row written while the
+        // container booted with Iris:AdvertiseBase unset (dev default) that is never re-canonicalized.
+        // Both carry a preferredUsername (the same local handle); only the canonical one begins with the
+        // instance base.
+        await PutActorAsync(persistence, "alice");
+        var staleIri = new Iri($"http://localhost:8088/ap/v1/u/alice");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = staleIri.Value,
+            PreferredUsername = "alice",
+            Name = ["alice"],
+        });
+
+        var instanceBase = new Iri($"https://{AHost}");
+        var service = new GlobalSearchService(persistence, instanceBase);
+
+        // The Search page (localOnly=false) must surface ONLY the canonical public-base alice — the
+        // stale dev-base ghost is dropped (S5). Before the fix both surfaced (two "alice" cards).
+        var mixed = (await service.SearchAsync("alice", type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(mixed));
+
+        // The localOnly path is unaffected (it already filtered to the instance base).
+        var local = (await service.SearchAsync("alice", type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_MixedPath_WithInstanceBase_KeepsGenuineRemoteActor()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        // A genuine REMOTE actor (a different origin, no local handle) — a legitimate cached remote
+        // actor that must still surface in the mixed path (the S5 rule only drops LOCAL actors whose IRI
+        // is not canonical for this instance).
+        var remoteIri = new Iri("https://mastodon.social/users/remote_user");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = remoteIri.Value,
+            Name = ["Remote User"],
+        });
+
+        var instanceBase = new Iri($"https://{AHost}");
+        var service = new GlobalSearchService(persistence, instanceBase);
+
+        var mixed = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, mixed.Length);
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice", mixed);
+        Assert.Contains(remoteIri.Value, mixed);
+    }
+
+    [Fact]
+    public async Task Search_MixedPath_WithoutInstanceBase_KeepsStaleLocalActor_FallsBackToStoreHeuristic()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        var staleIri = new Iri("http://localhost:8088/ap/v1/u/alice");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = staleIri.Value,
+            PreferredUsername = "alice",
+            Name = ["alice"],
+        });
+
+        // No instance base: there is no origin to compare against, so the stale local row is kept
+        // (the service cannot tell it is stale) — the store's heuristic is the only filter available.
+        var service = new GlobalSearchService(persistence);
+
+        var mixed = (await service.SearchAsync("alice", type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, mixed.Length);
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice", mixed);
+        Assert.Contains(staleIri.Value, mixed);
     }
 
     // --- A no-match query returns nothing -------------------------------------------------

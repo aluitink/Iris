@@ -118,11 +118,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **Deployed commit:** `0e2e040` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** the S2/S14 anonymous-proxy seam (`0e2e040`) is now live — signed-out remote reads (actor docs + outbox/followers/following collections) route through the same-origin proxy. QA can re-verify S2 + S14 from a clean entry; the Inbox ② / Page-drop fixes remain live too.
+- **Note:** the S2/S14 anonymous-proxy seam (`0e2e040`) is live — signed-out remote reads (actor docs + outbox/followers/following collections) route through the same-origin proxy. QA can re-verify S2 + S14 from a clean entry; the Inbox ② / Page-drop fixes remain live too. **Next (dev):** S5 (stale `localhost` actor in Search) is implemented + live-verified and awaiting commit — the container will be rebuilt on commit.
 
 ## Active Slice
 
-- **S2/S14 — signed-out remote reads via the same-origin anonymous proxy seam (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit**. A cookie-less `GET /ap/v1/proxy/{target}` relays an unsigned public read (rate-limited, allowlist-checked); the client routes every signed-out remote actor + collection read through it. [change doc](docs/changes/1573-signed-out-remote-reads-via-anonymous-proxy-seam.md)
+- **S5 — drop the stale orphaned `localhost` actor from Search (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** `GlobalSearchService.IsSameInstanceActor` now drops a local actor (carries a `preferredUsername`) whose IRI is not under the instance base IRI — the stale `localhost:8088` ghost is gone from the mixed (Search) path, the canonical public-base row remains, and remote actors are unaffected. [change doc](docs/changes/1574-search-drop-stale-local-actor-foreign-base.md)
 
 ## Dev Queue
 
@@ -138,7 +138,6 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S5** (S2, data-integrity) — stale orphaned `localhost` actor in Search: [s05](docs/qa/s05-search-localhost-orphan-actor.md)
 - **S7** (S2) — Directory external lookup stuck on spinner: [s07](docs/qa/s07-directory-external-lookup-stuck.md)
 - **S9** (S2) — Report/flag silent no-op: [s09](docs/qa/s09-report-silent-noop.md)
 - **S11** (S2) — Poll silent no-op + invisible in "Your posts": [s11](docs/qa/s11-poll-silent-noop-and-outbox.md)
@@ -170,6 +169,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S5 — drop the stale orphaned `localhost` actor from Search (2026-09-20):** `GlobalSearchService` mixed (Search, `localOnly=false`) path now drops a **local** actor (carries a `preferredUsername`) whose IRI is not under the instance base IRI — the stale `http://localhost:8088/ap/v1/u/alice` ghost (persisted under the dev base when `Iris:AdvertiseBase` was unset) is gone; the canonical public-base row and genuine remote actors remain. Closes S5 (the ghost surfaced in Search but not Directory, and 502'd on click). Live-verified: Search "alice" → exactly one local alice (canonical IRI); clicking it renders the profile + Posts (17) tab, no 502. All suites green (Server 1380, Client 190, Web 106). [change doc](docs/changes/1574-search-drop-stale-local-actor-foreign-base.md)
 - **S2/S14 — signed-out remote reads via the same-origin anonymous proxy seam (2026-09-20):** a cookie-less `GET /ap/v1/proxy/{target}` now relays an **unsigned** public read (no actor to sign with), allowlist-checked + per-client-IP rate-limited; disabled via `ProxySettings.AllowAnonymousReads=false`. `ActivityPubClientFactory` builds an unsigned client for a null `ActorId`. The client (`UiContext.FetchActorAsync`, `PagedCollection` anonymous read) routes **every** signed-out remote actor + collection read through the same-origin proxy instead of a direct cross-origin fetch (CORS/CSP-blocked). Closes S2 (signed-out `/` blank avatars + CORS noise) and S14 (signed-out remote actor-detail, incl. the Posts-tab outbox CSP facet). Live-verified: signed-out `/` → 0 console errors, all remote actors via proxy 200; `/actor?iri={remote}` → profile + Posts tab render, 0 console errors. All suites green (Server 1377, Client 190, Web 106). [change doc](docs/changes/1573-signed-out-remote-reads-via-anonymous-proxy-seam.md)
 - **Inbox ③ Phase 1 — home-feed `Page` drop fix (2026-09-20):** added `Page` to `IsContentItem` in `HomeTimeline.razor` (`/home`) + `Home.razor` (`/`) so Lemmy community posts (`Page` type) are no longer silently dropped from the home and public feeds. Live-verified via Playwright (the "Page type" fixture post renders in `/home`). Web build green, 106 web tests pass. [change doc](docs/changes/1002-inbox-3-phase1-page-drop-fix.md)
 - **Inbox ② Community simplification — unify members with followers (2026-09-20):** collapsed the separate `CommunityMember` axis into the community's followers axis (Lemmy-shape): members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, community feed + `/members` read followers, single **Follow** button (labeled **Join**/**Leave** for communities — `JoinButton.razor` deleted), retired the dead `ICommunityStore` member methods (kept `EdgeKind.CommunityMember` for the startup migration), fixed the two stale `cref`s that broke the build (QA Pass 23). All suites green (Server 1371, Web 106, Client 190, Core 467, …). Committed but **not yet live** — the container must be rebuilt; re-verify then ([S6](docs/qa/s06-remote-join-csp-blocked.md), plus the S4/S8 facets). Live Lemmy interop (Phase 6) deferred to a live pass. [change doc](docs/changes/1001-inbox-2-community-simplification.md)

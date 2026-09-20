@@ -107,21 +107,30 @@ public sealed class GlobalSearchService : IGlobalSearchService
         var actorTotal = 0;
         if (actorPass)
         {
+            List<Actor> rawActors;
             if (localOnly && _instanceBase is not null)
             {
-                var (filteredActors, filteredTotal) = await GetLocalActorsFilteredAsync(normalized, ct).ConfigureAwait(false);
-                actorTotal = filteredTotal;
-                actorMatches = filteredActors.Cast<IObjectOrLink>().ToList();
+                // The local-only path already filters to instance-base IRIs (GetLocalActorsFilteredAsync),
+                // so no further origin filter is needed here.
+                rawActors = (await GetLocalActorsFilteredAsync(normalized, ct).ConfigureAwait(false)).Actors;
             }
             else
             {
-                actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct, localOnly).ConfigureAwait(false);
-                if (actorTotal > 0)
-                {
-                    actorMatches = (await _persistence.Actors.SearchActorsAsync(normalized, int.MaxValue, 0, ct, localOnly).ConfigureAwait(false))
-                        .Cast<IObjectOrLink>().ToList();
-                }
+                // The mixed path (the Search page, localOnly=false) scans the whole stored actor surface
+                // (local + cached remote). Drop local actors whose IRI does NOT originate on this
+                // instance (S5): a row persisted under a stale/dev base (e.g. http://localhost:8088, the
+                // dev default when Iris:AdvertiseBase is unset) would otherwise surface as a ghost
+                // duplicate next to the same handle's canonical public-base row. Remote actors (a
+                // different origin) are kept — only same-handle local IRIs on a foreign base are the
+                // defect. When the instance base is unavailable there is no origin to compare against,
+                // so the store's heuristic result is returned as-is.
+                rawActors = (await _persistence.Actors.SearchActorsAsync(normalized, int.MaxValue, 0, ct, localOnly).ConfigureAwait(false))
+                    .Where(a => IsSameInstanceActor(a))
+                    .ToList();
             }
+
+            actorMatches = rawActors.Cast<IObjectOrLink>().ToList();
+            actorTotal = actorMatches.Count;
         }
 
         // Content pass: load all matching content, apply the audience/visibility filter, then the type
@@ -175,6 +184,43 @@ public sealed class GlobalSearchService : IGlobalSearchService
             .ToList();
 
         return (matches, matches.Count);
+    }
+
+    /// <summary>
+    /// True when <paramref name="actor"/> may be shown in the mixed (non-local-only) search path.
+    /// <para>
+    /// When the instance base IRI is known, a LOCAL actor (one that carries a <c>preferredUsername</c>,
+    /// i.e. it is one of this instance's own handles) must have a CANONICAL IRI: one that begins with the
+    /// instance base IRI. A local actor whose IRI does not (e.g. <c>http://localhost:8088/ap/v1/u/x</c> on
+    /// an instance advertised as <c>https://iris.example</c> — the same public host, but persisted under
+    /// the dev base when <c>Iris:AdvertiseBase</c> was unset) is a stale/orphaned row (S5) and is dropped:
+    /// it would otherwise surface as a ghost duplicate next to the same handle's canonical row, and
+    /// clicking it 502s (the container cannot reach the foreign base). A REMOTE actor (no
+    /// <c>preferredUsername</c>) is always kept — the search legitimately lists cached remote actors, even
+    /// ones that happen to carry a <c>preferredUsername</c> in their own document (a Mastodon user).
+    /// </para>
+    /// <para>
+    /// When the instance base IRI is unavailable there is no canonical IRI to compare against, so every
+    /// actor is allowed (the store's <c>preferredUsername</c> heuristic, if any, still applies at the store
+    /// layer).
+    /// </para>
+    /// </summary>
+    private bool IsSameInstanceActor(Actor actor)
+    {
+        // A remote actor (no local handle) is always shown in the mixed path.
+        if (actor.PreferredUsername is not { Length: > 0 })
+        {
+            return true;
+        }
+
+        // A local actor must be canonical for this instance: its IRI must begin with the instance base.
+        if (_instanceBase is not { } baseIri || actor.Id is not { Length: > 0 } id)
+        {
+            return true;
+        }
+
+        var prefix = baseIri.Value.TrimEnd('/');
+        return id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
