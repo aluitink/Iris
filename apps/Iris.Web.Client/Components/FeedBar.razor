@@ -1,5 +1,6 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Iris.Web.Client.Components
+@implements IDisposable
 
 <AuthorizeView>
     <Authorized>
@@ -7,8 +8,8 @@
             @if (IsHome)
             {
                 <div class="feed-bar-tabs">
-                    <button type="button" class="tab @(_activeTab == "posts" ? "tab--active" : "")" @onclick='() => SetTab("posts")' aria-selected="@(_activeTab == "posts")">Posts</button>
-                    <button type="button" class="tab @(_activeTab == "communities" ? "tab--active" : "")" @onclick='() => SetTab("communities")' aria-selected="@(_activeTab == "communities")">Communities</button>
+                    <button type="button" class="tab @(_state.Tab == "posts" ? "tab--active" : "")" @onclick='() => SetTab("posts")' aria-selected="@(_state.Tab == "posts")">Posts</button>
+                    <button type="button" class="tab @(_state.Tab == "communities" ? "tab--active" : "")" @onclick='() => SetTab("communities")' aria-selected="@(_state.Tab == "communities")">Communities</button>
                 </div>
             }
             <div class="feed-bar-right">
@@ -25,8 +26,13 @@
     [Inject]
     private NavigationManager Nav { get; set; } = default!;
 
+    [Inject]
+    private HomeTabState _state { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime Js { get; set; } = default!;
+
     private bool _isHome;
-    private string _activeTab = "posts";
 
     private bool IsHome => _isHome;
 
@@ -34,7 +40,7 @@
     {
         Nav.LocationChanged += OnLocationChanged;
         _isHome = IsHomeLocation(Nav.Uri);
-        LoadTabFromStorage();
+        _state.TabChangedExternal += OnTabChanged;
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -42,6 +48,8 @@
         _isHome = IsHomeLocation(Nav.Uri);
         InvokeAsync(StateHasChanged);
     }
+
+    private void OnTabChanged() => InvokeAsync(StateHasChanged);
 
     private static bool IsHomeLocation(string uri)
     {
@@ -51,14 +59,8 @@
 
     private void SetTab(string tab)
     {
-        _activeTab = tab;
+        _state.Tab = tab;
         SaveTabToStorage(tab);
-    }
-
-    private void LoadTabFromStorage()
-    {
-        // localStorage is not available in OnInitialized (WASM); the tab state is
-        // loaded via JS in OnAfterRenderAsync.
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -70,7 +72,7 @@
                 var stored = await Js.InvokeAsync<string>("localStorage.getItem", "iris:homeTab");
                 if (stored is "posts" or "communities")
                 {
-                    _activeTab = stored;
+                    _state.Tab = stored;
                 }
             }
             catch
@@ -92,6 +94,9 @@
         }
     }
 
-    [Inject]
-    private IJSRuntime Js { get; set; } = default!;
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        _state.TabChangedExternal -= OnTabChanged;
+    }
 }

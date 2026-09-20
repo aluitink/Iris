@@ -3,7 +3,9 @@
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
 @using KristofferStrube.ActivityStreams
+@implements IDisposable
 
 <PageTitle>Home · Iris</PageTitle>
 
@@ -15,14 +17,31 @@
     ShowRefreshButton="true"
     ItemFilter="IsContentItem">
     <EmptyContent>
-        <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            <p>Your timeline is empty.</p>
-            <p>Follow people to see their posts here.</p>
-            <a href="/directory">Browse the directory →</a>
-        </div>
+        @if (_state.Tab == "communities")
+        {
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+                <p>No community posts yet.</p>
+                <p>Follow communities to see their posts here.</p>
+                <a href="/communities">My communities →</a>
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <p>Your timeline is empty.</p>
+                <p>Follow people to see their posts here.</p>
+                <a href="/directory">Browse the directory →</a>
+            </div>
+        }
     </EmptyContent>
 </PagedCollection>
 
@@ -30,45 +49,37 @@
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
 
-    /// <summary>
-    /// Primes the session's signing key (WASM cannot block on the key load during render). Once the
-    /// load completes, re-render so <see cref="FeedClient"/> resolves and the feed card appears.
-    /// </summary>
+    [Inject]
+    private HomeTabState _state { get; set; } = default!;
+
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
+        _state.TabChangedExternal += OnTabChanged;
         StateHasChanged();
     }
 
-    /// <summary>
-    /// A stable <c>@key</c> for the feed's <c>PagedCollection</c>. The home timeline is a single,
-    /// fixed collection (the session actor's followed feed), so the key is a constant — it exists only
-    /// so the <c>PagedCollection</c> has a key to key on (its internal state is otherwise stable).
-    /// </summary>
-    private const string FeedKey = "home-feed";
+    private void OnTabChanged() => InvokeAsync(StateHasChanged);
 
-    /// <summary>
-    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out. The page is
-    /// <c>[Authorize]</c>-gated, so in practice this is always set on a rendered (circuit) request;
-    /// <c>null</c> only occurs on the static prerender of a signed-out request (which the auth
-    /// middleware redirects to <c>/login</c> before the circuit boots).
-    /// </summary>
+    private string FeedKey => $"home-feed-{_state.Tab}";
+
     private IActivityPubClient? FeedClient => Session.Client;
 
-    /// <summary>
-    /// The followed-feed collection IRI (the session actor's <c>{actor}/feed</c>), or <c>null</c> when
-    /// signed out. Derived via <see cref="IriExtensions.FeedOf(Iri)"/>.
-    /// </summary>
     private Iri? FeedIri
-        => Session.ActorId is { } actor ? actor.FeedOf() : null;
+    {
+        get
+        {
+            if (Session.ActorId is not { } actor)
+            {
+                return null;
+            }
 
-    /// <summary>
-    /// Filters the home timeline to content items only (Create of a Note/Article/<see cref="Page"/> —
-    /// a Lemmy community post is a <c>Page</c> — or a bare content object, plus Announce). Social
-    /// activities (Follow, Accept, Reject, Like, etc.) are excluded — they belong in notifications.
-    /// Mirrors the community feed's <c>FeedItemFilter</c> (a Lemmy post's <c>Create</c> nests a
-    /// <c>Page</c>, which the library deserializes to the <see cref="Page"/> type).
-    /// </summary>
+            var baseIri = actor.FeedOf();
+            var source = _state.Tab == "communities" ? "communities" : "people";
+            return new Iri($"{baseIri.Value}?source={source}");
+        }
+    }
+
     private static bool IsContentItem(IObjectOrLink item)
     {
         if (item is Create create)
@@ -98,5 +109,10 @@
         }
 
         return false;
+    }
+
+    public void Dispose()
+    {
+        _state.TabChangedExternal -= OnTabChanged;
     }
 }

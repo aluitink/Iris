@@ -95,6 +95,7 @@ builder.Services.AddScoped<NotificationService>(sp =>
     return new NotificationService(factory.CreateClient("iris-notifications"));
 });
 builder.Services.AddScoped<UiContext>();
+builder.Services.AddScoped<HomeTabState>();
 builder.Services.AddSingleton<IActivityPubClientFactory, ActivityPubClientFactory>();
 
 builder.RootComponents.Add<App>("#app");
