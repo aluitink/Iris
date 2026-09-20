@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 42 (2026-09-20) — S16/S3/S4/S19/S17 re-verify + Home feed Communities tab on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S16: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Profile page shows "You voted" badge (A:1/B:0/1 votes). Object page shows A:1/B:0/1 votes but **no "You voted" badge** on fresh load. S3: Created post "QA Pass 42 S3 re-verify post" (Note IRI: `…/notes/06GBW1RWNE5TQ90WV5PNX4G6R8`). DB shows only Note object, **no Create activity** stored. Note IRI → 200, clean render. S4: Communities → Following shows only "technology" (local), remote "interop" still missing (interop community page shows "Leave" button, confirming follow exists). S19: Technology Requests tab → "We couldn't load the join requests. Please try again." dead-end, no request fires. S17: Profile "Your posts" fired 8 outbox requests (1–8, with 4 ERR_ABORTED); Replies tab fired 13-page fan-out (1–13). Total 21 requests for 2 tabs. Home feed: Communities tab fires 0 new API requests, shows same content as Posts tab (skinnylatte dolphin post first in both) — **Phase 4 tab wiring non-functional**.
+- **Result:** 0 new; **5 re-confirmed OPEN** (S16-UX badge on object page, S3, S4 remote, S17, S19). **New observation confirmed:** Home feed Communities tab is non-functional (no API call, same content as Posts tab). S3 scope note: Create activities may not be persisted to DB at all (only Note objects stored), making Create-IRI 404s a deeper issue than just collection derivation.
+- **Checkpoint:** next pass targets S3 (investigate why Create activities aren't in DB), S19 (follow request acceptance UI), Home feed Communities tab (new finding candidate), S2/S14 (blocked on dev).
+
+---
+
 ## Pass 41 (2026-09-20) — S16/S3/S4/S19/S17/S7 re-verify on `59ff4ec`
 
 - **Build/Live:** deployed `59ff4ec` (== HEAD? y).

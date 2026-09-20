@@ -29,3 +29,5 @@ With QAUser1 (follows only the remote interop community): Communities → Follow
 **Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** Communities → Following tab still shows **only "technology"** (local) — the remote `interop` community is still **missing**. 0 console errors. STILL OPEN for remote communities.
 
 **Re-verification evidence (Pass 41, 2026-09-20, andrew, deployed `59ff4ec`):** Communities → Following tab still shows **only "technology"** (local) — the remote `interop` community is still **missing**. 0 console errors. STILL OPEN for remote communities.
+
+**Re-verification evidence (Pass 42, 2026-09-20, andrew, deployed `65ccfa0`):** Communities → Following tab still shows **only "technology"** (local) — the remote `interop` community is still **missing**. Confirmed the follow edge exists: navigating directly to `lemmy.luit.ink/c/interop` community page shows **"Leave" button** (not "Follow"), proving andrew follows it. 0 console errors. STILL OPEN for remote communities.
