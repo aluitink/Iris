@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `P5-commit` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `b49f121` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** Phase 5 community delete is live. S5 + S7 verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
