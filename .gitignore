@@ -87,3 +87,6 @@ probe_*.txt
 
 ## Backups (local backup archives — never commit)
 backups/
+
+## QA worktree (second checkout for the QA loop — never commit; see docs/reference/QA_LOOP.md)
+.worktrees/
