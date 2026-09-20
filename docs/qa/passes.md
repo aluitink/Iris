@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 66 (2026-09-20) — S21 re-verify (Dev fix `8539f3f` deployed)
+
+- **Build/Live:** Dev fix `8539f3f` deployed (container restarted 11:21:16).
+- **Explored:** S21: (1) `/c/qa-pass65-test` → Blazor SPA shows **"Sorry, there's nothing at this address."** — the `CommunityHandleRedirect.razor` page is **NOT active** (no redirect). Same for `/c/technology`. (2) `/communities` → Following tab now shows **"technology" + "qa-pass46-test" + "qa-pass65-test"** (all with "Leave") — `qa-pass65-test` **IS in the Following tab** (auto-follow working). (3) `/community?iri=…/c/qa-pass65-test` → 200.
+- **Result:** **S21 PARTIALLY FIXED.** Auto-follow (facet 1) is **FIXED**. `/c/{handle}` route (facet 2) is **STILL OPEN** — redirect page not active; all `/c/{handle}` URLs show "Nothing at this address."
+- **Checkpoint:** next pass targets S20 (Communities tab visual-only), S17 (profile over-fetch), S3 (Create persistence).
+
+---
+
 ## Pass 65 (2026-09-20) — S21 re-verify on `65ccfa0` (Dev fix `8539f3f` NOT deployed)
 
 - **Build/Live:** deployed `65ccfa0` (Dev fix `8539f3f` on `interop-testing` but NOT deployed to live container — container started 11:05:19).
