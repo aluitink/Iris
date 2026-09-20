@@ -99,9 +99,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         // The 19.5.2 gate: only the community manages its own membership. The Add's actor is alice (not
         // the community), so B's AddActivityHandler does NOT add alice as a member.
-        Assert.False(
-            await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
-            "an Add whose actor is not the community must not add a member (19.5.2 self-management gate)");
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- A signed Remove by a remote actor does NOT remove that actor (19.5.2 self-management) -
@@ -110,8 +108,8 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
     public async Task Remove_SignedByRemoteActor_DeliveredToCommunity_DoesNotRemoveMember()
     {
         // Seed alice as an existing member (as a prior community-managed Add would have recorded her).
-        await _bPersistence.Communities.AddMemberAsync(_communityIri, _aliceActorIri);
-        Assert.True(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        await _bPersistence.Communities.AddFollowerAsync(_communityIri, _aliceActorIri);
+        Assert.Contains(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
 
         var remove = BuildRemove(_aliceActorIri, _communityIri);
 
@@ -125,9 +123,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         // The 19.5.2 gate: the Remove's actor is alice (not the community), so B's RemoveActivityHandler
         // does NOT remove alice from the member set.
-        Assert.True(
-            await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
-            "a Remove whose actor is not the community must not remove a member (19.5.2 self-management gate)");
+        Assert.Contains(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- A signed Add to a local person is a no-op (follow lifecycle owns person followers) ---
@@ -146,7 +142,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
         // untouched) and no follow edge is created (a person's followers are owned by the follow
         // lifecycle, not Add/Remove).
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(add.Id!), out _));
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
         Assert.False(await _bPersistence.Follows.IsFollowingAsync(_bobActorIri, _aliceActorIri));
     }
 
@@ -171,7 +167,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
         Assert.Equal(401, statusCode.StatusCode);
 
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(add.Id!), out _));
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- Helpers ----------------------------------------------------------------------------

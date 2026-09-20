@@ -131,8 +131,8 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
         var follows = await _bPersistence.Communities.GetFollowsAsync(_communityIri);
         // The community follows alice after the follow is delivered.
         Assert.Contains(_aliceActorIri, follows);
-        // A follow of a community is not a membership grant: alice is not a member of the community.
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        // A follow of a community IS a membership grant (change 221: members are followers).
+        Assert.Contains(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
         // B stored the follow activity (the federation loop ran end-to-end).
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(follow.Id!), out _));
     }

@@ -51,8 +51,9 @@ internal static class CommunityContentRecorder
         // community IRI) so the feed filter includes it. The original activity is left unmodified.
         var taggedActivity = TagActivityForCommunity(activity, communityIri);
 
+        // Members are followers (change 221): the community's followers set is the membership.
         var memberIris = await persistence.Communities
-            .GetMembersAsync(communityIri, ct)
+            .GetFollowersAsync(communityIri, ct)
             .ConfigureAwait(false);
         foreach (var memberIri in memberIris)
         {

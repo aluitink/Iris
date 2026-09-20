@@ -94,7 +94,8 @@ public sealed class IntransitiveActivityHandlerTests
         await sut.DispatchAsync(new InboxDelivery(Recipient, read), read);
 
         // No member was added (a Read is not an Offer/Invite/Join); no like/block edge was recorded.
-        Assert.Empty(await persistence.Communities.GetMembersAsync(Recipient));
+        // Members are followers (change 221), so the followers set is the membership surface.
+        Assert.Empty(await persistence.Communities.GetFollowersAsync(Recipient));
         Assert.Empty(await persistence.Likes.GetLikedAsync(Actor));
     }
 
@@ -124,8 +125,10 @@ public sealed class IntransitiveActivityHandlerTests
         };
         await sut.DispatchAsync(new InboxDelivery(Recipient, offer), offer);
 
-        // The MembershipActivityHandler (forwarded to) added the invited actor to the member set.
-        Assert.True(await persistence.Communities.IsMemberAsync(Recipient, Actor));
+        // The MembershipActivityHandler (forwarded to) added the invited actor to the community's
+        // followers set (members are followers — change 221).
+        var followers = await persistence.Communities.GetFollowersAsync(Recipient);
+        Assert.Contains(Actor, followers);
     }
 
     // --- Foreign activity reaching the dispatch is a graceful no-op ------------------------

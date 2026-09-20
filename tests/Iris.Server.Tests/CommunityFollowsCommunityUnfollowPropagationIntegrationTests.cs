@@ -211,9 +211,7 @@ public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests
                 return follows.Contains(_communityIri) && followers.Contains(_communityIri);
             },
             timeout: TimeSpan.FromSeconds(30));
-        Assert.True(
-            (await _bPersistence.Communities.GetFollowersAsync(_targetCommunityIri)).Contains(_communityIri),
-            "B should list the community C among D's followers before the un-follow.");
+        Assert.Contains(_communityIri, await _bPersistence.Communities.GetFollowersAsync(_targetCommunityIri));
 
         // Step 2a: publish the community's Undo(Follow) to the community's own outbox.
         var undo = BuildUndo(_communityIri, mintedFollowId!.Value);

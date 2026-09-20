@@ -99,7 +99,7 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
             "the created community's Group document must carry a publicKey extension (19.5.1 key minting)");
 
         // The community has no members yet (it was just created).
-        Assert.Empty(await _persistence.Communities.GetMembersAsync(communityIri));
+        Assert.Empty(await _persistence.Communities.GetFollowersAsync(communityIri));
     }
 
     // --- Re-creating the same community is idempotent (key is reused, not re-minted) ----------

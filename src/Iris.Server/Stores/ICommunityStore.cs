@@ -65,6 +65,18 @@ public interface ICommunityStore
     /// <returns>A task that completes with the member IRIs (empty when the community does not exist or has no members).</returns>
     public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default);
 
+    /// <summary>
+    /// One-time data migration (change 221, "Unify Members with Followers"): re-keys every existing
+    /// community-membership edge into the community's followers set (adding the inverse follower edge
+    /// and removing the membership edge), so a community's single relationship set is its followers.
+    /// Idempotent — safe to run at every startup; when no membership edges remain it is a no-op.
+    /// Implementations without persisted membership edges (in-memory, file-backed test stores) may
+    /// complete without doing anything.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the migration has run (or was not applicable).</returns>
+    public Task MigrateMembersToFollowersAsync(CancellationToken ct = default);
+
     // --- Pending join requests (19.5.2) ---
     //
     // When a community sets the manuallyApprovesMembers extension flag (analogous to

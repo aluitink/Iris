@@ -136,5 +136,10 @@ public static class EntityFrameworkPersistenceExtensions
 
         await using var db = new IrisDbContext(new DbContextOptionsBuilder<IrisDbContext>().UseNpgsql(connectionString).Options);
         await db.Database.MigrateAsync(ct).ConfigureAwait(false);
+
+        // One-time data migration (change 221): re-key legacy community-membership edges into the
+        // community's followers set (members are followers). Idempotent — a no-op once no membership
+        // edges remain.
+        await provider.Communities.MigrateMembersToFollowersAsync(ct).ConfigureAwait(false);
     }
 }

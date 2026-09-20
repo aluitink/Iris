@@ -219,7 +219,7 @@ public sealed class LikeActivityHandlerTests
         var persistence = new InMemoryPersistenceProvider();
         persistence.Communities.PutCommunityAsync(BuildCommunity()).GetAwaiter().GetResult();
         SeedLocalActor(persistence, LocalMember);
-        persistence.Communities.AddMemberAsync(Community, LocalMember).GetAwaiter().GetResult();
+        persistence.Communities.AddFollowerAsync(Community, LocalMember).GetAwaiter().GetResult();
         return (persistence, LocalMember);
     }
 

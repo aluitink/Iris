@@ -76,8 +76,9 @@ public sealed class TestHelperTests
 
         TestSeeder.AddMember(persistence, communityIri, aliceIri);
 
-        var isMember = await persistence.Communities.IsMemberAsync(communityIri, aliceIri, CancellationToken.None);
-        Assert.True(isMember);
+        // Members are followers (change 221): membership is the community's followers set.
+        var followers = await persistence.Communities.GetFollowersAsync(communityIri, CancellationToken.None);
+        Assert.Contains(aliceIri, followers);
     }
 
     [Fact]

@@ -151,9 +151,7 @@ public sealed class CommunityGatedPeeringIntegrationTests : IAsyncLifetime
         Assert.True(
             (await _aPersistence.Communities.GetFollowsAsync(_irisCommunityIri)).Contains(_lumenCommunityIri),
             "A should record the community's follows edge (iris → lumen) after B delivered the Follow, even when gated.");
-        Assert.True(
-            (await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri)).Contains(_lumenCommunityIri),
-            "A should record the community's followers edge (lumen → iris) after B delivered the Follow, even when gated.");
+        Assert.Contains(_lumenCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri));
 
         // ... but NO auto-Accept was delivered back to B (the gate suppressed it). Give the (non-existent)
         // delivery a short window and assert it never arrives — the non-vacuous "held" signal.
@@ -186,9 +184,7 @@ public sealed class CommunityGatedPeeringIntegrationTests : IAsyncLifetime
         Assert.True(
             (await _aPersistence.Communities.GetFollowsAsync(_irisCommunityIri)).Contains(_lumenCommunityIri),
             "A's follows edge (iris → lumen) should remain recorded after the operator's Accept (idempotent).");
-        Assert.True(
-            (await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri)).Contains(_lumenCommunityIri),
-            "A's followers edge (lumen → iris) should remain recorded after the operator's Accept (idempotent).");
+        Assert.Contains(_lumenCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri));
     }
 
     // --- Helpers --------------------------------------------------------------------------

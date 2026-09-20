@@ -96,7 +96,7 @@ public sealed class LemmyDislikeInboundIntegrationTests : IDisposable
             Id = communityIri.Value,
             Name = ["interop"],
         }, CancellationToken.None);
-        await _persistence.Communities.AddMemberAsync(communityIri, memberIri, CancellationToken.None);
+        await _persistence.Communities.AddFollowerAsync(communityIri, memberIri, CancellationToken.None);
 
         var postIri = new Iri($"https://{Host}/ap/v1/objects/post-{Guid.NewGuid():N}");
         await _persistence.Objects.PutObjectAsync(new Page

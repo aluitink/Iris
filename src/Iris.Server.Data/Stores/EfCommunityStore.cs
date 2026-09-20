@@ -107,6 +107,46 @@ public sealed class EfCommunityStore : ICommunityStore
         => await _edges.OutTargetsAsync(EdgeKind.CommunityMember, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
+    public async Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        // One-time re-key (change 221): each membership edge community → member becomes the inverse
+        // follower edge member → community, and the membership edge is dropped. The follower edge is
+        // added first so a mid-migration failure never loses a relationship (the unique index keeps a
+        // re-run idempotent).
+        var memberships = await db.Set<EdgeEntity>()
+            .Where(e => e.Kind == EdgeKind.CommunityMember)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        foreach (var membership in memberships)
+        {
+            ct.ThrowIfCancellationRequested();
+            var communityIri = membership.Source;
+            var memberIri = membership.Target;
+
+            var followerExists = await db.Set<EdgeEntity>()
+                .AnyAsync(e => e.Kind == EdgeKind.CommunityFollower && e.Source == memberIri && e.Target == communityIri, ct)
+                .ConfigureAwait(false);
+            if (!followerExists)
+            {
+                db.Set<EdgeEntity>().Add(new EdgeEntity
+                {
+                    Kind = EdgeKind.CommunityFollower,
+                    Source = memberIri,
+                    Target = communityIri,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                });
+            }
+
+            db.Remove(membership);
+        }
+
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public Task<bool> AddJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
         => _edges.AddIfNewAsync(EdgeKind.CommunityJoinRequest, communityIri.Value, actorIri.Value, ct);
 

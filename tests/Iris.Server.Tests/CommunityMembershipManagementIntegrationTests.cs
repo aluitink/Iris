@@ -90,7 +90,7 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
     public async Task Add_SignedByCommunity_DeliveredToOwnInbox_AddsMemberAndReflectsInFeedAndMembers()
     {
         // Preconditions: alice is a seeded local actor (with a post) but NOT yet a member.
-        Assert.False(await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri));
+        Assert.DoesNotContain(_aliceIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
         Assert.True(
             !(await FeedItemIdsAsync()).Contains($"{_aliceIri.Value}/activities/create-1"),
             "alice's post should not be in the feed before the Add");
@@ -111,9 +111,7 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
             "the community's Add should be stored after the signature validated");
 
         // … and alice is now a member (the 19.5.2 gate passed because actor == community).
-        Assert.True(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
-            "alice should be a member after the community-signed Add (19.5.2 self-management)");
+        Assert.Contains(_aliceIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         // The community feed now reflects membership: alice's post appears (the feed is the union of the
         // local members' outbox activities). The post-mutation read uses ?refresh=true to bypass the
@@ -135,7 +133,7 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
     {
         // Seed alice as an existing member (as a prior community-managed Add would have recorded her).
         TestSeeder.AddMember(_persistence, _communityIri, _aliceIri);
-        Assert.True(await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri));
+        Assert.Contains(_aliceIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
         Assert.True(
             (await FeedItemIdsAsync()).Contains($"{_aliceIri.Value}/activities/create-1"),
             "alice's post should be in the feed while she is a member");
@@ -151,9 +149,7 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
             "the community's Remove should be stored after the signature validated");
 
         // … and alice is no longer a member (the 19.5.2 gate passed because actor == community).
-        Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
-            "alice should no longer be a member after the community-signed Remove (19.5.2 self-management)");
+        Assert.DoesNotContain(_aliceIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         // The community feed no longer reflects her: her post disappears (the post-mutation read uses
         // ?refresh=true to bypass the collection-page cache, 19.5.5).
@@ -185,9 +181,7 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
             "the Add should be stored (the signature was valid)");
 
         // … but the membership was NOT modified (the actor is not the community).
-        Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
-            "an Add whose actor is not the community must not add a member (19.5.2 self-management gate)");
+        Assert.DoesNotContain(_aliceIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- Helpers ----------------------------------------------------------------------

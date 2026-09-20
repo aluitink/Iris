@@ -140,9 +140,7 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAs
             "B should have recorded the alice → bob follow edge after A delivered the signed Follow.");
 
         // alice is listed among bob's followers (the inverse direction).
-        Assert.True(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
-            "B should list alice among bob's followers after A delivered the signed Follow.");
+        Assert.Contains(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
 
         // B stored the original Follow in its activity store (the Undo's resolution depends on this).
         Assert.True(
@@ -204,9 +202,7 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAs
             "B should remove the alice → bob follow edge after A's server delivered the signed Undo.");
 
         // alice is no longer listed among bob's followers (the inverse direction).
-        Assert.False(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
-            "B should no longer list alice among bob's followers after the un-follow.");
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
     }
 
     // --- Helpers --------------------------------------------------------------------------

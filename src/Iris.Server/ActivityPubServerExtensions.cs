@@ -4478,11 +4478,11 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Records a community <see cref="Add"/> (membership self-management or settings change): adds the
-    /// <c>object</c> (the member) to the community's member set via <see cref="ICommunityStore.AddMemberAsync"/>,
-    /// or — when the <c>object</c> is the community's own document carrying the
-    /// <c>manuallyApprovesMembers</c> extension — sets that flag on the stored community (AP-native
-    /// settings change, change 217). The actor == community gate is applied by the caller, so this
-    /// records unconditionally.
+    /// <c>object</c> (the member) to the community's followers set via
+    /// <see cref="ICommunityStore.AddFollowerAsync"/> (members are followers — change 221), or — when the
+    /// <c>object</c> is the community's own document carrying the <c>manuallyApprovesMembers</c> extension —
+    /// sets that flag on the stored community (AP-native settings change, change 217). The actor ==
+    /// community gate is applied by the caller, so this records unconditionally.
     /// </summary>
     private static async Task RecordCommunityAddAsync(
         IPersistenceProvider persistence,
@@ -4504,17 +4504,17 @@ public static class ActivityPubServerExtensions
                 return;
             }
 
-            await persistence.Communities.AddMemberAsync(communityIri, member, ct).ConfigureAwait(false);
+            await persistence.Communities.AddFollowerAsync(communityIri, member, ct).ConfigureAwait(false);
         }
     }
 
     /// <summary>
     /// Records a community <see cref="Remove"/> (membership self-management or settings change): removes
-    /// the <c>object</c> (the member) from the community's member set via
-    /// <see cref="ICommunityStore.RemoveMemberAsync"/>, or — when the <c>object</c> is the community's own
-    /// document carrying the <c>manuallyApprovesMembers</c> extension — clears that flag on the stored
-    /// community (AP-native settings change, change 217). The actor == community gate is applied by the
-    /// caller, so this records unconditionally.
+    /// the <c>object</c> (the member) from the community's followers set via
+    /// <see cref="ICommunityStore.RemoveFollowerAsync"/> (members are followers — change 221), or — when the
+    /// <c>object</c> is the community's own document carrying the <c>manuallyApprovesMembers</c> extension —
+    /// clears that flag on the stored community (AP-native settings change, change 217). The actor ==
+    /// community gate is applied by the caller, so this records unconditionally.
     /// </summary>
     private static async Task RecordCommunityRemoveAsync(
         IPersistenceProvider persistence,
@@ -4535,7 +4535,7 @@ public static class ActivityPubServerExtensions
                 return;
             }
 
-            await persistence.Communities.RemoveMemberAsync(communityIri, member, ct).ConfigureAwait(false);
+            await persistence.Communities.RemoveFollowerAsync(communityIri, member, ct).ConfigureAwait(false);
         }
     }
 
@@ -4746,11 +4746,11 @@ public static class ActivityPubServerExtensions
     /// <summary>
     /// Records the local join decision for an <see cref="Accept"/>/<see cref="Reject"/> published to a
     /// community's outbox whose <c>object</c> references a <see cref="Join"/> (19.5.2). For an
-    /// <see cref="Accept"/> the requesting actor is added as a member and the pending join request is
-    /// removed; for a <see cref="Reject"/> the pending join request is removed (no membership granted).
-    /// Returns the requesting actor (the recipient of the server→server delivery). Returns
-    /// <see langword="null"/> when the referenced join is unknown or the requesting actor is not
-    /// resolvable.
+    /// <see cref="Accept"/> the requesting actor is added to the community's followers set (members are
+    /// followers — change 221) and the pending join request is removed; for a <see cref="Reject"/> the
+    /// pending join request is removed (no membership granted). Returns the requesting actor (the
+    /// recipient of the server→server delivery). Returns <see langword="null"/> when the referenced join
+    /// is unknown or the requesting actor is not resolvable.
     /// </summary>
     private static async Task<Iri?> RecordJoinDecisionLocalAsync(
         IPersistenceProvider persistence,
@@ -4778,7 +4778,7 @@ public static class ActivityPubServerExtensions
         if (accept)
         {
             await persistence.Communities
-                .AddMemberAsync(communityIri, joinerIri.Value, ct)
+                .AddFollowerAsync(communityIri, joinerIri.Value, ct)
                 .ConfigureAwait(false);
         }
 
@@ -9605,7 +9605,8 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Serves the community's member actor IRIs as a paged collection for <c>GET /ap/v1/c/{name}/members</c>.
-    /// Page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
+    /// Members are followers (change 221), so the collection is served from the community's followers
+    /// set. Page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
     /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>), paged via <c>?page</c>/<c>?limit</c>.
     /// </summary>
     private static Task<IResult> CommunityMembersHandler(
@@ -9623,7 +9624,7 @@ public static class ActivityPubServerExtensions
             persistence,
             optionsAccessor,
             collectionCache,
-            async communityIri => ActorIrisToLinks((await persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false)).ToList()),
+            async communityIri => ActorIrisToLinks((await persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false)).ToList()),
             ct);
     }
 
@@ -10027,8 +10028,10 @@ public static class ActivityPubServerExtensions
             return Results.BadRequest();
         }
 
-        // The member must actually be a member (a no-op removal of a non-member is 404).
-        if (!await persistence.Communities.IsMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false))
+        // The member must actually be a member (members are followers — change 221); a no-op removal
+        // of a non-member is 404.
+        var members = await persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false);
+        if (!members.Contains(memberIri))
         {
             return Results.NotFound();
         }
@@ -10072,11 +10075,11 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
-        // Remove the membership edge.
-        await persistence.Communities.RemoveMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false);
+        // Remove the membership (the follower edge — change 221).
+        await persistence.Communities.RemoveFollowerAsync(communityIri, memberIri, ct).ConfigureAwait(false);
 
-        // Invalidate the members collection page cache so the next read reflects the removal.
-        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+        // Invalidate the followers collection page cache so the next read reflects the removal.
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
 
         return Results.NoContent();
     }
@@ -10116,7 +10119,8 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Accepts a pending join request (POST /local/v1/c/{name}/requests/{**actorIri}/accept).
-    /// Creator-only: the actor is added as a member and the pending request is removed.
+    /// Creator-only: the actor is added to the community's followers set (members are followers —
+    /// change 221) and the pending request is removed.
     /// Returns 204 No Content on success; 404 when the community or request is unknown.
     /// </summary>
     private static async Task<IResult> CommunityAcceptJoinRequestHandler(
@@ -10155,9 +10159,9 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        await persistence.Communities.AddMemberAsync(communityIri, iri, ct).ConfigureAwait(false);
+        await persistence.Communities.AddFollowerAsync(communityIri, iri, ct).ConfigureAwait(false);
         await persistence.Communities.RemoveJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false);
-        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
 
         return Results.NoContent();
     }
@@ -10285,8 +10289,9 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        // The actor must be a member before they can be promoted.
-        if (!await persistence.Communities.IsMemberAsync(communityIri, iri, ct).ConfigureAwait(false))
+        // The actor must be a member (members are followers — change 221) before they can be promoted.
+        var promotableMembers = await persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false);
+        if (!promotableMembers.Contains(iri))
         {
             return Results.NotFound();
         }

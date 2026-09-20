@@ -93,7 +93,7 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
 
         // B's MembershipActivityHandler added the invited actor to the community's member set.
         Assert.True(
-            await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
+            await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri),
             "the invited actor should be a member of the community after the Invite");
     }
 
@@ -103,8 +103,8 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
     public async Task Leave_SignedByActor_DeliveredToCommunity_RemovesMember()
     {
         // Seed alice as an existing member (as a prior Invite or a follow would have recorded her).
-        await _bPersistence.Communities.AddMemberAsync(_communityIri, _aliceActorIri);
-        Assert.True(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        await SeedMemberAsync(_bPersistence, _communityIri, _aliceActorIri);
+        Assert.True(await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri));
 
         var leave = BuildLeave(_aliceActorIri, _communityIri);
 
@@ -116,7 +116,7 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(leave.Id!), out var stored));
         Assert.IsType<Leave>(stored);
         Assert.False(
-            await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
+            await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri),
             "alice should no longer be a member of the community after the Leave");
     }
 
@@ -135,7 +135,7 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(join.Id!), out var stored));
         Assert.IsType<Join>(stored);
         Assert.True(
-            await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
+            await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri),
             "alice should be a member of the community after the Join");
     }
 
@@ -153,7 +153,7 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
         // The Invite is stored (validated), but a person has no member set to add to. The recipient is
         // a person, so no community membership is recorded (the seeded community iris is untouched).
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(invite.Id!), out _));
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.False(await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri));
     }
 
     // --- An Invite signed by an unknown (unresolvable-key) actor is rejected -----------------
@@ -177,10 +177,26 @@ public sealed class MembershipFederationIntegrationTests : IDisposable
         Assert.Equal(401, result.StatusCode);
 
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(invite.Id!), out _));
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.False(await IsMemberAsync(_bPersistence, _communityIri, _aliceActorIri));
     }
 
     // --- Helpers ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Seeds a member of the community. Members are followers (change 221), so membership is seeded
+    /// through the community's followers set.
+    /// </summary>
+    private static Task SeedMemberAsync(IPersistenceProvider persistence, Iri communityIri, Iri actorIri)
+        => persistence.Communities.AddFollowerAsync(communityIri, actorIri);
+
+    /// <summary>
+    /// Reports whether the actor is a member of the community (members are followers — change 221).
+    /// </summary>
+    private static async Task<bool> IsMemberAsync(IPersistenceProvider persistence, Iri communityIri, Iri actorIri)
+    {
+        var followers = await persistence.Communities.GetFollowersAsync(communityIri);
+        return followers.Contains(actorIri);
+    }
 
     private static IActivityPubClient BuildDeliveryClient(
         Iri actorIri, KeyPair key, HttpMessageHandler handler)

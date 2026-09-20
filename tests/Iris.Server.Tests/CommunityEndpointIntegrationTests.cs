@@ -175,19 +175,22 @@ public sealed class CommunityEndpointIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Followers_IsEmpty_WhenNoActorFollowsTheCommunity()
+    public async Task Followers_ContainsTheSeededMembers_MembersAreFollowers()
     {
-        // A community with no recorded followers (no actor has followed it) serves an empty followers
-        // collection. (F-24: the followers set exists and is populated by the FollowActivityHandler when
-        // an actor follows the community; here no follow has been recorded, so it is empty.)
+        // Change 221 (members are followers): the community's followers collection is the membership
+        // set, so the two seeded members (alice, bob) are the community's followers.
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/followers");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
-        Assert.Empty(JsonDoc.GetItems(doc.RootElement));
-        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        var followerIris = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToHashSet();
+        Assert.Equal(2, followerIris.Count);
+        Assert.Contains($"{_base}/ap/v1/u/{Alice}", followerIris);
+        Assert.Contains($"{_base}/ap/v1/u/{Bob}", followerIris);
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]
@@ -209,12 +212,15 @@ public sealed class CommunityEndpointIntegrationTests : IAsyncLifetime
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
 
-        // The follower IRIs are present (as bare IRI strings), and totalItems reflects the count.
+        // The two seeded members (alice, bob) are also followers (change 221: members are followers),
+        // so the collection holds the 2 seeded members + the 2 remote followers added here.
         var followerIris = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToHashSet();
-        Assert.Equal(2, followerIris.Count);
+        Assert.Equal(4, followerIris.Count);
+        Assert.Contains($"{_base}/ap/v1/u/{Alice}", followerIris);
+        Assert.Contains($"{_base}/ap/v1/u/{Bob}", followerIris);
         Assert.Contains(follower1.Value, followerIris);
         Assert.Contains(follower2.Value, followerIris);
-        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
+        Assert.Equal(4, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]

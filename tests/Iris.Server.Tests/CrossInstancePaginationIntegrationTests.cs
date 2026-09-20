@@ -208,7 +208,7 @@ public sealed class CrossInstancePaginationIntegrationTests : IAsyncLifetime
 
         // Add bob as a member of lumen (so the community has at least one member).
         var bobIri = new Iri($"https://{BHost}/ap/v1/u/bob");
-        _bPersistence.Communities.AddMemberAsync(LumenIri, bobIri).GetAwaiter().GetResult();
+        _bPersistence.Communities.AddFollowerAsync(LumenIri, bobIri).GetAwaiter().GetResult();
 
         // Record the peering edge: lumen follows alice (the community feed's peering branch
         // merges alice's outbox into the feed).

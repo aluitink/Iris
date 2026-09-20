@@ -84,16 +84,14 @@ public sealed class CommunityMembershipClientIntegrationTests : IDisposable
     public async Task AddMemberAsync_SignedAsCommunity_AddsMember()
     {
         // Preconditions: bob is a local actor but not yet a member.
-        Assert.False(await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri));
+        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         var result = await _client.AddMemberAsync(_communityIri, _bobIri);
         Assert.True(result.IsSuccess, $"the community-signed Add must be accepted (got {result.StatusCode})");
         Assert.Equal(202, result.StatusCode);
 
         // The 19.5.2 gate passed (actor == community): bob is now a member.
-        Assert.True(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri),
-            "bob should be a member after the community-signed AddMemberAsync (19.5.2 self-management)");
+        Assert.Contains(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- The client's RemoveMemberAsync removes the member ------------------------------
@@ -103,16 +101,14 @@ public sealed class CommunityMembershipClientIntegrationTests : IDisposable
     {
         // Seed bob as an existing member (as a prior AddMemberAsync would have recorded him).
         TestSeeder.AddMember(_persistence, _communityIri, _bobIri);
-        Assert.True(await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri));
+        Assert.Contains(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         var result = await _client.RemoveMemberAsync(_communityIri, _bobIri);
         Assert.True(result.IsSuccess, $"the community-signed Remove must be accepted (got {result.StatusCode})");
         Assert.Equal(202, result.StatusCode);
 
         // The 19.5.2 gate passed (actor == community): bob is no longer a member.
-        Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri),
-            "bob should no longer be a member after the community-signed RemoveMemberAsync (19.5.2 self-management)");
+        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- The full round-trip: add then remove, each recorded as a stored activity --------
@@ -120,13 +116,13 @@ public sealed class CommunityMembershipClientIntegrationTests : IDisposable
     [Fact]
     public async Task AddThenRemove_RoundTrip_EachOperationIsStoredAndMembershipToggles()
     {
-        Assert.False(await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri));
+        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         Assert.True((await _client.AddMemberAsync(_communityIri, _bobIri)).IsSuccess);
-        Assert.True(await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri));
+        Assert.Contains(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
 
         Assert.True((await _client.RemoveMemberAsync(_communityIri, _bobIri)).IsSuccess);
-        Assert.False(await _persistence.Communities.IsMemberAsync(_communityIri, _bobIri));
+        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     /// <summary>

@@ -84,8 +84,9 @@ public sealed class AddActivityHandler : ActivityHandlerBase<Add>
             return;
         }
 
+        // Members are followers (change 221): add the member to the community's followers set.
         await _persistence.Communities
-            .AddMemberAsync(delivery.RecipientIri, resolvedMember, ct)
+            .AddFollowerAsync(delivery.RecipientIri, resolvedMember, ct)
             .ConfigureAwait(false);
     }
 

@@ -120,6 +120,22 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         return Task.FromResult<IReadOnlyCollection<Iri>>(result);
     }
 
+    /// <inheritdoc/>
+    public Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        foreach (var (communityIri, members) in _members)
+        {
+            foreach (var member in members.Keys)
+            {
+                AddFollowerAsync(communityIri, member, ct).GetAwaiter().GetResult();
+                RemoveMemberAsync(communityIri, member, ct).GetAwaiter().GetResult();
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     // --- Pending join requests (19.5.2) ---
 
     /// <inheritdoc/>

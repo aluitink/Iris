@@ -101,7 +101,7 @@ public sealed class CommunityOutboundContentIntegrationTests : IAsyncLifetime
         TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
         TestSeeder.SeedCommunityWithExistingKey(bPersistence, BHost, Community, new Iri($"{communityIri.Value}#key-1"));
         // bob (B) is a member of the community iris (the community-attributed-post author).
-        bPersistence.Communities.AddMemberAsync(communityIri, bobIri).GetAwaiter().GetResult();
+        bPersistence.Communities.AddFollowerAsync(communityIri, bobIri).GetAwaiter().GetResult();
         // alice (A) follows bob (B): the follow edge is recorded in B's persistence (the home of bob's
         // follower set), so bob's community-attributed post federates to alice.
         bPersistence.Follows.RecordFollowAsync(aliceIri, bobIri).GetAwaiter().GetResult();

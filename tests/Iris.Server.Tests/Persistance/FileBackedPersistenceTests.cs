@@ -321,7 +321,7 @@ public sealed class FileBackedPersistenceTests : IDisposable
         using (var p1 = new FileBackedPersistenceProvider(dir))
         {
             await p1.Communities.PutCommunityAsync(community);
-            await p1.Communities.AddMemberAsync(communityIri, alice);
+            await p1.Communities.AddFollowerAsync(communityIri, alice);
             await p1.Communities.AddFollowerAsync(communityIri, alice);
         }
 
@@ -329,7 +329,7 @@ public sealed class FileBackedPersistenceTests : IDisposable
         var found = await p2.Communities.TryGetCommunityAsync(communityIri, out Group? c);
         Assert.True(found);
         Assert.IsType<Group>(c);
-        Assert.True(await p2.Communities.IsMemberAsync(communityIri, alice));
+        Assert.Contains(alice, await p2.Communities.GetFollowersAsync(communityIri));
         Assert.Contains(alice, await p2.Communities.GetFollowersAsync(communityIri));
         Assert.Contains(communityIri, await p2.Communities.GetAllCommunityIrisAsync());
     }
@@ -362,8 +362,8 @@ public sealed class FileBackedPersistenceTests : IDisposable
         {
             // The community document + its member/follow/follower edges.
             await p1.Communities.PutCommunityAsync(community);
-            await p1.Communities.AddMemberAsync(communityIri, alice);
-            await p1.Communities.AddMemberAsync(communityIri, bob);
+            await p1.Communities.AddFollowerAsync(communityIri, alice);
+            await p1.Communities.AddFollowerAsync(communityIri, bob);
             await p1.Communities.AddFollowAsync(communityIri, rayven);
             await p1.Communities.AddFollowerAsync(communityIri, remoteFollower);
 
@@ -392,7 +392,7 @@ public sealed class FileBackedPersistenceTests : IDisposable
         // The community document + the member set are intact.
         Assert.True(await p2.Communities.TryGetCommunityAsync(communityIri, out Group? c));
         Assert.IsType<Group>(c);
-        var members = (await p2.Communities.GetMembersAsync(communityIri)).ToList();
+        var members = (await p2.Communities.GetFollowersAsync(communityIri)).ToList();
         Assert.Contains(alice, members);
         Assert.Contains(bob, members);
 

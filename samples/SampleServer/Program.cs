@@ -505,8 +505,9 @@ public static partial class SampleServer
             "activity:Like",
         });
         persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
-        persistence.Communities.AddMemberAsync(communityIri, aliceIri).GetAwaiter().GetResult();
-        persistence.Communities.AddMemberAsync(communityIri, bobIri).GetAwaiter().GetResult();
+        // Members are followers (change 221): membership is recorded in the community's followers set.
+        persistence.Communities.AddFollowerAsync(communityIri, aliceIri).GetAwaiter().GetResult();
+        persistence.Communities.AddFollowerAsync(communityIri, bobIri).GetAwaiter().GetResult();
         if (remoteStandIn)
         {
             persistence.Communities.AddFollowAsync(communityIri, carlaIri).GetAwaiter().GetResult();

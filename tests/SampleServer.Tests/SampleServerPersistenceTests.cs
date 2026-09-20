@@ -121,7 +121,7 @@ public sealed class SampleServerPersistenceTests : IDisposable
         var communityIri = new Iri($"{baseString}/ap/v1/c/iris");
         Assert.True(await second.Communities.TryGetCommunityAsync(communityIri, out var community));
         Assert.NotNull(community);
-        var members = await second.Communities.GetMembersAsync(communityIri);
+        var members = await second.Communities.GetFollowersAsync(communityIri);
         Assert.Equal(2, members.Count);
 
         // The object store serves the seeded notes by IRI (the object view / search read path).

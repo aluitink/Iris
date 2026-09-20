@@ -85,18 +85,14 @@ public sealed class CommunityMemberRemovalIntegrationTests : IDisposable
         Assert.True(addResult.IsSuccess, $"AddMemberAsync must succeed (got {addResult.StatusCode})");
 
         // Verify bob is a member.
-        Assert.True(
-            await _persistence.Communities.IsMemberAsync(communityIri, _bobIri),
-            "bob should be a member before removal");
+        Assert.Contains(_bobIri, await _persistence.Communities.GetFollowersAsync(communityIri));
 
         // Alice (the creator) removes bob via the local endpoint.
         var status = await RemoveMemberAsync("devs", _bobIri, auth: "alice:alice-password");
         Assert.Equal(HttpStatusCode.NoContent, status);
 
         // Bob is no longer a member.
-        Assert.False(
-            await _persistence.Communities.IsMemberAsync(communityIri, _bobIri),
-            "bob should not be a member after removal");
+        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetFollowersAsync(communityIri));
     }
 
     // --- A non-creator cannot remove a member -------------------------------------------------
@@ -120,9 +116,7 @@ public sealed class CommunityMemberRemovalIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.Forbidden, status);
 
         // Bob is still a member.
-        Assert.True(
-            await _persistence.Communities.IsMemberAsync(communityIri, _bobIri),
-            "bob should still be a member after the failed removal");
+        Assert.Contains(_bobIri, await _persistence.Communities.GetFollowersAsync(communityIri));
     }
 
     // --- Removing a non-member returns 404 ----------------------------------------------------

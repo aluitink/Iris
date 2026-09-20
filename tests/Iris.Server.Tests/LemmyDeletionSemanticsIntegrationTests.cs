@@ -205,7 +205,7 @@ public sealed class LemmyDeletionSemanticsIntegrationTests
 
         // Register the moderator as a member of the remote Lemmy community. The
         // DeleteActivityHandler checks ICommunityStore.IsMemberAsync for the mod-removal path.
-        await persistence.Communities.AddMemberAsync(CommunityIri, RemoteModIri);
+        await persistence.Communities.AddFollowerAsync(CommunityIri, RemoteModIri);
 
         var handler = new DeleteActivityHandler(
             persistence,

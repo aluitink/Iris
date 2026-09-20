@@ -169,7 +169,7 @@ public sealed class CommunityModerationIntegrationTests : IAsyncLifetime
         // observe the fresh (post-mute) feed.
         Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password"));
         Assert.Contains(BobIri, await _persistence.Communities.GetMutesAsync(IrisIri));
-        Assert.True(await _persistence.Communities.IsMemberAsync(IrisIri, BobIri));
+        Assert.Contains(BobIri, await _persistence.Communities.GetFollowersAsync(IrisIri));
         Assert.DoesNotContain($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
 
         // Un-mute bob (?unmute=true, 204): the edge is removed and bob's content returns.

@@ -111,7 +111,7 @@ public sealed class AccountDeletionRetentionTests : IClassFixture<PostgresFixtur
         // Three edges that reference alice: bob follows alice; alice is a community member; bob likes
         // alice's first post.
         await p.Follows.RecordFollowAsync(bob, alice);
-        await p.Communities.AddMemberAsync(community, alice);
+        await p.Communities.AddFollowerAsync(community, alice);
         await p.Likes.RecordLikeAsync(bob, note1);
 
         // The account row linked to alice's actor.
@@ -202,7 +202,7 @@ public sealed class AccountDeletionRetentionTests : IClassFixture<PostgresFixtur
         // (c) the CommunityMember edge (alice in the community) is FILTERED from the member list
         //     (139.3-F2): a deleted local actor no longer surfaces as a community member, even though
         //     the underlying edge row still exists (the read path applies the deleted-actor filter).
-        var members = await p.Communities.GetMembersAsync(community);
+        var members = await p.Communities.GetFollowersAsync(community);
         Assert.DoesNotContain(alice, members);
 
         // (d) the Like edge (bob -> note1) survives.

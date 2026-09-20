@@ -103,6 +103,22 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
     public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
         => _file.SnapshotAsync(s => ToIris(SetMap(s, Members), communityIri.Value), ct);
 
+    /// <inheritdoc/>
+    public Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
+        => _file.WithStateAsync<object?>(s =>
+        {
+            foreach (var (communityIri, members) in SetMap(s, Members))
+            {
+                foreach (var member in members.ToList())
+                {
+                    AddUnique(SetMap(s, Followers), communityIri, member);
+                    RemoveValue(SetMap(s, Members), communityIri, member);
+                }
+            }
+
+            return null;
+        }, true, ct);
+
     // --- Pending join requests (19.5.2) ---
 
     /// <inheritdoc/>

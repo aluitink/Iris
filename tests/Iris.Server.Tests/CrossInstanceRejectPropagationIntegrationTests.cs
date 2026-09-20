@@ -164,9 +164,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IAsyncLifet
                     && await _bPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _);
             },
             timeout: TimeSpan.FromSeconds(30));
-        Assert.True(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
-            "B should list alice among bob's followers after A delivered the signed Follow.");
+        Assert.Contains(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
         Assert.True(
             await _bPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _),
             "B should have stored the original Follow in its activity store (the Reject resolves against it).");
@@ -181,9 +179,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IAsyncLifet
         await WaitForAsync(
             async () => !(await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
             timeout: TimeSpan.FromSeconds(30));
-        Assert.False(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
-            "B should remove its edge (bob's followers) when it publishes the Reject.");
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
 
         // Step 2c: A removed its local follow edge — the cross-instance Reject half. B server-delivered the
         // signed Reject to alice's inbox on A; A's RejectActivityHandler resolved the original Follow from
@@ -228,9 +224,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IAsyncLifet
                     && await _bPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _);
             },
             timeout: TimeSpan.FromSeconds(30));
-        Assert.True(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_communityIri),
-            "B should list the community C among bob's followers after A delivered the signed Follow.");
+        Assert.Contains(_communityIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
 
         // Step 2a: bob publishes Reject(follow) to his outbox on B.
         var reject = BuildReject(_bobActorIri, mintedFollowId!.Value);

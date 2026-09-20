@@ -147,8 +147,9 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
         Assert.True(await _aPersistence.Activities.TryGetActivityAsync(new Iri(follow.Id!), out _),
             "A should have stored the community follow delivered to the community inbox");
 
-        // The follow is not a membership grant: iris is not a member of lumen.
-        Assert.False(await _aPersistence.Communities.IsMemberAsync(_remoteCommunityIri, _localCommunityIri));
+        // The follow IS a membership grant (change 221: members are followers) — iris is a follower
+        // (member) of lumen.
+        Assert.Contains(_localCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_remoteCommunityIri));
     }
 
     // --- The follow edge is queryable via the community `following` collection ----
@@ -179,12 +180,13 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
 
         // F-24: A's community `followers` collection carries the follower's IRI (iris follows lumen) —
         // the FollowActivityHandler on A recorded the inverse edge (follower → community) in lumen's
-        // followers set when it processed the inbound Follow. B's community `followers` is empty (no
-        // actor has followed iris in this test).
+        // followers set when it processed the inbound Follow. B's community `followers` carries only
+        // its local member bob (change 221: members are followers) — iris did NOT follow lumen.
         var aFollowers = await CollectionItemsAsync(_aHttp, $"https://{AHost}/ap/v1/c/{RemoteCommunity}/followers");
         Assert.Contains(_localCommunityIri.Value, aFollowers);
         var bFollowers = await CollectionItemsAsync(_bHttp, $"https://{BHost}/ap/v1/c/{LocalCommunity}/followers");
-        Assert.Empty(bFollowers);
+        Assert.Contains(_bobActorIri.Value, bFollowers);
+        Assert.DoesNotContain(_localCommunityIri.Value, bFollowers);
     }
 
     // --- The community following/followers collections 404 for an unknown community

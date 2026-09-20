@@ -84,8 +84,9 @@ public sealed class RemoveActivityHandler : ActivityHandlerBase<Remove>
             return;
         }
 
+        // Members are followers (change 221): remove the member from the community's followers set.
         await _persistence.Communities
-            .RemoveMemberAsync(delivery.RecipientIri, resolvedMember, ct)
+            .RemoveFollowerAsync(delivery.RecipientIri, resolvedMember, ct)
             .ConfigureAwait(false);
     }
 

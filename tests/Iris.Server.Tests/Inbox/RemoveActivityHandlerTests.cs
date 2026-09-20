@@ -27,13 +27,13 @@ public sealed class RemoveActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await persistence.Communities.AddFollowerAsync(Community, Member);
         var sut = BuildHandler(persistence);
 
         var remove = BuildRemove(Community, Member);
         await sut.HandleAsync(new InboxDelivery(Community, remove), remove);
 
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.DoesNotContain(Member, await persistence.Communities.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -41,15 +41,15 @@ public sealed class RemoveActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await persistence.Communities.AddFollowerAsync(Community, Member);
         var sut = BuildHandler(persistence);
 
         // Removing an actor that is not a member is a no-op; the existing member is untouched.
         var remove = BuildRemove(Community, OtherMember);
         await sut.HandleAsync(new InboxDelivery(Community, remove), remove);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, OtherMember));
+        Assert.Contains(Member, await persistence.Communities.GetFollowersAsync(Community));
+        Assert.DoesNotContain(OtherMember, await persistence.Communities.GetFollowersAsync(Community));
     }
 
     // --- Recipient guards ------------------------------------------------------------------
@@ -76,7 +76,7 @@ public sealed class RemoveActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await persistence.Communities.AddFollowerAsync(Community, Member);
         var sut = BuildHandler(persistence);
 
         var remove = new Remove
@@ -87,7 +87,7 @@ public sealed class RemoveActivityHandlerTests
         await sut.HandleAsync(new InboxDelivery(Community, remove), remove);
 
         // The existing member is untouched (the malformed Remove is ignored).
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.Contains(Member, await persistence.Communities.GetFollowersAsync(Community));
     }
 
     // --- Guards ---------------------------------------------------------------------------

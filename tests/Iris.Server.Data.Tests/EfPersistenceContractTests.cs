@@ -214,10 +214,9 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
         Assert.True(await p.Communities.TryGetCommunityAsync(community, out var got));
         Assert.Equal(community.Value, got!.Id);
 
-        Assert.True(await p.Communities.AddMemberAsync(community, member));
-        Assert.False(await p.Communities.AddMemberAsync(community, member)); // idempotent
-        Assert.True(await p.Communities.IsMemberAsync(community, member));
-        Assert.Contains(member, await p.Communities.GetMembersAsync(community));
+        Assert.True(await p.Communities.AddFollowerAsync(community, member));
+        Assert.False(await p.Communities.AddFollowerAsync(community, member)); // idempotent
+        Assert.Contains(member, await p.Communities.GetFollowersAsync(community));
 
         Assert.True(await p.Communities.AddFollowAsync(community, follower));
         Assert.Contains(follower, await p.Communities.GetFollowsAsync(community));

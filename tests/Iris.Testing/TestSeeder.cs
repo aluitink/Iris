@@ -323,7 +323,7 @@ public static class TestSeeder
 
         if (memberIri is not null)
         {
-            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
+            persistence.Communities.AddFollowerAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
         }
 
         return (key, communityIri, keyId);
@@ -407,7 +407,7 @@ public static class TestSeeder
 
         if (memberIri is not null)
         {
-            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
+            persistence.Communities.AddFollowerAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
         }
 
         return (key, communityIri, keyId);
@@ -494,7 +494,7 @@ public static class TestSeeder
     /// <param name="memberIri">The local actor IRI to add as a member.</param>
     public static void AddMember(
         InMemoryPersistenceProvider persistence, Iri communityIri, Iri memberIri)
-        => persistence.Communities.AddMemberAsync(communityIri, memberIri).GetAwaiter().GetResult();
+        => persistence.Communities.AddFollowerAsync(communityIri, memberIri).GetAwaiter().GetResult();
 
     /// <summary>
     /// Appends a <see cref="Create"/> activity (wrapping a <see cref="Note"/>) to the actor's outbox.

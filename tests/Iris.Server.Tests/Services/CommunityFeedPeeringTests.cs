@@ -33,7 +33,7 @@ public sealed class CommunityFeedPeeringTests
         _followedCommunity = TestSeeder.SeedCommunity(_persistence, Host, "peer");
         _followedPerson = TestSeeder.SeedPerson(_persistence, Host, "friend");
 
-        _persistence.Communities.AddMemberAsync(_community, _member).GetAwaiter().GetResult();
+        _persistence.Communities.AddFollowerAsync(_community, _member).GetAwaiter().GetResult();
 
         // No local-actor resolver: every contributor is read from the local activity store.
         _feed = new CommunityFeedService(_persistence, _persistence.Communities);

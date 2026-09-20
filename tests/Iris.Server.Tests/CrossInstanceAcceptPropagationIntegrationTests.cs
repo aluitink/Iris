@@ -160,9 +160,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IAsyncLifet
                     && await _bPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _);
             },
             timeout: TimeSpan.FromSeconds(30));
-        Assert.True(
-            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Contains(_aliceActorIri),
-            "B should list alice among bob's followers after A delivered the signed Follow.");
+        Assert.Contains(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
         Assert.True(
             await _bPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _),
             "B should have stored the original Follow in its activity store (the Accept resolves against it).");

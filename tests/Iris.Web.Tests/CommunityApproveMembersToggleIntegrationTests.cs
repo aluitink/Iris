@@ -198,7 +198,7 @@ public sealed class CommunityApproveMembersToggleIntegrationTests : IDisposable
     }
 
     private async Task<bool> IsMemberAsync(Iri actorIri)
-        => await GetPersistence().Communities.IsMemberAsync(_communityIri, actorIri);
+        => (await GetPersistence().Communities.GetFollowersAsync(_communityIri)).Contains(actorIri);
 
     private async Task<bool> HasJoinRequestAsync(Iri actorIri)
         => await GetPersistence().Communities.HasJoinRequestAsync(_communityIri, actorIri);

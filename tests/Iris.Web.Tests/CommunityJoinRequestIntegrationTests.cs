@@ -147,7 +147,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         var persistence = GetPersistence();
-        Assert.True(await persistence.Communities.IsMemberAsync(communityIri, actorIri));
+        Assert.Contains(actorIri, await persistence.Communities.GetFollowersAsync(communityIri));
         Assert.False(await persistence.Communities.HasJoinRequestAsync(communityIri, actorIri));
     }
 
@@ -183,7 +183,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         var persistence = GetPersistence();
-        Assert.False(await persistence.Communities.IsMemberAsync(communityIri, actorIri));
+        Assert.DoesNotContain(actorIri, await persistence.Communities.GetFollowersAsync(communityIri));
         Assert.False(await persistence.Communities.HasJoinRequestAsync(communityIri, actorIri));
     }
 

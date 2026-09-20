@@ -43,7 +43,7 @@ public sealed class CommunityInboxActivityHandlerTests
     {
         var (persistence, _) = BuildWithLocalMember();
         await SeedLocalActorAsync(persistence, OtherLocalMember);
-        await persistence.Communities.AddMemberAsync(Community, OtherLocalMember);
+        await persistence.Communities.AddFollowerAsync(Community, OtherLocalMember);
         var sut = BuildHandler(persistence);
         var create = BuildCreate(RemoteAuthor);
 
@@ -113,7 +113,7 @@ public sealed class CommunityInboxActivityHandlerTests
         // members have their outboxes recorded here: the remote member's instance receives the content
         // via its own federation path.
         var (persistence, _) = BuildWithLocalMember();
-        await persistence.Communities.AddMemberAsync(Community, RemoteMember); // not seeded as local
+        await persistence.Communities.AddFollowerAsync(Community, RemoteMember); // not seeded as local
         var sut = BuildHandler(persistence);
         var create = BuildCreate(RemoteAuthor);
 
@@ -171,7 +171,7 @@ public sealed class CommunityInboxActivityHandlerTests
         var persistence = new InMemoryPersistenceProvider();
         persistence.Communities.PutCommunityAsync(BuildCommunity()).GetAwaiter().GetResult();
         SeedLocalActor(persistence, LocalMember);
-        persistence.Communities.AddMemberAsync(Community, LocalMember).GetAwaiter().GetResult();
+        persistence.Communities.AddFollowerAsync(Community, LocalMember).GetAwaiter().GetResult();
         return (persistence, LocalMember);
     }
 

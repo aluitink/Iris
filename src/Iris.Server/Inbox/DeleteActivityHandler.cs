@@ -288,7 +288,9 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
                 continue;
             }
 
-            if (await _persistence.Communities.IsMemberAsync(ci, actorIri, ct).ConfigureAwait(false))
+            // Members are followers (change 221): membership is the community's followers set.
+            var members = await _persistence.Communities.GetFollowersAsync(ci, ct).ConfigureAwait(false);
+            if (members.Contains(actorIri))
             {
                 return true;
             }

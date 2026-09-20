@@ -120,7 +120,8 @@ public sealed class CommunityFeedService : ICommunityFeedService
             return await SearchCommunityAsync(communityIri, query, ct).ConfigureAwait(false);
         }
 
-        var memberIris = await _persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
+        // Members are followers (change 221): the community's followers set is the membership.
+        var memberIris = await _persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false);
 
         // 19.5.4 (apply the community's moderation edges): a member the community has blocked or muted
         // is excluded from the feed (the moderation is applied on the community's side — a blocked/muted
@@ -339,7 +340,8 @@ public sealed class CommunityFeedService : ICommunityFeedService
         IReadOnlyList<IObjectOrLink> items,
         CancellationToken ct)
     {
-        var members = await _persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
+        // Members are followers (change 221): the backfill is recorded in each follower's outbox.
+        var members = await _persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false);
         if (members.Count == 0)
         {
             return;

@@ -7,8 +7,8 @@ namespace Iris.Server.Inbox;
 /// Handles the ActivityStreams community-membership primitives <see cref="Offer"/>, <see cref="Invite"/>,
 /// <see cref="Join"/>, and <see cref="Leave"/> (F-16): an alternate membership lifecycle for a local
 /// <see cref="Group"/> (community) that a server may use instead of the <see cref="Follow"/>-based
-/// membership Iris otherwise records (F-09 / <see cref="AddActivityHandler"/> /
-/// <see cref="RemoveActivityHandler"/>).
+/// membership Iris otherwise records (F-09 / <see cref="FollowActivityHandler"/> /
+/// <see cref="UndoActivityHandler"/>).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -20,14 +20,20 @@ namespace Iris.Server.Inbox;
 /// </para>
 /// <list type="bullet">
 /// <item><see cref="Offer"/> — the activity's <c>object</c> (the invited actor) is added to the
-/// recipient community's member set (an invitation is accepted on receipt).</item>
+/// recipient community's followers set (an invitation is accepted on receipt).</item>
 /// <item><see cref="Invite"/> — the activity's <c>object</c> (the invited actor) is added to the
-/// recipient community's member set (an invitation is accepted on receipt).</item>
+/// recipient community's followers set (an invitation is accepted on receipt).</item>
 /// <item><see cref="Join"/> — the activity's <c>object</c> (the joining actor) is added to the
-/// recipient community's member set (the actor's declaration of membership).</item>
+/// recipient community's followers set (the actor's declaration of membership).</item>
 /// <item><see cref="Leave"/> — the activity's <c>object</c> (the leaving actor) is removed from the
-/// recipient community's member set (the actor's declaration of departure).</item>
+/// recipient community's followers set (the actor's declaration of departure).</item>
 /// </list>
+/// <para>
+/// <strong>Members are followers.</strong> A community keeps a single relationship set — its followers
+/// (change 221, "Unify Members with Followers"). A <c>Join</c>/<c>Leave</c> therefore records the same
+/// edge a <c>Follow</c> of the community would (see <see cref="FollowActivityHandler"/>), so the
+/// membership state is shared with the community's <c>followers</c> collection and its unified feed.
+/// </para>
 /// <para>
 /// <strong>Recipient is the community (the membership's owner).</strong> A membership activity is
 /// delivered to the <em>community whose membership it changes</em> — here, the community (the
@@ -47,8 +53,8 @@ namespace Iris.Server.Inbox;
 /// interprets the four membership types — and any other activity that no more specific handler covers.
 /// </para>
 /// <para>
-/// <strong>Idempotent.</strong> <see cref="ICommunityStore.AddMemberAsync"/> and
-/// <see cref="ICommunityStore.RemoveMemberAsync"/> are idempotent, so a re-delivered activity
+/// <strong>Idempotent.</strong> <see cref="ICommunityStore.AddFollowerAsync"/> and
+/// <see cref="ICommunityStore.RemoveFollowerAsync"/> are idempotent, so a re-delivered activity
 /// (at-least-once delivery, C-07) is safe to re-apply.
 /// </para>
 /// </remarks>
@@ -101,8 +107,8 @@ public sealed class MembershipActivityHandler : IActivityHandler
     }
 
     /// <summary>
-    /// Adds the activity's <c>object</c> to the recipient community's member set (for <see cref="Offer"/>,
-    /// <see cref="Invite"/>, and <see cref="Join"/>). When the community has
+    /// Adds the activity's <c>object</c> to the recipient community's followers set (for
+    /// <see cref="Offer"/>, <see cref="Invite"/>, and <see cref="Join"/>). When the community has
     /// <c>manuallyApprovesMembers</c> set and the activity is a <see cref="Join"/>, the request is
     /// recorded as pending instead of granting membership immediately (19.5.2).
     /// </summary>
@@ -141,13 +147,14 @@ public sealed class MembershipActivityHandler : IActivityHandler
             return;
         }
 
+        // Members are followers (change 221): record the same edge a Follow of the community would.
         await _persistence.Communities
-            .AddMemberAsync(delivery.RecipientIri, resolvedMember, ct)
+            .AddFollowerAsync(delivery.RecipientIri, resolvedMember, ct)
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Removes the activity's <c>object</c> from the recipient community's member set (for
+    /// Removes the activity's <c>object</c> from the recipient community's followers set (for
     /// <see cref="Leave"/>).
     /// </summary>
     private async Task RemoveMemberAsync(InboxDelivery delivery, Leave leave, CancellationToken ct)
@@ -164,7 +171,7 @@ public sealed class MembershipActivityHandler : IActivityHandler
         }
 
         await _persistence.Communities
-            .RemoveMemberAsync(delivery.RecipientIri, memberIri.Value, ct)
+            .RemoveFollowerAsync(delivery.RecipientIri, memberIri.Value, ct)
             .ConfigureAwait(false);
     }
 

@@ -102,7 +102,7 @@ public sealed class LemmyLikeInboundIntegrationTests : IDisposable
             Id = communityIri.Value,
             Name = ["interop"],
         }, CancellationToken.None);
-        await _persistence.Communities.AddMemberAsync(communityIri, memberIri, CancellationToken.None);
+        await _persistence.Communities.AddFollowerAsync(communityIri, memberIri, CancellationToken.None);
 
         // A synced post (a Page) in the community.
         var postIri = new Iri($"https://{Host}/ap/v1/objects/post-{Guid.NewGuid():N}");

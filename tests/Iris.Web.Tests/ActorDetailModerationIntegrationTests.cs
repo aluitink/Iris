@@ -213,7 +213,7 @@ public sealed class ActorDetailModerationIntegrationTests : IDisposable
         Assert.True(result.IsSuccess, $"accept should succeed, got HTTP {(int)result.StatusCode}");
 
         var persistence = GetPersistence();
-        Assert.True(await persistence.Communities.IsMemberAsync(_communityIri, joiner));
+        Assert.Contains(joiner, await persistence.Communities.GetFollowersAsync(_communityIri));
         Assert.False(await persistence.Communities.HasJoinRequestAsync(_communityIri, joiner));
     }
 
@@ -228,7 +228,7 @@ public sealed class ActorDetailModerationIntegrationTests : IDisposable
         Assert.True(result.IsSuccess, $"reject should succeed, got HTTP {(int)result.StatusCode}");
 
         var persistence = GetPersistence();
-        Assert.False(await persistence.Communities.IsMemberAsync(_communityIri, joiner));
+        Assert.DoesNotContain(joiner, await persistence.Communities.GetFollowersAsync(_communityIri));
         Assert.False(await persistence.Communities.HasJoinRequestAsync(_communityIri, joiner));
     }
 

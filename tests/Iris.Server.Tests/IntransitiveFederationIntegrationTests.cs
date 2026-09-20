@@ -93,7 +93,7 @@ public sealed class IntransitiveFederationIntegrationTests : IDisposable
 
         // The Read is an acknowledgment of receipt — no persistent state is changed (no community member
         // is added, no like/block edge is recorded). The seeded community is untouched.
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
         Assert.Empty(await _bPersistence.Likes.GetLikedAsync(_aliceActorIri));
     }
 
@@ -117,7 +117,7 @@ public sealed class IntransitiveFederationIntegrationTests : IDisposable
 
         // The Travel is an acknowledgment of receipt — no community member is added (it is not an
         // Offer/Invite/Join) and no like/block edge is recorded.
-        Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Communities.GetFollowersAsync(_communityIri));
     }
 
     // --- A Read signed by an unknown (unresolvable-key) actor is rejected -------------------

@@ -89,14 +89,14 @@ public sealed class DeletedActorEdgeFilterIntegrationTests
         var community = new Iri($"https://{Local}/c/community-1");
 
         PutActor(p, deleted, "Deleted");
-        await p.Communities.AddMemberAsync(community, deleted);
-        await p.Communities.AddMemberAsync(community, remote);
+        await p.Communities.AddFollowerAsync(community, deleted);
+        await p.Communities.AddFollowerAsync(community, remote);
 
-        Assert.Contains(deleted, await p.Communities.GetMembersAsync(community));
+        Assert.Contains(deleted, await p.Communities.GetFollowersAsync(community));
 
         Assert.True(await p.Actors.RemoveActorAsync(deleted));
 
-        var members = await p.Communities.GetMembersAsync(community);
+        var members = await p.Communities.GetFollowersAsync(community);
         Assert.DoesNotContain(deleted, members);
         Assert.Contains(remote, members);
     }

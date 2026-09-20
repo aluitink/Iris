@@ -195,7 +195,7 @@ public sealed class SampleServerFederationTests : IDisposable
         var follows = await _persistence.Communities.GetFollowsAsync(communityIri);
         Assert.Contains(carla, follows);
 
-        var members = await _persistence.Communities.GetMembersAsync(communityIri);
+        var members = await _persistence.Communities.GetFollowersAsync(communityIri);
         Assert.Contains(ActorIri("alice"), members);
         Assert.Contains(ActorIri(SampleServer.BobHandle), members);
     }

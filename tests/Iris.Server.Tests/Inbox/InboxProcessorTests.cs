@@ -76,7 +76,7 @@ public sealed class InboxProcessorTests
         // is the remote follower and is NOT a member.
         var localMember = new Iri("https://b.domain.local/ap/v1/u/bob");
         SeedLocalActor(persistence, localMember);
-        await persistence.Communities.AddMemberAsync(communityIri, localMember);
+        await persistence.Communities.AddFollowerAsync(communityIri, localMember);
 
         var (queue, processor) = BuildProcessorWithFollowHandler(persistence);
         var follow = BuildFollow(FollowerIri, communityIri);
@@ -90,9 +90,10 @@ public sealed class InboxProcessorTests
         // The follow is recorded in the community's follows set (the community follows alice).
         Assert.Contains(FollowerIri, await persistence.Communities.GetFollowsAsync(communityIri));
 
-        // A follow of a community is NOT a membership grant: alice is not a member, and the
-        // person-follow store has no edge (the community is not a Person in the actor store).
-        Assert.False(await persistence.Communities.IsMemberAsync(communityIri, FollowerIri));
+        // A follow of a community IS a membership grant (change 221: members are followers) — alice
+        // is recorded as a follower (member) of the community. The person-follow store still has no
+        // edge (the community is not a Person in the actor store).
+        Assert.Contains(FollowerIri, await persistence.Communities.GetFollowersAsync(communityIri));
         Assert.False(await persistence.Follows.IsFollowingAsync(FollowerIri, communityIri));
 
         // An Accept is queued to the follower's inbox, signed as the community.

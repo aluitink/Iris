@@ -240,7 +240,7 @@ public sealed class CrossInstanceSearchDiscoverabilityIntegrationTests : IAsyncL
             _bPersistence, BHost, Lumen, new Iri($"{LumenIri.Value}#key-1"));
 
         var bobIri = new Iri($"https://{BHost}/ap/v1/u/bob");
-        _bPersistence.Communities.AddMemberAsync(LumenIri, bobIri).GetAwaiter().GetResult();
+        _bPersistence.Communities.AddFollowerAsync(LumenIri, bobIri).GetAwaiter().GetResult();
         _bPersistence.Communities.AddFollowAsync(LumenIri, AliceIri).GetAwaiter().GetResult();
 
         // A local post on B (authored by bob, tagged to lumen) that does NOT contain

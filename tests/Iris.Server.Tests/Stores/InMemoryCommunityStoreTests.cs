@@ -92,10 +92,10 @@ public class InMemoryCommunityStoreTests
         var sut = new InMemoryCommunityStore();
         await sut.PutCommunityAsync(NewCommunity("https://a.test/ap/v1/c/iris"));
 
-        var added = await sut.AddMemberAsync(Community, Alice);
+        var added = await sut.AddFollowerAsync(Community, Alice);
 
         Assert.True(added);
-        Assert.True(await sut.IsMemberAsync(Community, Alice));
+        Assert.Contains(Alice, await sut.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -103,25 +103,25 @@ public class InMemoryCommunityStoreTests
     {
         var sut = new InMemoryCommunityStore();
 
-        var first = await sut.AddMemberAsync(Community, Alice);
-        var second = await sut.AddMemberAsync(Community, Alice);
+        var first = await sut.AddFollowerAsync(Community, Alice);
+        var second = await sut.AddFollowerAsync(Community, Alice);
 
         Assert.True(first);
         Assert.False(second);
         // A single membership despite two adds.
-        Assert.Single(await sut.GetMembersAsync(Community));
+        Assert.Single(await sut.GetFollowersAsync(Community));
     }
 
     [Fact]
     public async Task RemoveMember_Present_ReturnsTrueAndRemoves()
     {
         var sut = new InMemoryCommunityStore();
-        await sut.AddMemberAsync(Community, Alice);
+        await sut.AddFollowerAsync(Community, Alice);
 
-        var removed = await sut.RemoveMemberAsync(Community, Alice);
+        var removed = await sut.RemoveFollowerAsync(Community, Alice);
 
         Assert.True(removed);
-        Assert.False(await sut.IsMemberAsync(Community, Alice));
+        Assert.Empty(await sut.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public class InMemoryCommunityStoreTests
     {
         var sut = new InMemoryCommunityStore();
 
-        var removed = await sut.RemoveMemberAsync(Community, Alice);
+        var removed = await sut.RemoveFollowerAsync(Community, Alice);
 
         Assert.False(removed);
     }
@@ -139,7 +139,7 @@ public class InMemoryCommunityStoreTests
     {
         var sut = new InMemoryCommunityStore();
 
-        Assert.False(await sut.IsMemberAsync(Community, Alice));
+        Assert.Empty(await sut.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -147,7 +147,7 @@ public class InMemoryCommunityStoreTests
     {
         var sut = new InMemoryCommunityStore();
 
-        Assert.Empty(await sut.GetMembersAsync(Community));
+        Assert.Empty(await sut.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -155,11 +155,10 @@ public class InMemoryCommunityStoreTests
     {
         var sut = new InMemoryCommunityStore();
         var other = new Iri("https://a.test/ap/v1/c/other");
-        await sut.AddMemberAsync(Community, Alice);
+        await sut.AddFollowerAsync(Community, Alice);
 
-        Assert.True(await sut.IsMemberAsync(Community, Alice));
-        Assert.False(await sut.IsMemberAsync(other, Alice));
-        Assert.Empty(await sut.GetMembersAsync(other));
+        Assert.Contains(Alice, await sut.GetFollowersAsync(Community));
+        Assert.Empty(await sut.GetFollowersAsync(other));
     }
 
     [Fact]
@@ -168,10 +167,11 @@ public class InMemoryCommunityStoreTests
         var sut = new InMemoryCommunityStore();
         var actors = Enumerable.Range(0, 50).Select(i => new Iri($"https://a.test/ap/v1/u/u{i}")).ToArray();
 
-        await Task.WhenAll(actors.Select(a => sut.AddMemberAsync(Community, a)));
+        await Task.WhenAll(actors.Select(a => sut.AddFollowerAsync(Community, a)));
 
-        Assert.Equal(50, (await sut.GetMembersAsync(Community)).Count);
-        Assert.All(actors, a => Assert.True(sut.IsMemberAsync(Community, a).GetAwaiter().GetResult()));
+        var followers = await sut.GetFollowersAsync(Community);
+        Assert.Equal(50, followers.Count);
+        Assert.All(actors, a => Assert.Contains(a, followers));
     }
 
     // --- The follows set (community follows a remote actor) -------------------------
@@ -248,12 +248,12 @@ public class InMemoryCommunityStoreTests
         // Membership and following are disjoint sets: a community can follow an actor that is not a
         // member, and have a member that it does not follow.
         var sut = new InMemoryCommunityStore();
-        await sut.AddMemberAsync(Community, Alice);
+        await sut.AddFollowerAsync(Community, Alice);
         await sut.AddFollowAsync(Community, Bob);
 
-        Assert.Contains(Alice, await sut.GetMembersAsync(Community));
+        Assert.Contains(Alice, await sut.GetFollowersAsync(Community));
         Assert.DoesNotContain(Alice, await sut.GetFollowsAsync(Community));
         Assert.Contains(Bob, await sut.GetFollowsAsync(Community));
-        Assert.DoesNotContain(Bob, await sut.GetMembersAsync(Community));
+        Assert.DoesNotContain(Bob, await sut.GetFollowersAsync(Community));
     }
 }

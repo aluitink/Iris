@@ -60,8 +60,8 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
         _community = TestSeeder.SeedCommunity(_aPersistence, AHost, Community);
 
         // alice (local) and bob (remote) are both members of the community on A.
-        _aPersistence.Communities.AddMemberAsync(_community, _alice).GetAwaiter().GetResult();
-        _aPersistence.Communities.AddMemberAsync(_community, _bob).GetAwaiter().GetResult();
+        _aPersistence.Communities.AddFollowerAsync(_community, _alice).GetAwaiter().GetResult();
+        _aPersistence.Communities.AddFollowerAsync(_community, _bob).GetAwaiter().GetResult();
 
         // alice's outbox (on A): one post. bob's outbox (on B): two posts.
         TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/a-1", "alice post 1", new[] { _community });
@@ -166,7 +166,7 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
     {
         // A second community with only alice as a member (bob is NOT a member).
         var community2 = TestSeeder.SeedCommunity(_aPersistence, AHost, "solo");
-        await _aPersistence.Communities.AddMemberAsync(community2, _alice);
+        await _aPersistence.Communities.AddFollowerAsync(community2, _alice);
         TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/solo-1", "solo post", new[] { community2 });
 
         var response = await _http.GetAsync($"https://{AHost}/ap/v1/c/solo/feed?limit=10");
@@ -187,8 +187,8 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
         // A third community with alice (local) + dave (remote, on an unreachable host).
         var daveIri = new Iri($"https://unreachable.domain.local/ap/v1/u/dave");
         var community3 = TestSeeder.SeedCommunity(_aPersistence, AHost, "mixed");
-        await _aPersistence.Communities.AddMemberAsync(community3, _alice);
-        await _aPersistence.Communities.AddMemberAsync(community3, daveIri);
+        await _aPersistence.Communities.AddFollowerAsync(community3, _alice);
+        await _aPersistence.Communities.AddFollowerAsync(community3, daveIri);
         TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/mixed-1", "mixed post", new[] { community3 });
 
         var response = await _http.GetAsync($"https://{AHost}/ap/v1/c/mixed/feed?limit=10");

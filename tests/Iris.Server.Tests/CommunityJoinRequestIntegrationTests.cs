@@ -100,7 +100,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
     public async Task Join_GatedCommunity_RecordsPendingRequest_DoesNotGrantMembership()
     {
         // Preconditions: alice is a local actor but NOT a member of the gated community.
-        Assert.False(await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri));
+        Assert.False(await IsMemberAsync(_persistence, _communityIri, _aliceIri));
 
         // Alice posts a signed Join to the community's inbox.
         var join = BuildJoinActivity(_aliceIri, _communityIri);
@@ -119,7 +119,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // … but alice is NOT a member (the gated community does not auto-grant).
         Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should NOT be a member after a Join to a manuallyApprovesMembers community");
 
         // AP-native conformance: the Join activity is stored in the community's outbox (mirroring the
@@ -150,7 +150,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
             await _persistence.Communities.HasJoinRequestAsync(_communityIri, _aliceIri),
             "precondition: pending join request should exist");
         Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "precondition: alice should NOT be a member yet");
 
         // Step 2: The community operator publishes an Accept (object = the Join) to the community's outbox.
@@ -161,7 +161,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice is now a member …
         Assert.True(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should be a member after the community Accepts the join request");
 
         // … and the pending request is removed.
@@ -195,7 +195,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice is NOT a member …
         Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should NOT be a member after the community Rejects the join request");
 
         // … and the pending request is removed.
@@ -238,7 +238,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice is now a member …
         Assert.True(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should be a member after the community Accepts the join (by the outbox join IRI)");
 
         // … and the pending request is removed.
@@ -253,7 +253,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
     public async Task Join_OpenCommunity_AutoGrantsMembership_NoPendingRequest()
     {
         // Preconditions: alice is a local actor but NOT a member of the open community.
-        Assert.False(await _persistence.Communities.IsMemberAsync(_openCommunityIri, _aliceIri));
+        Assert.False(await IsMemberAsync(_persistence, _openCommunityIri, _aliceIri));
 
         // Alice posts a signed Join to the open community's inbox.
         var join = BuildJoinActivity(_aliceIri, _openCommunityIri);
@@ -267,7 +267,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // … and alice is now a member (the open community auto-grants).
         Assert.True(
-            await _persistence.Communities.IsMemberAsync(_openCommunityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _openCommunityIri, _aliceIri),
             "alice should be a member after a Join to an open community (auto-grant)");
 
         // … and NO pending join request is recorded.
@@ -305,7 +305,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice still is NOT a member (the duplicate Join did not grant membership).
         Assert.False(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should still NOT be a member after a duplicate Join");
     }
 
@@ -389,7 +389,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice is now a member (the community is open, so the Join auto-grants).
         Assert.True(
-            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _communityIri, _aliceIri),
             "alice should be a member after a Join to a community whose flag was just cleared");
 
         // … and NO pending join request is recorded.
@@ -420,7 +420,7 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 
         // Alice is NOT a member (the community is now gated, so the Join records a pending request).
         Assert.False(
-            await _persistence.Communities.IsMemberAsync(_openCommunityIri, _aliceIri),
+            await IsMemberAsync(_persistence, _openCommunityIri, _aliceIri),
             "alice should NOT be a member after a Join to a community whose flag was just set");
 
         // … and a pending join request IS recorded.
@@ -445,6 +445,15 @@ public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
         community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
             JsonDocument.Parse("true").RootElement.Clone();
         _persistence.Communities.PutCommunityAsync(community, CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Reports whether the actor is a member of the community (members are followers — change 221).
+    /// </summary>
+    private static async Task<bool> IsMemberAsync(IPersistenceProvider persistence, Iri communityIri, Iri actorIri)
+    {
+        var followers = await persistence.Communities.GetFollowersAsync(communityIri);
+        return followers.Contains(actorIri);
     }
 
     /// <summary>

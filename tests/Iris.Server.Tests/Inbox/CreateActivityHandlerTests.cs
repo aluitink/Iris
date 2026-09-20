@@ -290,7 +290,7 @@ public sealed class CreateActivityHandlerTests
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
         await SeedLocalActorAsync(persistence, LocalMember);
-        await persistence.Communities.AddMemberAsync(Community, LocalMember);
+        await persistence.Communities.AddFollowerAsync(Community, LocalMember);
         var sut = BuildHandler(persistence);
         var create = BuildCreate(RemotePerson); // a remote follower publishes to the community
 
@@ -309,8 +309,8 @@ public sealed class CreateActivityHandlerTests
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
         await SeedLocalActorAsync(persistence, LocalMember);
-        await persistence.Communities.AddMemberAsync(Community, LocalMember);
-        await persistence.Communities.AddMemberAsync(Community, RemoteMember); // not seeded as local
+        await persistence.Communities.AddFollowerAsync(Community, LocalMember);
+        await persistence.Communities.AddFollowerAsync(Community, RemoteMember); // not seeded as local
         var sut = BuildHandler(persistence);
         var create = BuildCreate(RemotePerson);
 
@@ -379,7 +379,7 @@ public sealed class CreateActivityHandlerTests
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
         await SeedLocalActorAsync(persistence, LocalMember);
-        await persistence.Communities.AddMemberAsync(Community, LocalMember);
+        await persistence.Communities.AddFollowerAsync(Community, LocalMember);
         var sut = BuildHandler(persistence);
         var parentNote = new Iri("https://a.domain.local/ap/v1/u/alice/notes/parent");
         var create = BuildCreate(LocalMember, inReplyTo: parentNote.Value);

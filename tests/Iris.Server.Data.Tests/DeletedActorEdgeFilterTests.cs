@@ -75,14 +75,14 @@ public sealed class DeletedActorEdgeFilterTests : IClassFixture<PostgresFixture>
         var remote = Iri($"https://remote-{ns}.example.org/ap/v1/u/remote-{ns}");
 
         await p.Actors.PutActorAsync(Person(deleted.Value, $"deleted-{ns}"));
-        await p.Communities.AddMemberAsync(community, deleted);
-        await p.Communities.AddMemberAsync(community, remote);
+        await p.Communities.AddFollowerAsync(community, deleted);
+        await p.Communities.AddFollowerAsync(community, remote);
 
-        Assert.Contains(deleted, await p.Communities.GetMembersAsync(community));
+        Assert.Contains(deleted, await p.Communities.GetFollowersAsync(community));
 
         Assert.True(await p.Actors.RemoveActorAsync(deleted));
 
-        var members = await p.Communities.GetMembersAsync(community);
+        var members = await p.Communities.GetFollowersAsync(community);
         Assert.DoesNotContain(deleted, members);
         Assert.Contains(remote, members);
     }

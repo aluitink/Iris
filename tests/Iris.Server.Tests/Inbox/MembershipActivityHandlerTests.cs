@@ -10,10 +10,10 @@ namespace Iris.Server.Tests.Inbox;
 /// community-membership primitives <see cref="Offer"/>, <see cref="Invite"/>, <see cref="Join"/>, and
 /// <see cref="Leave"/> (F-16). When the recipient (the inbox the activity was delivered to) is a local
 /// <see cref="Group"/> (community), the activity's <c>object</c> is added to / removed from the
-/// community's member set via the <see cref="ICommunityStore"/>. Covers: adding a member via
-/// <c>Offer</c>, <c>Invite</c>, and <c>Join</c>; removing a member via <c>Leave</c>; the
-/// person-recipient no-op; the remote-recipient no-op; the malformed (missing object) no-op; the
-/// idempotency of a re-delivered activity; and the null/programming-error guards.
+/// community's followers set via the <see cref="ICommunityStore"/> (members are followers — change 221).
+/// Covers: adding a member via <c>Offer</c>, <c>Invite</c>, and <c>Join</c>; removing a member via
+/// <c>Leave</c>; the person-recipient no-op; the remote-recipient no-op; the malformed (missing object)
+/// no-op; the idempotency of a re-delivered activity; and the null/programming-error guards.
 /// </summary>
 public sealed class MembershipActivityHandlerTests
 {
@@ -35,7 +35,7 @@ public sealed class MembershipActivityHandlerTests
         var offer = BuildMembership(OfferType.Offer, Community, Member);
         await sut.DispatchAsync(new InboxDelivery(Community, offer), offer);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.True(await IsMemberAsync(persistence, Community, Member));
     }
 
     // --- Invite: an invited actor is added to a local community ------------------------------
@@ -50,7 +50,7 @@ public sealed class MembershipActivityHandlerTests
         var invite = BuildMembership(OfferType.Invite, Community, Member);
         await sut.DispatchAsync(new InboxDelivery(Community, invite), invite);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.True(await IsMemberAsync(persistence, Community, Member));
     }
 
     // --- Join: a joining actor is added to a local community ---------------------------------
@@ -65,7 +65,7 @@ public sealed class MembershipActivityHandlerTests
         var join = BuildMembership(OfferType.Join, Community, Member);
         await sut.DispatchAsync(new InboxDelivery(Community, join), join);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.True(await IsMemberAsync(persistence, Community, Member));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class MembershipActivityHandlerTests
             new InboxDelivery(Community, BuildMembership(OfferType.Join, Community, OtherMember)),
             BuildMembership(OfferType.Join, Community, OtherMember));
 
-        var members = await persistence.Communities.GetMembersAsync(Community);
+        var members = await GetMembersAsync(persistence, Community);
         Assert.Contains(Member, members);
         Assert.Contains(OtherMember, members);
     }
@@ -94,13 +94,13 @@ public sealed class MembershipActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await SeedMemberAsync(persistence, Community, Member);
         var sut = BuildHandler(persistence);
 
         var leave = BuildMembership(OfferType.Leave, Community, Member);
         await sut.DispatchAsync(new InboxDelivery(Community, leave), leave);
 
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.False(await IsMemberAsync(persistence, Community, Member));
     }
 
     [Fact]
@@ -108,15 +108,15 @@ public sealed class MembershipActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await SeedMemberAsync(persistence, Community, Member);
         var sut = BuildHandler(persistence);
 
         // Leaving an actor that is not a member is a no-op; the existing member is untouched.
         var leave = BuildMembership(OfferType.Leave, Community, OtherMember);
         await sut.DispatchAsync(new InboxDelivery(Community, leave), leave);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, OtherMember));
+        Assert.True(await IsMemberAsync(persistence, Community, Member));
+        Assert.False(await IsMemberAsync(persistence, Community, OtherMember));
     }
 
     // --- Idempotency: a re-delivered activity is safe to re-apply (C-07) --------------------
@@ -126,14 +126,14 @@ public sealed class MembershipActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await SeedMemberAsync(persistence, Community, Member);
         var sut = BuildHandler(persistence);
 
         // A re-delivered Offer (at-least-once, C-07) must not fail or duplicate the membership.
         var offer = BuildMembership(OfferType.Offer, Community, Member);
         await sut.DispatchAsync(new InboxDelivery(Community, offer), offer);
 
-        var members = await persistence.Communities.GetMembersAsync(Community);
+        var members = await GetMembersAsync(persistence, Community);
         Assert.Equal(1, members.Count(m => m == Member));
     }
 
@@ -142,7 +142,7 @@ public sealed class MembershipActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await SeedMemberAsync(persistence, Community, Member);
         var sut = BuildHandler(persistence);
 
         // A re-delivered Leave (at-least-once, C-07) is a no-op after the membership is removed.
@@ -150,7 +150,7 @@ public sealed class MembershipActivityHandlerTests
         await sut.DispatchAsync(new InboxDelivery(Community, leave), leave);
         await sut.DispatchAsync(new InboxDelivery(Community, leave), leave);
 
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.False(await IsMemberAsync(persistence, Community, Member));
     }
 
     // --- Recipient guards --------------------------------------------------------------------
@@ -213,7 +213,7 @@ public sealed class MembershipActivityHandlerTests
         };
         await sut.DispatchAsync(new InboxDelivery(Community, offer), offer);
 
-        Assert.Empty(await persistence.Communities.GetMembersAsync(Community));
+        Assert.Empty(await persistence.Communities.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -221,7 +221,7 @@ public sealed class MembershipActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await SeedMemberAsync(persistence, Community, Member);
         var sut = BuildHandler(persistence);
 
         var leave = new Leave
@@ -232,7 +232,7 @@ public sealed class MembershipActivityHandlerTests
         await sut.DispatchAsync(new InboxDelivery(Community, leave), leave);
 
         // The existing member is untouched (the malformed Leave is ignored).
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.True(await IsMemberAsync(persistence, Community, Member));
     }
 
     // --- Guards ---------------------------------------------------------------------------
@@ -273,6 +273,29 @@ public sealed class MembershipActivityHandlerTests
         Name = ["Iris"],
         PreferredUsername = "iris",
     };
+
+    /// <summary>
+    /// Seeds a member of the community. Members are followers (change 221), so membership is seeded
+    /// through the community's followers set.
+    /// </summary>
+    private static Task SeedMemberAsync(IPersistenceProvider persistence, Iri communityIri, Iri memberIri)
+        => persistence.Communities.AddFollowerAsync(communityIri, memberIri);
+
+    /// <summary>
+    /// Reports whether the actor is a member of the community (members are followers — change 221):
+    /// true when the community's followers set contains the actor.
+    /// </summary>
+    private static async Task<bool> IsMemberAsync(IPersistenceProvider persistence, Iri communityIri, Iri actorIri)
+    {
+        var followers = await persistence.Communities.GetFollowersAsync(communityIri);
+        return followers.Contains(actorIri);
+    }
+
+    /// <summary>
+    /// Returns the community's members (members are followers — change 221).
+    /// </summary>
+    private static Task<IReadOnlyCollection<Iri>> GetMembersAsync(IPersistenceProvider persistence, Iri communityIri)
+        => persistence.Communities.GetFollowersAsync(communityIri);
 
     private static MembershipActivityHandler BuildHandler(IPersistenceProvider persistence)
         => new(persistence);

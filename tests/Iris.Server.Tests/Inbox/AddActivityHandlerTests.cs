@@ -33,7 +33,7 @@ public sealed class AddActivityHandlerTests
         var add = BuildAdd(Community, Member);
         await sut.HandleAsync(new InboxDelivery(Community, add), add);
 
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
+        Assert.Contains(Member, await persistence.Communities.GetFollowersAsync(Community));
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class AddActivityHandlerTests
         await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
         await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, OtherMember)), BuildAdd(Community, OtherMember));
 
-        var members = await persistence.Communities.GetMembersAsync(Community);
+        var members = await persistence.Communities.GetFollowersAsync(Community);
         Assert.Contains(Member, members);
         Assert.Contains(OtherMember, members);
     }
@@ -56,13 +56,13 @@ public sealed class AddActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
+        await persistence.Communities.AddFollowerAsync(Community, Member);
         var sut = BuildHandler(persistence);
 
         // A re-delivered Add (at-least-once, C-07) must not fail or duplicate the membership.
         await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
 
-        var members = await persistence.Communities.GetMembersAsync(Community);
+        var members = await persistence.Communities.GetFollowersAsync(Community);
         var matches = members.Count(m => m == Member);
         Assert.Equal(1, matches);
     }
@@ -114,7 +114,7 @@ public sealed class AddActivityHandlerTests
         };
         await sut.HandleAsync(new InboxDelivery(Community, add), add);
 
-        Assert.Empty(await persistence.Communities.GetMembersAsync(Community));
+        Assert.Empty(await persistence.Communities.GetFollowersAsync(Community));
     }
 
     // --- Guards ---------------------------------------------------------------------------
