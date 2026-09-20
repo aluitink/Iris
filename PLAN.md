@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `cffe397` (⑤ un-follow feed-cache invalidation) — **code now also includes the S2/S14 anonymous-proxy signing fix (uncommitted at this write; see Active Slice / Recently Completed).** Container rebuilt + redeployed 2026-09-20 with the S2/S14 fix, `irisweb-iris-web-1` recreated, healthy.
+- **Deployed commit:** `0fe7f0f` (S2/S14 anonymous-proxy signing fix — the signed-out proxy seam now signs public GETs as the local instance actor; built on `cffe397` ⑤ un-follow feed-cache invalidation). Rebuilt + redeployed 2026-09-20, `irisweb-iris-web-1` recreated, healthy. **Live-verified:** signed-out proxy GET of a mastodon.social actor → 200 (was 401).
 - **Container:** `irisweb-iris-web-1` — current (built with the S2/S14 anonymous-proxy signing fix).
 - **Note:** **S2/S14 proxy 401 for unsigned GETs FIXED (2026-09-20):** the anonymous (signed-out) proxy seam now signs the forwarded public GET as the **local instance actor** (a strict remote like mastodon.social requires a valid signature even for a public read — an unsigned GET is rejected 401 "Request not signed"). **Live-verified:** signed-out `GET /ap/v1/proxy/https%3A%2F%2Fmastodon.social%2Fusers%2Fgnomon` → **200** (was 401); `.../users%2Fgnu` → 200. [change doc 14816](docs/changes/14816-anonymous-proxy-signs-as-instance-actor.md). Prior: ⑤ un-follow feed-cache invalidation [14815](docs/changes/14815-unfollow-feed-cache-invalidation.md); Lemmy Undo 400 fix [14814](docs/changes/14814-lemmy-undo-follow-embedded.md); shared-inbox route [1598](docs/changes/1598-shared-inbox-route.md).
 
