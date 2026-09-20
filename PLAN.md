@@ -116,9 +116,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `5da2a1d` (Inbox ① follow-up + plan docs)
-- **Container:** `irisweb-iris-web-1` — **stale** (predates the Inbox ② fixes; no rebuild since)
-- **HEAD:** `5da2a1d` — note: the Inbox ② fixes (S6 `68ae703`, etc.) are **committed but not yet live**; a rebuild + redeploy is required before QA re-verifies them.
+- **Deployed commit:** `a45f3d4` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Container:** `irisweb-iris-web-1` — current
+- **Note:** the Inbox ② fixes (S6 `68ae703`, etc.) and the Page-drop fix (`68418cc`) are now live. QA can re-verify S6 + the S4/S8 facets from a clean entry.
 
 ## Active Slice
 
@@ -134,7 +134,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
-- **Rebuild + redeploy** the container to go live (deployed `5da2a1d` is stale). Then QA re-verifies: **S6** remote Join ([doc](docs/qa/s06-remote-join-csp-blocked.md)), plus the S4/S8 facets of Inbox ②.
+- **Build is now current** (`a45f3d4` deployed, 2026-09-20). **QA re-verifies:** **S6** remote Join ([doc](docs/qa/s06-remote-join-csp-blocked.md)), plus the S4/S8 facets of Inbox ②. *(Dev's part done; flip findings to `fixed` + clear this list once QA confirms.)*
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
