@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 51 (2026-09-20) — S19 Follows tab re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S19: Notifications → **Follows tab**: 5 follow requests visible — qa39test (1h ago), qa36test (2h ago), qa34test (3h ago), New User/newuser1 (1d ago), RayvenMX/mastodon.world (1d ago). **ALL have NO Accept/Decline buttons** — each shows only "View andrew's profile" link. The Follows filter tab correctly surfaces follow requests but provides no action buttons. 0 console errors.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (5 follow requests pending, none actionable — no Accept/Decline buttons in Follows tab).
+- **Checkpoint:** next pass targets S21 (no auto-follow + /c/{handle}), S19 (requests endpoint missing + no Accept/Decline), S3 (Create persistence), S2/S14 (blocked).
+
+---
+
 ## Pass 50 (2026-09-20) — S4 re-verify + Directory community follow state on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
