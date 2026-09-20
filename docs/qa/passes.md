@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 58 (2026-09-20) — S21 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S21: Created new community `qa-pass58-test` via `/communities` → "+ Create a community" (Name: "QA Pass 58 test community", Handle: `qa-pass58-test`). After creation: (1) `/communities` → **Following tab shows only "technology"** — `qa-pass58-test` is **NOT in the Following tab** (no auto-follow on creation). "All on this instance" tab shows `qa-pass58-test`. (2) `/c/qa-pass58-test` → **404 "Not found"** in Blazor SPA (route still missing). (3) `/community?iri=…/c/qa-pass58-test` → **200** (community page renders with tabs: Feed, Members (0), Owners, Peers, Requests). (4) DB: Group document exists (`https://iris.luit.ink/ap/v1/c/qa-pass58-test`, ObjectType: Group, name: "QA Pass 58 test community"). 0 console errors on community page.
+- **Result:** 0 new; **S21 re-confirmed OPEN** (no auto-follow on community creation — creator must manually follow their own community; `/c/{handle}` route still missing — 6th consecutive pass).
+- **Checkpoint:** next pass targets S3 (Create persistence), S20 (Communities tab visual-only), S2/S14 (proxy 401).
+
+---
+
 ## Pass 57 (2026-09-20) — S19 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
