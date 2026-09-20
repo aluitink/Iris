@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 65 (2026-09-20) — S21 re-verify on `65ccfa0` (Dev fix `8539f3f` NOT deployed)
+
+- **Build/Live:** deployed `65ccfa0` (Dev fix `8539f3f` on `interop-testing` but NOT deployed to live container — container started 11:05:19).
+- **Explored:** S21: Created new community `qa-pass65-test` via `/communities` → "+ Create a community". After creation: (1) `/communities` → Following tab shows **"technology" + "qa-pass46-test"** — `qa-pass65-test` is **NOT in the Following tab** (no auto-follow). (2) `/c/qa-pass65-test` → **502 Bad Gateway** (route still missing — 7th consecutive pass). (3) `/community?iri=…/c/qa-pass65-test` → **200** (community page renders).
+- **Result:** 0 new; **S21 re-confirmed OPEN** (no auto-follow + /c/{handle} route missing — 7th consecutive pass). Dev fix `8539f3f` exists on `interop-testing` but is NOT deployed.
+- **Checkpoint:** next pass targets S20 (Communities tab visual-only), S17 (profile over-fetch), S2/S14 (proxy 401).
+
+---
+
 ## Pass 64 (2026-09-20) — S3 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
