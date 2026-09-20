@@ -1,8 +1,8 @@
 # S18 — Following a local account: follow "succeeds" but the follower's Home timeline stays empty
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (found Pass 29)
-- **Found:** Pass 29 (2026-09-20)
+- **Status:** open (re-confirmed Pass 34, 2026-09-20)
+- **Found:** Pass 29 (2026-09-20) — re-confirmed Pass 34
 - **Related:** [s11](s11-poll-silent-noop-and-outbox.md) (outbox/timeline data), the Home timeline
 
 ## Symptom
@@ -43,3 +43,5 @@ Clean entry, fresh local account A, follow local account B (who has public posts
 - B's `followers` collection lists A and `totalItems` increments.
 - A's **Home** timeline shows B's public posts (within a few seconds / one Refresh).
 - The stored Follow activity has a valid `to`/`cc`.
+
+**Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** Registered fresh account `qa34test`, followed local `andrew` (774 posts). Follow button flipped to "Unfollow". `qa34test` → Home → **"Your timeline is empty."** after 5s + Refresh. andrew's posts do not appear. STILL OPEN.

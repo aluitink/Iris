@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 34 (2026-09-20) — S18/S19/S11 re-verify
+
+- **Build/Live:** deployed `456b0d9` (== HEAD? y). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S18: registered `qa34test`, followed local `andrew`, checked Home. S19: community `technology` Requests tab. S11: poll compose (body-less + with-body).
+- **Result:** 0 clean; **3 re-confirmed OPEN** (S18: follow flips to Unfollow but Home stays empty; S19: Requests tab shows "couldn't load" dead-end, no request fires; S11a: body-less poll silent no-op; S11b: poll with body 202s but invisible in profile). 0 non-environmental console errors.
+- **Checkpoint:** next pass explores S12 (mention linkify/autocomplete), S9 (report/flag), S17 (profile tab over-fetch), S3 (object-detail Create IRI 404), S10 (Article mislabel).
+
+---
+
 ## Pass 33 (2026-09-20) — Compose Article type + Settings Security/Password + Notifications + S7 re-verify
 
 - **Build/Live:** deployed `456b0d9` (== HEAD? y). Container `irisweb-iris-web-1` healthy.
