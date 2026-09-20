@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 67 (2026-09-20) — S20 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed (container restarted 11:21:16).
+- **Explored:** S20: `/home` → Posts tab loads feed (`GET /ap/v1/u/andrew/feed` → 200, `?page=2` → 200). Click **Communities** tab → **0 new API requests** (no `?source=` parameter, no community-specific call). Feed content identical to Posts tab.
+- **Result:** 0 new; **S20 re-confirmed OPEN** (Communities tab visual-only, 0 new API requests — 5th consecutive pass).
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S3 (Create persistence), S2/S14 (proxy 401).
+
+---
+
 ## Pass 66 (2026-09-20) — S21 re-verify (Dev fix `8539f3f` deployed)
 
 - **Build/Live:** Dev fix `8539f3f` deployed (container restarted 11:21:16).
