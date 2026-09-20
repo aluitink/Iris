@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 94 (2026-09-20) — S4 20th pass; Peers tab verified; session hydration delay confirmed (container 13:26:35)
+- **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (same as Pass 92/93; no new deploy).
+- **Explored:** Fresh login → `/home` (feed renders after ~15s, 8 posts), `/communities` (Following tab, 3 local communities), `/profile` (renders correctly), community detail (Peers tab — 1 peer: andrew, with Follow/Look up/Refresh). User report investigated: "feed doesn't render unless I click around; some pages say I'm not logged in."
+- **Result:** **S4 re-confirmed OPEN** (20th pass — remote interop missing). **Peers tab works** (verified on qa-pass46-test). **Session hydration delay confirmed:** after fresh login, `/home` feed takes ~15s to render; `/communities` briefly shows "Sign in to browse communities" before the session hydrates and content appears. No console errors (0). This matches the user's report — the feed and some pages appear empty or show "Sign in" until the WASM session initializes. **S17/S16-UX unchanged** (not re-tested, same container).
+- **Checkpoint:** next pass — wait for dev to fix S22 (notification query), then re-verify S19 facet 2. Otherwise: S4, S17, or S16-UX.
+
 ## Pass 93 (2026-09-20) — S22 root cause identified; S4/S17/S16-UX re-confirmed (container 13:26:35)
 - **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (same as Pass 92; no new deploy).
 - **Explored:** DB investigation (`Activities`, `BoxItems`, `Edges` tables), API endpoint testing (all notification types), `/notifications` (Follows tab), `/communities` (Following tab), `/profile` (3 tabs), object detail (poll).

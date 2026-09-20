@@ -68,3 +68,5 @@ Clean entry, `/profile` (a user with a large outbox):
 **Re-verification evidence (Pass 92, 2026-09-20, andrew, container 13:26:35):** fresh load of `/profile` → "Your posts" fired `outbox` **11 times** (pages 1–11, some with ERR_ABORTED). Switched to **Replies** tab → fired the **full 14-page outbox fan-out** (requests 105–117, pages 1–14). Switched to **Likes** tab → fired the **full 14-page outbox fan-out a third time** (requests 118–130, pages 1–14). Total: **39 outbox requests** for 3 tabs viewed. **Identical to Pass 90/91.** STILL OPEN.
 
 **Re-verification evidence (Pass 93, 2026-09-20, andrew, container 13:26:35):** Same container as Pass 92. S17 not re-tested this pass (focused on S22 root cause). **Still OPEN** (39 outbox requests for 3 tabs, unchanged since Pass 90).
+
+**Re-verification evidence (Pass 94, 2026-09-20, andrew, container 13:26:35):** Not re-tested this pass (focused on session/hydration exploration). **Still OPEN** (unchanged since Pass 90).
