@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 85 (2026-09-20) — S19 facet 2 re-verify (deployment gap persists)
+
+- **Build/Live:** Container 12:15:50. Dev commit `8b6a234` (Accept/Decline buttons) still not deployed.
+- **Explored:** S19 facet 2: Notifications — 3 follow requests, NO Accept/Decline buttons. S21: `/c/qa-pass46-test` → "Not found" (redirect not active).
+- **Result:** 0 new; **S19 facet 2 deployment gap persists** (commit `8b6a234` not in live build). S21 /c/{handle} re-confirmed (12th pass).
+- **Checkpoint:** next pass targets S4 (remote communities), S20 (Communities tab), S17 (profile over-fetch). Re-verify S19 facet 2 + S21 after next deploy.
+
+---
+
 ## Pass 84 (2026-09-20) — S4/S21 re-verify (container 12:15:50)
 
 - **Build/Live:** Container 12:15:50. Healthy.
