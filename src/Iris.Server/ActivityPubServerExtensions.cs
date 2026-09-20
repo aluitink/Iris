@@ -1510,6 +1510,32 @@ public static class ActivityPubServerExtensions
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var actorIri = BuildActorIri(baseUrl, handle);
 
+        // S12a: a same-instance mention typed in mixed case (e.g. @Alice for the local actor
+        // "alice") resolves verbatim to {base}/ap/v1/u/Alice, which 404s because the store's
+        // lookup is case-sensitive. When the exact-case miss occurs, fall back to a
+        // case-insensitive preferredUsername match on the same instance so the document is
+        // served under the canonical IRI. The same-instance check (origin match) guards against
+        // a cached remote actor whose preferredUsername collides (the localOnly heuristic alone
+        // is unreliable — some remote actors carry a preferredUsername).
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            var baseUri = new Uri(baseUrl);
+            var baseOrigin = $"{baseUri.Scheme}://{baseUri.Authority}";
+            var matches = await persistence.Actors.SearchActorsAsync(handle, limit: 10, offset: 0, ct, localOnly: true).ConfigureAwait(false);
+            var canonical = matches.FirstOrDefault(a =>
+                string.Equals(a.PreferredUsername, handle, StringComparison.OrdinalIgnoreCase)
+                && a.Id is { Length: > 0 } id
+                && id.StartsWith(baseOrigin, StringComparison.OrdinalIgnoreCase));
+            if (canonical?.Id is { Length: > 0 } idStr)
+            {
+                var canonicalIri = new Iri(idStr);
+                if (!canonicalIri.Equals(actorIri))
+                {
+                    actorIri = canonicalIri;
+                }
+            }
+        }
+
         // Determine whether the request is authenticated for this actor (owner-only extension).
         // Two paths: (1) Basic auth via the credential validator (federation clients), (2) cookie
         // auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
