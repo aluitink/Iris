@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 62 (2026-09-20) — S4/S16-UX re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S4: Communities → Following tab shows **"technology" + "qa-pass46-test"** (both local, both with "Leave" button) — the remote `lemmy.luit.ink/c/interop` community is **still missing**. Confirmed the follow edge exists: navigating to `lemmy.luit.ink/c/interop` actor page shows **"Unfollow" button** (not "Follow"). 0 console errors. S16-UX: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Object detail page: fresh load shows A:1/B:0/**1 votes** + **NO "You voted" badge**. Vote count consistent (1). Badge still missing on object detail page. Core data-integrity still FIXED.
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote `interop` community missing from Following tab — 10th consecutive pass). **S16-UX re-confirmed OPEN** (poll "You voted" badge missing on object detail page — vote count consistent at 1).
+- **Checkpoint:** next pass targets S19 (requests endpoint missing + Edit community no-op), S3 (Create persistence), S20 (Communities tab visual-only).
+
+---
+
 ## Pass 61 (2026-09-20) — S20/S17 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
