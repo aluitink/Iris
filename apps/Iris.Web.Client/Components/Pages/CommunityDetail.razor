@@ -44,9 +44,9 @@ else
                 }
                 else if (!IsSelf)
                 {
-                    @* A community's members are its followers (change 221), so joining IS following —
-                       a single Join/Leave button drives the unified followers axis (no separate Follow). *@
-                    <JoinButton CommunityActor="CommunityDoc" />
+                    @* A community's members are its followers (change 221): a single Follow button —
+                       labeled Join/Leave — drives the unified followers axis (there is no separate Join). *@
+                    <FollowButton TargetActor="CommunityDoc" IsCommunity="true" />
                 }
             </ActorCard>
         </div>

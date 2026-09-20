@@ -40,7 +40,7 @@ namespace Iris.Server.Inbox;
 /// <see cref="Activity"/> type) for the activity.
 /// </para>
 /// <para>
-/// <strong>Idempotent.</strong> <see cref="ICommunityStore.AddMemberAsync"/> is idempotent, so a
+/// <strong>Idempotent.</strong> <see cref="ICommunityStore.AddFollowerAsync"/> is idempotent, so a
 /// re-delivered <c>Add</c> (at-least-once delivery, C-07) is safe to re-apply.
 /// </para>
 /// </remarks>

@@ -91,22 +91,6 @@ public sealed class EfCommunityStore : ICommunityStore
     }
 
     /// <inheritdoc/>
-    public Task<bool> AddMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _edges.AddIfNewAsync(EdgeKind.CommunityMember, communityIri.Value, actorIri.Value, ct);
-
-    /// <inheritdoc/>
-    public Task<bool> RemoveMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _edges.RemoveAsync(EdgeKind.CommunityMember, communityIri.Value, actorIri.Value, ct);
-
-    /// <inheritdoc/>
-    public Task<bool> IsMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _edges.ContainsAsync(EdgeKind.CommunityMember, communityIri.Value, actorIri.Value, ct);
-
-    /// <inheritdoc/>
-    public async Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityMember, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
-
-    /// <inheritdoc/>
     public async Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

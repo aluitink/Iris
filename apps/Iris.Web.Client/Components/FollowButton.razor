@@ -27,11 +27,11 @@
     {
         @if (IsFollowing)
         {
-            <span>Unfollow</span>
+            <span>@(IsCommunityTarget ? "Leave" : "Unfollow")</span>
         }
         else
         {
-            <span>Follow</span>
+            <span>@(IsCommunityTarget ? "Join" : "Follow")</span>
         }
     }
 </button>
@@ -47,6 +47,13 @@
     public IObjectOrLink? TargetActor { get; set; }
 
     /// <summary>
+    /// When set, the target is a community: the button reads "Join"/"Leave" (a community's members are
+    /// its followers — change 221, so joining IS following) instead of "Follow"/"Unfollow".
+    /// </summary>
+    [Parameter]
+    public bool IsCommunity { get; set; }
+
+    /// <summary>
     /// Optional callback invoked (fire-and-forget) after a successful follow/unfollow toggle. Hosts
     /// that derive their own rendering from the following state (e.g. the /communities Following tab)
     /// use this to re-read the following collection and re-render.
@@ -60,6 +67,8 @@
     private bool IsFollowing { get; set; }
     private string? _followActivityIri;
     private string? _lastTargetIri;
+
+    private bool IsCommunityTarget => IsCommunity;
 
     private bool IsSelf
     {

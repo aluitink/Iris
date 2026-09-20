@@ -74,53 +74,6 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     }
 
     /// <inheritdoc/>
-    public Task<bool> AddMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        var added = _members.GetOrAdd(communityIri, _ => new System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>()).TryAdd(actorIri, 0);
-        return Task.FromResult(added);
-    }
-
-    /// <inheritdoc/>
-    public Task<bool> RemoveMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        if (!_members.TryGetValue(communityIri, out var members))
-        {
-            return Task.FromResult(false);
-        }
-
-        return Task.FromResult(members.TryRemove(actorIri, out _));
-    }
-
-    /// <inheritdoc/>
-    public Task<bool> IsMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        return Task.FromResult(_members.TryGetValue(communityIri, out var members) && members.ContainsKey(actorIri));
-    }
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
-    {
-        ct.ThrowIfCancellationRequested();
-        var exists = _sourceExists;
-        var result = new List<Iri>();
-        if (_members.TryGetValue(communityIri, out var members))
-        {
-            foreach (var member in members.Keys)
-            {
-                if (exists is null || exists(member))
-                {
-                    result.Add(member);
-                }
-            }
-        }
-
-        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
-    }
-
-    /// <inheritdoc/>
     public Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -129,7 +82,7 @@ public sealed class InMemoryCommunityStore : ICommunityStore
             foreach (var member in members.Keys)
             {
                 AddFollowerAsync(communityIri, member, ct).GetAwaiter().GetResult();
-                RemoveMemberAsync(communityIri, member, ct).GetAwaiter().GetResult();
+                members.TryRemove(member, out _);
             }
         }
 

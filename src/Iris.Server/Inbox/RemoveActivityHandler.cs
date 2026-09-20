@@ -40,7 +40,7 @@ namespace Iris.Server.Inbox;
 /// <see cref="Activity"/> type) for the activity.
 /// </para>
 /// <para>
-/// <strong>Idempotent.</strong> <see cref="ICommunityStore.RemoveMemberAsync"/> is idempotent, so a
+/// <strong>Idempotent.</strong> <see cref="ICommunityStore.RemoveFollowerAsync"/> is idempotent, so a
 /// re-delivered <c>Remove</c> (at-least-once delivery, C-07) is safe to re-apply.
 /// </para>
 /// </remarks>

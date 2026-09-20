@@ -88,22 +88,6 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<bool> AddMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _file.WithStateAsync(s => AddUnique(SetMap(s, Members), communityIri.Value, actorIri.Value), true, ct);
-
-    /// <inheritdoc/>
-    public Task<bool> RemoveMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _file.WithStateAsync(s => RemoveValue(SetMap(s, Members), communityIri.Value, actorIri.Value), true, ct);
-
-    /// <inheritdoc/>
-    public Task<bool> IsMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
-        => _file.SnapshotAsync(s => Contains(SetMap(s, Members), communityIri.Value, actorIri.Value), ct);
-
-    /// <inheritdoc/>
-    public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
-        => _file.SnapshotAsync(s => ToIris(SetMap(s, Members), communityIri.Value), ct);
-
-    /// <inheritdoc/>
     public Task MigrateMembersToFollowersAsync(CancellationToken ct = default)
         => _file.WithStateAsync<object?>(s =>
         {

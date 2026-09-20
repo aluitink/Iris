@@ -7,7 +7,7 @@
 {
     <div class="community-card">
         <ActorCard Actor="@group" ActorId="@group.Id" ShowModeration="false" ShowStats="true" ShowSummary="true">
-            <FollowButton TargetActor="@group" FollowChanged="@FollowChanged" />
+            <FollowButton TargetActor="@group" IsCommunity="true" FollowChanged="@FollowChanged" />
         </ActorCard>
     </div>
 }
@@ -17,8 +17,9 @@
     /// The community (<c>Group</c>) to present. Rendered as the unified actor card — the same
     /// control the directory and the actor page's followers/following tabs use — so a community's
     /// card looks identical whether you reach it from /communities or /directory. The <c>FollowButton</c>
-    /// in the actions column doubles as Join/Unjoin (a community is followed via the same Follow
-    /// activity; the community page's member list is its followers collection).
+    /// in the actions column <em>is</em> the Join/Leave action: a community's members are its followers
+    /// (change 221), so following a community is joining it (labeled "Join"/"Leave" via
+    /// <c>IsCommunity</c>).
     /// </summary>
     [Parameter]
     public Group? Community { get; set; }
