@@ -46,7 +46,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S9 | Report/flag is a silent no-op (no feedback, duplicate flags) | UX / bug | S2 | open | [s09](s09-report-silent-noop.md) |
 | S10 | Article "(long-form)" is mislabeled | UX / feature-gap | S2 | open | [s10](s10-article-longform-mislabeled.md) |
 | S11 | Poll broken (silent no-op w/o body + invisible in "Your posts") | bug | S2 | open | [s11](s11-poll-silent-noop-and-outbox.md) |
-| S12 | @mention linkify (case-sensitive dead link + autocomplete mismatch) | bug | S2 | open | [s12](s12-mention-case-and-autocomplete.md) |
+| S12 | @mention linkify (case-sensitive dead link + autocomplete mismatch) | bug | S2 | open (S12a only; S12b appears fixed) | [s12](s12-mention-case-and-autocomplete.md) |
 | S13 | Remote Lemmy object-detail logs expected proxy 404s | UX / bug | S3 | open | [s13](s13-remote-lemmy-404-noise.md) |
 | S14 | Signed-out remote actor-detail is CSP-blocked (S2 facet) | bug | S2 | open | [s14](s14-signed-out-actor-detail-csp.md) |
 | S15 | Compose visibility hint is misleading for Followers/Direct | UX / cosmetic | S3 | open | [s15](s15-visibility-hint-misleading.md) |

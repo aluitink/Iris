@@ -116,9 +116,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `456b0d9` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `bb28dcf` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** the S2/S14 anonymous-proxy seam + the S5 Search fix are live. QA can re-verify S2 + S14 (signed-out remote reads via the same-origin proxy) and S5 (Search "alice" now shows only the canonical local alice; the stale `localhost` ghost is gone) from a clean entry.
+- **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
@@ -157,9 +157,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **15 open. No blockers (all S2/S3-sev).** (Pass 34: S18, S19, S11 re-confirmed open on `456b0d9`; S2/S14 re-confirmed open — anonymous-proxy 401s; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
+- **15 open. No blockers (all S2/S3-sev).** (Pass 35: S12a, S9, S17, S3, S10 re-confirmed open on `bb28dcf`; S12b appears fixed; S3 scope narrowed — UI routes through Note IRIs.)
 - **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S19 (community Requests tab dead-end — moderation entry point broken), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), then the S2-sev bugs S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
-- **Last pass:** 34 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S12 (mention linkify/autocomplete), S9 (report/flag), S17 (profile tab over-fetch), S3 (object-detail Create IRI 404), S10 (Article mislabel).
+- **Last pass:** 35 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S2/S14 (proxy 401 — blocked on dev), S11 (poll), S18 (follow→Home), S19 (community requests).
 
 ## Paused Questions
 

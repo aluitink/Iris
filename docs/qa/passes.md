@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 35 (2026-09-20) — S12/S9/S17/S3/S10 re-verify
+
+- **Build/Live:** deployed `bb28dcf` (== HEAD? y). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S12a: posted `@Alice` (no autocomplete) → dead link `…/u/Alice` 404. S12b: `@alice` autocomplete → local `alice` only, canonical IRI 200. S9: flagged bob (actor detail) → no toast/state change, duplicate accepted; Moderation list stuck "Loading…". S17: profile → 13-page outbox fan-out on load + full re-fire on Replies tab (26 requests). S3: Create-activity IRIs 404 via curl/browser; UI now routes through Note IRIs (200, clean). S10: Article still 500-char cap, no title field, plain-paragraph render.
+- **Result:** 0 new; **5 re-confirmed OPEN** (S12a, S9, S17, S3, S10). S12b appears fixed (autocomplete shows local-only). S3 scope narrowed (UI uses Note IRIs; only direct `?iri=…/creates/{id}` 404s).
+- **Checkpoint:** next pass explores S2/S14 (proxy 401 — blocked on dev), S11 (poll), S18 (follow→Home), S19 (community requests).
+
+---
+
 ## Pass 34 (2026-09-20) — S18/S19/S11 re-verify
 
 - **Build/Live:** deployed `456b0d9` (== HEAD? y). Container `irisweb-iris-web-1` healthy.
