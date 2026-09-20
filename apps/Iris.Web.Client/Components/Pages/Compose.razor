@@ -101,7 +101,7 @@
         {
             <select class="compose-type-select" @bind="ContentType" disabled="@Busy">
                 <option value="Note">Note</option>
-                <option value="Article">Article (long-form)</option>
+                <option value="Article">Article</option>
                 <option value="Poll">Poll</option>
             </select>
             @if (CommunityIri is null)
@@ -177,9 +177,11 @@
             ? "This reply is threaded under the parent note and visible in its replies."
             : CommunityIri is not null
                 ? "This post is attributed to the community and visible to its members."
-                : ContentType == "Poll"
-                    ? "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines."
-                    : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
+                    : ContentType == "Poll"
+                        ? "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines."
+                        : ContentType == "Article"
+                            ? "An article addressed to the public — it lands in your outbox and appears in your followers' timelines."
+                            : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
     </p>
 
     <div class="compose-actions">
@@ -220,7 +222,7 @@
     <ul class="compose-tips-list">
         <li>Use <strong>@@handle</strong> to mention someone (e.g. @@alice).</li>
         <li>Use <strong>#hashtag</strong> to tag a topic.</li>
-        <li>Notes are short-form; Articles are for long-form content.</li>
+        <li>Notes and Articles share the same character limit; Articles are stored as long-form objects.</li>
         <li>Content warning hides your post behind a "Show" button.</li>
     </ul>
 </div>
