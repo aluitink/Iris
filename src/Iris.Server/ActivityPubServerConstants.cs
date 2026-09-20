@@ -238,6 +238,16 @@ public static class ActivityPubServerConstants
     public const int DefaultProxyMaxRequestsPerMinute = 300;
 
     /// <summary>
+    /// The default per-client-IP rate limit for the anonymous proxy seam
+    /// (<c>GET /ap/v1/proxy/{target}</c>, a signed-out visitor's public remote reads) when
+    /// <see cref="ActivityPubServerOptions.ProxySettings"/> does not override it. The anonymous seam
+    /// has no actor identity, so the bound is keyed on the client IP and set far below the
+    /// per-actor limit (a signed-out browser page load issues a handful of avatar/profile reads, not
+    /// hundreds of signed federation requests).
+    /// </summary>
+    public const int DefaultAnonymousProxyMaxRequestsPerMinute = 60;
+
+    /// <summary>
     /// The route segment for the health-check endpoint (the <c>GET /ap/v1/health</c> observability
     /// endpoint, Phase 17). Mapped as <c>{RoutePrefix}/health</c> — i.e. the health endpoint lives under
     /// the versioned prefix, like every other endpoint (Resolved Decision #10).

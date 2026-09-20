@@ -711,6 +711,19 @@ public static class ActivityPubServerExtensions
         });
         services.TryAddSingleton<ProxyGoneCache>();
 
+        // Anonymous proxy seam (S2/S14): the per-client-IP rate limiter for GET /ap/v1/proxy/{target}
+        // (a signed-out visitor's public remote reads). The anonymous seam has no actor identity, so
+        // the bound is keyed on the client IP (not an actor IRI) and set far below the per-actor limit.
+        // A host that does not want anonymous cross-instance reads sets ProxySettings.AllowAnonymousReads
+        // to false (the seam then 404s); a host that wants a different anonymous budget sets
+        // ProxySettings.AnonymousMaxRequestsPerMinute.
+        services.TryAddSingleton(sp =>
+        {
+            var settings = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.ProxySettings;
+            return new AnonymousProxyRateLimiter(
+                settings?.AnonymousMaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultAnonymousProxyMaxRequestsPerMinute);
+        });
+
         // 117.3 / 135.1: the remote-actor / remote-community persisters, exposed as singletons so the
         // proxy endpoint (which archives every remote object it relays — the directory's "All known"
         // surface) can resolve them. They are cheap, idempotent, best-effort wrappers over the durable
@@ -1331,6 +1344,14 @@ public static class ActivityPubServerExtensions
         // signature's (request-target) component matches the forwarded request.
         group.MapPost("/proxy/{**target}", ProxyHandler).WithName("proxy-endpoint");
 
+        // Anonymous proxy seam (S2/S14): GET /ap/v1/proxy/{target} — a SIGNED-OUT visitor's public
+        // remote read. The same ProxyHandler serves both: a GET with no Basic auth AND no site cookie
+        // is relayed as an unsigned public ActivityPub GET (bounded by the per-client-IP
+        // AnonymousProxyRateLimiter), while a GET that is NOT anonymous (a cookie is present) 401s,
+        // and a POST (any write) still requires the authenticated actor. Same {target} catch-all and
+        // IProxyTargetPolicy (allowlist) as the authenticated POST.
+        group.MapGet("/proxy/{**target}", ProxyHandler).WithName("proxy-endpoint-anonymous");
+
         // NOTE (19.0b.2b AP-native rework): the person mute + relay WRITE routes no longer live on the
         // /ap/v1 tree. A mute (F-07) and a relay subscription (F-06) are Iris-specific local moderation
         // decisions (no ActivityStreams type), so they are not part of the AP route tree: they are
@@ -1791,6 +1812,18 @@ public static class ActivityPubServerExtensions
     /// <c>(request-target)</c> component (the escaped path the <see cref="Iris.Client.Pipeline.SigningHandler"/>
     /// signs) is exactly the target's path.
     /// </para>
+    /// <para>
+    /// The anonymous seam (<c>GET /ap/v1/proxy/{target}</c>, S2/S14): a SIGNED-OUT visitor's browser
+    /// also cannot reach a cross-origin remote instance directly (a direct <c>GET</c> is CORS- or
+    /// CSP-blocked — the signed-out home feed's remote avatars and the signed-out remote actor-detail
+    /// page were broken by exactly this), so when <c>ProxySettings.AllowAnonymousReads</c> is enabled
+    /// a cookie-less <c>GET</c> to the proxy is allowed: it is relayed ONLY as an unsigned
+    /// <c>GET</c> read (writes still require an authenticated actor), the target is checked against
+    /// the same allowlist policy, and the read is bounded by a per-client-IP rate limit
+    /// (<see cref="AnonymousProxyRateLimiter"/> — the anonymous seam has no actor identity). A
+    /// non-anonymous <c>GET</c> (a site cookie is present but not valid for the proxy) still 401s,
+    /// and an anonymous write (<c>POST</c> without credentials) still 401s.
+    /// </para>
     /// </summary>
     private static async Task<IResult> ProxyHandler(
         HttpContext context,
@@ -1804,6 +1837,7 @@ public static class ActivityPubServerExtensions
         IMediaWarmer mediaWarmer,
         RemoteActorPersister? remoteActorPersister,
         RemoteCommunityPersister? remoteCommunityPersister,
+        AnonymousProxyRateLimiter? anonymousLimiter,
         CancellationToken ct)
     {
         // Buffer the request body so it is re-readable for the relay below (the SignatureValidation
@@ -1841,12 +1875,48 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        // The anonymous seam (S2/S14): a signed-out visitor's browser cannot reach a cross-origin
+        // remote instance directly (a direct GET is CORS-/CSP-blocked), so it reads public remote
+        // content (an actor document, an object) through this same-origin proxy instead. Allow ONLY
+        // an unauthenticated GET (no Basic auth AND no site cookie): the request is relayed as an
+        // UNSIGNED GET read (no actor to sign as), checked against the same allowlist, and bounded by
+        // a per-client-IP rate limit (the anonymous seam has no actor identity). A non-anonymous GET
+        // (a cookie is present) and every anonymous write still 401 — writes require an actor.
+        var isAnonymousRead = string.Equals(
+                context.Request.Method,
+                HttpMethod.Get.Method,
+                StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrEmpty(authorization)
+            && context.User.Identity is not { IsAuthenticated: true }
+            && options.ProxySettings?.AllowAnonymousReads != false;
+        Iri actorIri;
         if (authenticatedHandle is null)
         {
-            return Results.Unauthorized();
-        }
+            if (!isAnonymousRead)
+            {
+                return Results.Unauthorized();
+            }
 
-        var actorIri = BuildActorIri(baseUrl, authenticatedHandle);
+            var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (anonymousLimiter is not null
+                && !anonymousLimiter.TryAllow(clientIp, out var anonymousReason))
+            {
+                context.Response.Headers.RetryAfter = "60";
+                return Results.Json(
+                    new { error = anonymousReason },
+                    statusCode: (int)HttpStatusCode.TooManyRequests);
+            }
+
+            // The anonymous seam relays the GET unsigned (no actor to sign as) and, when the remote
+            // serves an ActivityPub JSON object, stores it in the local cache (the same best-effort
+            // sync as the authenticated path) so a later signed-in read — or another visitor's
+            // anonymous read — is served from the local store without re-dialing the remote.
+            actorIri = default;
+        }
+        else
+        {
+            actorIri = BuildActorIri(baseUrl, authenticatedHandle);
+        }
 
         // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
         // The catch-all route parameter is named "target" (the route template is /proxy/{**target}),
@@ -1987,15 +2057,23 @@ public static class ActivityPubServerExtensions
                 "Content-Type", context.Request.ContentType ?? ActivityJson.ActivityJsonContentType);
         }
 
-        request.Headers.TryAddWithoutValidation("X-Iris-Actor", actorIri.Value);
+        // The anonymous seam relays the GET UNSIGNED (there is no actor key to sign with — the remote
+        // instance serves public ActivityPub documents to unsigned reads). An authenticated actor's
+        // proxied request is signed as that actor (the X-Iris-Actor override, Resolved Decision #29).
+        if (authenticatedHandle is not null)
+        {
+            request.Headers.TryAddWithoutValidation("X-Iris-Actor", actorIri.Value);
+        }
 
-        // 5. Sign + forward, relaying the remote response (status + body + content type). The transport
-        // is the Func<HttpMessageHandler> seam (default: a real HttpClientHandler; a test routes it to a
-        // TestServer in-process).
+        // 5. Sign (when acting as an actor) + forward, relaying the remote response (status + body +
+        // content type). The transport is the Func<HttpMessageHandler> seam (default: a real
+        // HttpClientHandler; a test routes it to a TestServer in-process).
         using var client = clientFactory.Create(
             new ActivityPubClientOptions
             {
-                ActorId = actorIri,
+                // The anonymous seam has no actor to sign as: the client is built without an ActorId
+                // (no key resolution) and relays the request unsigned.
+                ActorId = authenticatedHandle is not null ? actorIri : null,
                 EnableRetry = false,
             },
             transportFactory());

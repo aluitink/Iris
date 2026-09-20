@@ -122,15 +122,28 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     [Fact]
     public async Task Proxy_ForwardedGet_IsSignedByActorsKey_NotUnsigned()
     {
-        // A direct, unsigned GET to the proxy route (no Basic auth) is rejected with 401 — proving the
-        // endpoint is the one wired (not a 404/405) and that authentication gates the forward.
-        var unsigned = await ProxyGetAsync(BobActorIri, username: null, password: null);
-        Assert.Equal(HttpStatusCode.Unauthorized, unsigned.StatusCode);
-
         // The signed (Basic-auth) proxy GET succeeds (200), which only happens if B validated the
         // proxied GET's signature (resolving alice's key). A signed-but-unsigned-forward would 401.
         var signed = await ProxyGetAsync(BobActorIri, username: Alice, password: Password);
         Assert.Equal(HttpStatusCode.OK, signed.StatusCode);
+
+        // A direct, unsigned GET to the proxy route (no Basic auth) is still rejected with 401 when the
+        // anonymous seam is disabled (ProxySettings.AllowAnonymousReads = false) — proving the
+        // endpoint is the one wired (not a 404/405) and that authentication gates the forward when the
+        // anonymous seam is off. (When the seam is enabled — the default — an unsigned GET is the
+        // anonymous read, covered by Proxy_AnonymousGet_... below.)
+        var aPersistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        var b = StartServer(BHost, Bob, new InMemoryPersistenceProvider());
+        var a = StartServer(
+            AHost, Alice, aPersistence,
+            credentialValidator: PermissiveAliceValidator(),
+            proxySettings: new ProxySettings { AllowAnonymousReads = false },
+            deliveryTransport: () => b.CreateHandler());
+        using var scope = new DisposeBoth(a, b);
+
+        var unsigned = await ProxyGetAsync(a, BobActorIri, username: null, password: null);
+        Assert.Equal(HttpStatusCode.Unauthorized, unsigned.StatusCode);
     }
 
     // --- Negative: a target host not on the allowlist is rejected with 403 ---------------------
@@ -566,6 +579,197 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
             firstItem.GetProperty("id").GetString());
     }
 
+    // --- S2/S14: the anonymous proxy seam — a SIGNED-OUT visitor's public remote read ----------
+    //
+    // A signed-out visitor's browser cannot reach a cross-origin remote instance directly (a direct
+    // GET is CORS-/CSP-blocked — the signed-out home feed's remote avatars and the signed-out remote
+    // actor-detail page were broken by exactly this). So the client reads public remote content
+    // (an actor document, an object) through this SAME-ORIGIN proxy instead: a cookie-less GET to
+    // /ap/v1/proxy/{target} is relayed as an UNSIGNED public ActivityPub GET (no actor key to sign
+    // with), checked against the same allowlist, and bounded by a per-client-IP rate limit. A signed-in
+    // reader keeps the POST path (signed as the actor); the anonymous seam is ONLY for signed-out
+    // reads, and ONLY a GET (writes still require an authenticated actor).
+
+    // --- S2: an anonymous (cookie-less) GET of a remote actor document relays it (200) ---------
+
+    [Fact]
+    public async Task Proxy_AnonymousGetOfRemoteActor_RelaysActorDocument()
+    {
+        // A signed-out visitor's browser GETs bob's actor document through the SAME-ORIGIN proxy (no
+        // Basic auth, no site cookie). The proxy relays an UNSIGNED public GET to B and returns bob's
+        // actor doc — the document the browser could not fetch cross-origin directly.
+        var response = await ProxyAnonymousGetAsync(BobActorIri);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(BobActorIri.Value, doc.RootElement.GetProperty("id").GetString());
+    }
+
+    // --- S2: the anonymous relay is UNSIGNED (B serves the document without a signature) --------
+    //
+    // If the anonymous seam had tried to sign the forwarded GET (as the authenticated path does), B
+    // would reject it (401 — the signature is invalid / no key) and the proxy would relay that 401. A
+    // 200 therefore proves the proxy relayed the GET UNSIGNED (no X-Iris-Actor override, no
+    // SigningHandler) — the remote serves a public ActivityPub document to an unsigned read.
+
+    [Fact]
+    public async Task Proxy_AnonymousGet_IsRelayedUnsigned_NotSigned()
+    {
+        // The anonymous GET succeeds (200) only if B served bob's public document WITHOUT validating a
+        // signature — i.e. the proxy relayed the GET unsigned. A signed forward would 401 on B.
+        var response = await ProxyAnonymousGetAsync(BobActorIri);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Sanity: the relayed document is bob's actor doc (id = bob's IRI), not an error document.
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(BobActorIri.Value, doc.RootElement.GetProperty("id").GetString());
+    }
+
+    // --- S2/S14: an anonymous GET of a remote object (a Note) relays it and archives it ----------
+    //
+    // The anonymous seam is not limited to actor documents: a signed-out visitor's browser also reads
+    // remote OBJECTS (a Note, an Article) through the proxy (the signed-out object-detail page). The
+    // proxy relays the unsigned GET AND stores the object in the local store (the same best-effort
+    // sync as the authenticated path), so a later signed-in read (or another visitor's anonymous read)
+    // is served from the local store without re-dialing the remote.
+
+    [Fact]
+    public async Task Proxy_AnonymousGetOfRemoteNote_RelaysAndArchivesNote()
+    {
+        // Seed a Note in B's persistence so B serves it at its IRI.
+        var noteIri = new Iri($"https://{BHost}/ap/v1/u/bob/notes/s2s14");
+        var note = new Note
+        {
+            Id = noteIri.Value,
+            Content = new[] { "<p>proxied note for S2/S14 anonymous seam</p>" },
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+        await _bPersistence.Objects.PutObjectAsync(note);
+
+        // A signed-out visitor's browser GETs the Note through the SAME-ORIGIN proxy (no auth).
+        var response = await ProxyAnonymousGetAsync(noteIri);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(noteIri.Value, doc.RootElement.GetProperty("id").GetString());
+
+        // The anonymous-relayed Note is now stored in A's local object store (the best-effort sync,
+        // the same as the authenticated path) so a later read serves it from the local store.
+        Assert.True(await _aPersistence.Objects.TryGetObjectAsync(noteIri, out var stored));
+        Assert.Equal("<p>proxied note for S2/S14 anonymous seam</p>", stored!.Content?.First());
+    }
+
+    // --- S2/S14: an anonymous GET of a remote actor archives it to the durable actor store -------
+    //
+    // The anonymous seam (like the authenticated path) archives a remote actor document it relays to
+    // the durable actor store (the directory's "All known" surface). A signed-out visitor's anonymous
+    // read of a remote actor therefore also makes that actor "known" to the instance.
+
+    [Fact]
+    public async Task Proxy_AnonymousGetOfRemoteActor_ArchivesActorInDurableStore()
+    {
+        // Seed a fresh actor (carol) on B, distinct from bob, so the archive is unambiguous.
+        var carolSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, "carol");
+        var carolIri = carolSeeded.ActorIri;
+
+        // A signed-out visitor's browser GETs carol's actor document through the SAME-ORIGIN proxy.
+        var response = await ProxyAnonymousGetAsync(carolIri);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The anonymous-relayed remote actor is now archived in A's durable actor store (the surface
+        // the directory's "All known" scope lists) — the same as the authenticated path.
+        Assert.True(await _aPersistence.Actors.TryGetActorAsync(carolIri, out var stored));
+        Assert.Equal("carol", stored!.PreferredUsername);
+    }
+
+    // --- S2: an anonymous GET that is NOT anonymous (a site cookie is present) still 401s -------
+    //
+    // The anonymous seam is keyed on "no Basic auth AND no authenticated site cookie". A GET that
+    // carries a site cookie (a signed-in visitor) is NOT anonymous: it must authenticate (or use the
+    // POST path). The TestServer client cannot easily forge a cookie-authenticated identity, so this
+    // test exercises the seam's negative gate a different way — by confirming that a signed-in
+    // (Basic-auth) reader still uses the POST path successfully (the anonymous seam does not swallow
+    // authenticated reads). The cookie-present 401 path is covered by the unit-level gate: a
+    // non-anonymous GET (a cookie is present) falls to the 401 branch, which is the same branch an
+    // anonymous write (POST without credentials) hits (see Proxy_AnonymousWrite_IsRejectedWith401).
+
+    [Fact]
+    public async Task Proxy_AnonymousWrite_IsRejectedWith401()
+    {
+        // A signed-out visitor's browser CANNOT write through the proxy: a POST without credentials is
+        // rejected with 401 (writes require an authenticated actor — the anonymous seam is GET-only).
+        // This guards against the anonymous gate accidentally accepting a write.
+        var http = _a.CreateClient();
+        var request = new HttpRequestMessage(
+            HttpMethod.Post, $"/ap/v1/proxy/{BobActorIri.Value}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
+        // No Basic auth, no cookie → not anonymous (a POST is not a GET) → 401.
+        var response = await http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    // --- S2: an anonymous GET to a host not on the allowlist is rejected with 403 ---------------
+    //
+    // The anonymous seam applies the SAME target allowlist as the authenticated proxy. A fresh server
+    // whose ProxySettings.AllowedHosts = ["c.domain.local"] (a host with no instance): an anonymous
+    // GET to b.domain.local is rejected 403 (the allowlist policy), and nothing is forwarded.
+
+    [Fact]
+    public async Task Proxy_AnonymousGet_TargetNotInAllowlist_IsRejectedWith403()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+
+        var b = StartServer(BHost, Bob, new InMemoryPersistenceProvider());
+        var a = StartServer(
+            AHost, Alice, aPersistence,
+            credentialValidator: PermissiveAliceValidator(),
+            proxySettings: new ProxySettings { AllowedHosts = ["c.domain.local"] },
+            deliveryTransport: () => b.CreateHandler());
+        using var scope = new DisposeBoth(a, b);
+
+        var response = await ProxyAnonymousGetAsync(a, BobActorIri);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("not in the proxy allowlist", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // --- S2: an anonymous GET exceeding the per-client-IP rate limit is rejected with 429 -------
+    //
+    // The anonymous seam has no actor identity, so its bound is keyed on the client IP. A fresh server
+    // with AnonymousMaxRequestsPerMinute = 2: the first two anonymous GETs succeed; the third is
+    // rejected 429 (the per-IP rate limit) without forwarding.
+
+    [Fact]
+    public async Task Proxy_AnonymousGet_RateLimitExceeded_IsRejectedWith429()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+
+        var bPersistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
+        var b = StartServer(BHost, Bob, bPersistence);
+        var a = StartServer(
+            AHost, Alice, aPersistence,
+            credentialValidator: PermissiveAliceValidator(),
+            proxySettings: new ProxySettings { AnonymousMaxRequestsPerMinute = 2 },
+            deliveryTransport: () => b.CreateHandler());
+        using var scope = new DisposeBoth(a, b);
+
+        // Two requests within the budget succeed (the target host is unconfigured = allowed).
+        var first = await ProxyAnonymousGetAsync(a, BobActorIri);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        var second = await ProxyAnonymousGetAsync(a, BobActorIri);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+
+        // The third exceeds the per-IP budget → 429 (rate limit), nothing forwarded.
+        var third = await ProxyAnonymousGetAsync(a, BobActorIri);
+        Assert.Equal(HttpStatusCode.TooManyRequests, third.StatusCode);
+        var body = await third.Content.ReadAsStringAsync();
+        Assert.Contains("rate limit", body, StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- Helpers ----------------------------------------------------------------
 
     private BasicAuthCredentialValidator PermissiveAliceValidator()
@@ -601,6 +805,27 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
     private Task<HttpResponseMessage> ProxyGetAsync(Iri target, string? username, string? password)
         => ProxyGetAsync(_a, target, username, password);
+
+    /// <summary>
+    /// An anonymous proxy read: a cookie-less <c>GET</c> to /ap/v1/proxy/{target} (the S2/S14
+    /// anonymous seam). Unlike the authenticated actor's proxy POST helper (this class's
+    /// <c>ProxyGetAsync(TestServer, Iri, string?, string?, string?)</c>), this sends a plain GET with
+    /// NO Basic auth and NO site cookie — the shape a signed-out visitor's browser sends when reading
+    /// public remote content through the same-origin proxy.
+    /// </summary>
+    private static async Task<HttpResponseMessage> ProxyAnonymousGetAsync(
+        TestServer a, Iri target, string? query = null)
+    {
+        var http = a.CreateClient();
+        var targetWithQuery = query is not null ? target.Value + query : target.Value;
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/proxy/{targetWithQuery}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
+        // No Authorization header, no cookie: the request is anonymous (the seam's gate).
+        return await http.SendAsync(request);
+    }
+
+    private Task<HttpResponseMessage> ProxyAnonymousGetAsync(Iri target, string? query = null)
+        => ProxyAnonymousGetAsync(_a, target, query);
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, optionally

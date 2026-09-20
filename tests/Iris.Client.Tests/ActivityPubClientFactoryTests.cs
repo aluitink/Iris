@@ -52,12 +52,20 @@ public class ActivityPubClientFactoryTests
     }
 
     [Fact]
-    public void Create_MissingActorId_Throws()
+    public void Create_MissingActorId_BuildsUnsignedClient()
     {
+        // S2/S14: the anonymous proxy seam relays public ActivityPub reads UNSIGNED (no actor key to
+        // sign with). A client built WITHOUT an ActorId is therefore a valid UNSIGNED client (no
+        // SigningHandler in its pipeline), not an error — the server's anonymous seam
+        // (GET /ap/v1/proxy/{target}) builds one to relay a signed-out visitor's public remote read.
+        // A signed write still requires an ActorId, but a bodyless unsigned read does not.
         var fixture = CreateFixture();
 
-        Assert.Throws<ArgumentException>(() => fixture.Factory.Create(new ActivityPubClientOptions(),
-            new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.OK))));
+        var client = fixture.Factory.Create(new ActivityPubClientOptions(),
+            new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.OK)));
+
+        Assert.NotNull(client);
+        Assert.IsType<ActivityPubClient>(client);
     }
 
     [Fact]

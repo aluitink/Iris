@@ -274,8 +274,14 @@ else
             var obj = await Ui.GetActorAsync(iri);
             if (obj is null && Client is null)
             {
-                // Signed-out visitor: the per-circuit actor cache is only reachable through a
-                // signed-in client, so fetch the public actor document directly over HTTP (88.4).
+                // Signed-out visitor: Ui.GetActorAsync already routed a REMOTE actor through the
+                // SAME-ORIGIN anonymous proxy seam (GET /ap/v1/proxy/{target}, S2/S14) — a cookie-less
+                // GET the proxy relays as an unsigned public read (a direct cross-origin GET is
+                // CORS-/CSP-blocked in the browser, which is what broke the signed-out remote
+                // actor-detail page). It reaches here only when that read came back empty: for a
+                // LOCAL actor (dials directly, public on its own origin) a direct GET is the correct
+                // last resort (88.4); for a REMOTE actor it is a redundant cross-origin attempt that
+                // 404s in the browser and returns null (the actor is then "not found").
                 obj = await FetchActorAnonymousAsync(iri);
             }
 
@@ -302,10 +308,13 @@ else
     }
 
     /// <summary>
-    /// Fetches a public actor document over plain HTTP when signed out (88.4). The ActivityPub
-    /// actor IRI is publicly readable, so a same-origin GET returns the actor JSON, which is
-    /// deserialized with the shared ActivityStreams options. Returns null when the document cannot
-    /// be retrieved (404, unreachable, or non-actor payload).
+    /// Fetches a public actor document over plain HTTP when signed out (88.4). A LOCAL (same-origin)
+    /// actor's IRI is publicly readable, so a same-origin GET returns the actor JSON, which is
+    /// deserialized with the shared ActivityStreams options. A REMOTE (cross-origin) actor's direct
+    /// GET is CORS-/CSP-blocked in the browser (S2/S14) — such an actor is read through the anonymous
+    /// proxy seam in <c>UiContext</c> (via <c>Ui.GetActorAsync</c>); this method is the last-resort
+    /// fallback and returns null for a blocked remote fetch. Returns null when the document cannot be
+    /// retrieved (404, unreachable, CORS-blocked, or non-actor payload).
     /// </summary>
     private async Task<IObject?> FetchActorAnonymousAsync(Iri actorIri)
     {

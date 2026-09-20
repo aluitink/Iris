@@ -225,6 +225,24 @@
     /// </summary>
     private Iri? _loadedFor;
 
+    /// <summary>
+    /// Resolves the "iris" <c>HttpClient</c> (base address = the home instance) for the S2/S14
+    /// anonymous proxy seam: a signed-out visitor's browser cannot reach a cross-origin remote
+    /// instance directly (a direct <c>GET</c> is CORS-/CSP-blocked — the signed-out remote
+    /// actor-detail's "Posts" tab was broken by exactly this), so a remote collection read goes
+    /// through the SAME-ORIGIN proxy (<c>GET /ap/v1/proxy/{target}</c>) instead. A LOCAL collection
+    /// (same origin as the home instance) dials directly.
+    /// </summary>
+    [Inject]
+    private IHttpClientFactory HttpClientFactory { get; set; } = default!;
+
+    /// <summary>
+    /// The home instance's origin (the "iris" client's <c>BaseAddress</c>), cached for
+    /// <see cref="IsRemoteCollectionIri"/>. Null when the base address is unavailable (the IRI is then
+    /// treated as remote — the safe default: route through the proxy).
+    /// </summary>
+    private Uri? _homeOrigin;
+
     private bool HasAnyClient => Client is not null || AnonymousHttpClient is not null;
 
     protected override void OnParametersSet()
@@ -436,17 +454,79 @@
             return;
         }
 
-        // Anonymous read (signed out, public collection like the public feed — 54.27).
+        // Anonymous read (signed out, public collection like the public feed — 54.27). A REMOTE
+        // (cross-origin) collection is read through the SAME-ORIGIN anonymous proxy seam (GET
+        // /ap/v1/proxy/{target}, S2/S14) — a direct cross-origin GET is CORS-/CSP-blocked in the
+        // browser (the signed-out remote actor-detail's "Posts" tab was broken by exactly this). A
+        // LOCAL (same-origin) collection dials directly.
         if (AnonymousHttpClient is { } anonClient)
         {
-            await FetchAnonymousPageAsync(anonClient, resumeIri);
+            if (IsRemoteCollectionIri(resumeIri))
+            {
+                await FetchAnonymousPageViaProxyAsync(anonClient, resumeIri);
+            }
+            else
+            {
+                await FetchAnonymousPageAsync(anonClient, resumeIri);
+            }
         }
     }
 
     /// <summary>
-    /// Fetches a single collection page via plain HTTP (no ActivityPub signing). Parses the
-    /// OrderedCollection / OrderedCollectionPage JSON and extracts items, next-page link, and
-    /// last-page flag. Used for public reads when signed out (54.27).
+    /// True when <paramref name="iri"/> is a remote (cross-origin) collection — its host differs from
+    /// the home instance's origin (the "iris" <c>HttpClient</c>'s <c>BaseAddress</c>). A local
+    /// collection (same origin) is not remote. When the home origin cannot be determined, the IRI is
+    /// treated as remote (route through the proxy — the safe default).
+    /// </summary>
+    private bool IsRemoteCollectionIri(Iri iri)
+    {
+        if (!Uri.TryCreate(iri.Value, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        _homeOrigin ??= HttpClientFactory?.CreateClient("iris").BaseAddress;
+        if (_homeOrigin is null)
+        {
+            return true;
+        }
+
+        return !string.Equals(uri.Host, _homeOrigin.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Fetches a single REMOTE collection page through the SAME-ORIGIN anonymous proxy seam
+    /// (<c>GET /ap/v1/proxy/{target}</c>, S2/S14). A signed-out visitor's browser cannot dial a
+    /// cross-origin remote instance directly (a direct <c>GET</c> is CORS-/CSP-blocked), so the page
+    /// IRI rides in the proxy path and the <c>limit</c> query rides on the proxy request's own query
+    /// string (the proxy's catch-all <c>{**target}</c> route value captures only the path, so the query
+    /// must ride on the proxy request — exactly the shape the authenticated proxy fallback drives). The
+    /// proxy relays an unsigned public <c>GET</c> to the remote and returns the page JSON; the rest of
+    /// the parsing is shared with <see cref="FetchAnonymousPageAsync"/>.
+    /// </summary>
+    private async Task FetchAnonymousPageViaProxyAsync(HttpClient http, Iri pageIri)
+    {
+        var query = PageSize is { } size ? $"?limit={size}" : null;
+        var proxyPath = $"/ap/v1/proxy/{Uri.EscapeDataString(pageIri.Value)}"
+            + (query is not null ? query : string.Empty);
+        using var response = await http.GetAsync(proxyPath);
+        if (!response.IsSuccessStatusCode)
+        {
+            LoadError = "Failed to load. Please try again.";
+            return;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        ApplyPageJson(json);
+    }
+
+    /// <summary>
+    /// Fetches a single LOCAL (same-origin) collection page via plain HTTP (no ActivityPub signing)
+    /// and parses it. Used for public reads when signed out (54.27). A REMOTE (cross-origin) collection
+    /// page is instead read through the SAME-ORIGIN anonymous proxy seam
+    /// (<see cref="FetchAnonymousPageViaProxyAsync"/>, S2/S14) — a direct cross-origin GET is
+    /// CORS-/CSP-blocked in the browser.
     /// </summary>
     private async Task FetchAnonymousPageAsync(HttpClient http, Iri pageIri)
     {
@@ -464,6 +544,16 @@
         }
 
         var json = await response.Content.ReadAsStringAsync();
+        ApplyPageJson(json);
+    }
+
+    /// <summary>
+    /// Parses a fetched collection page (OrderedCollection / OrderedCollectionPage JSON) and appends
+    /// its items, next-page link, and last-page flag. Shared by the local (direct) and the
+    /// SAME-ORIGIN anonymous proxy (S2/S14) anonymous read paths.
+    /// </summary>
+    private void ApplyPageJson(string json)
+    {
         var doc = System.Text.Json.JsonDocument.Parse(json);
         var root = doc.RootElement;
 

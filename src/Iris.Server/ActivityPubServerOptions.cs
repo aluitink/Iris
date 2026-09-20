@@ -203,4 +203,23 @@ public sealed class ProxySettings
     /// <see cref="ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute"/>.
     /// </summary>
     public int MaxRequestsPerMinute { get; set; } = ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute;
+
+    /// <summary>
+    /// Whether the anonymous proxy seam (<c>GET /ap/v1/proxy/{target}</c>) is enabled. When enabled,
+    /// a signed-out visitor's browser may read public remote content (an actor document, an object)
+    /// through the same-origin proxy instead of dialing the remote instance directly — a direct
+    /// cross-origin <c>GET</c> is CORS-blocked (or CSP-blocked) in the browser, so the signed-out UI
+    /// otherwise cannot render remote actors' avatars or profiles. The seam relays ONLY
+    /// <c>GET</c> reads, applies the same target allowlist as the authenticated proxy, and is bounded
+    /// by its own per-IP rate limit (it has no actor identity). Defaults to
+    /// <see langword="true"/>; a host that does not want anonymous cross-instance reads sets it
+    /// <see langword="false"/> (anonymous reads then 404 and the UI falls back to a direct fetch).
+    /// </summary>
+    public bool AllowAnonymousReads { get; set; } = true;
+
+    /// <summary>
+    /// The maximum number of anonymous proxy reads a single client IP may issue per minute. Defaults
+    /// to <see cref="ActivityPubServerConstants.DefaultAnonymousProxyMaxRequestsPerMinute"/>.
+    /// </summary>
+    public int AnonymousMaxRequestsPerMinute { get; set; } = ActivityPubServerConstants.DefaultAnonymousProxyMaxRequestsPerMinute;
 }

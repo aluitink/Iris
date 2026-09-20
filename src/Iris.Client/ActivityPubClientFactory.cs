@@ -52,7 +52,11 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
     /// Builds a signed <see cref="IActivityPubClient"/>, optionally wrapping the signed pipeline in an
     /// outermost handler.
     /// </summary>
-    /// <param name="options">The client options (actor to sign as, retry, proxy, caches).</param>
+    /// <param name="options">The client options (actor to sign as, retry, proxy, caches). When
+    /// <see cref="ActivityPubClientOptions.ActorId"/> is null, the client is built UNSIGNED — no
+    /// <see cref="Pipeline.SigningHandler"/> in the pipeline — so it relays public ActivityPub reads
+    /// (the server's anonymous proxy seam, S2/S14) without an actor key. An unsigned client cannot be
+    /// used for a signed write.</param>
     /// <param name="httpHandler">The caller-supplied transport handler (e.g. a browser
     /// <see cref="HttpClientHandler"/> for cookie auth).</param>
     /// <param name="outermost">
@@ -69,19 +73,27 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(httpHandler);
+
+        // The anonymous proxy seam (S2/S14) relays public ActivityPub reads UNSIGNED (no actor key to
+        // sign with): when ActorId is null the pipeline omits the SigningHandler. A signed write still
+        // requires an ActorId (a null ActorId with a body request would otherwise be un-signable).
+        DelegatingHandler pipeline;
         if (options.ActorId is null)
         {
-            throw new ArgumentException("ActorId is required for a signed ActivityPub client.", nameof(options));
+            pipeline = new JsonLdHandler(httpHandler);
+        }
+        else
+        {
+            var signingHandler = new SigningHandler(_signer, _keyProvider, httpHandler)
+            {
+                ActorId = options.ActorId.Value,
+            };
+
+            // Retry → JsonLd → Signing → transport. Retry is outermost so it replays the signed
+            // request; JsonLd sets content negotiation headers before Signing signs them in.
+            pipeline = new JsonLdHandler(signingHandler);
         }
 
-        var signingHandler = new SigningHandler(_signer, _keyProvider, httpHandler)
-        {
-            ActorId = options.ActorId.Value,
-        };
-
-        // Retry → JsonLd → Signing → transport. Retry is outermost so it replays the signed
-        // request; JsonLd sets content negotiation headers before Signing signs them in.
-        DelegatingHandler pipeline = new JsonLdHandler(signingHandler);
         if (options.EnableRetry)
         {
             pipeline = new RetryHandler(options.MaxRetryAttempts, pipeline);

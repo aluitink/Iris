@@ -463,34 +463,41 @@ public sealed class UiContext
     /// 410). When the instance has no cached copy (404), the fetch falls through to the live path.
     /// </para>
     /// <para>
-    /// The live path: when the session's signing client is available (signed in) the fetch is made
-    /// through it (signed requests, routed through the home proxy for a remote IRI); when the
-    /// session's client is null (signed out) it falls back to a plain (unsigned) <c>HttpClient</c> —
-    /// actor documents are public, so an anonymous read succeeds. Returns null when the fetch fails
-    /// or the actor is not found (nothing is cached on failure, so a later call can retry).
+    /// The live path: a <em>remote</em> actor is read through the home instance's proxy — the
+    /// signed-in path POSTs (the proxy signs the forwarded request as the actor); the signed-out path
+    /// uses the SAME-ORIGIN anonymous proxy seam (<c>GET /ap/v1/proxy/{target}</c>, S2/S14), a
+    /// cookie-less <c>GET</c> the proxy relays as an unsigned public read (a direct cross-origin GET
+    /// is CORS-/CSP-blocked in the browser). A <em>local</em> actor dials directly (an unsigned
+    /// <c>GET</c> when signed out — a local actor's document is public on its own origin). Returns
+    /// null when the fetch fails or the actor is not found (nothing is cached on failure, so a later
+    /// call can retry).
     /// </para>
     /// </summary>
     private async Task<IObject?> FetchActorAsync(Iri actorIri)
     {
         IObject? doc = null;
 
-        // 138: a remote (cross-origin) actor is read through the home instance's proxy endpoint
-        // (POST /ap/v1/proxy/{target}), which is cache-first: it serves the actor's cached document
-        // when fresh (no live fetch — a deactivated / unreachable account still renders) and otherwise
-        // fetches it live and refreshes the cache. This is the single seam for every remote actor /
-        // object read. A local actor is NOT routed here: its canonical document (via /u/{handle})
-        // carries the Iris-local extensions (capabilities, feed, …) the cached copy does not.
+        // 138 + S2/S14: a remote (cross-origin) actor is read through the home instance's proxy
+        // endpoint, which is cache-first: it serves the actor's cached document when fresh (no live
+        // fetch — a deactivated / unreachable account still renders) and otherwise fetches it live and
+        // refreshes the cache. This is the single seam for every remote actor / object read. A local
+        // actor is NOT routed here: its canonical document (via /u/{handle}) carries the Iris-local
+        // extensions (capabilities, feed, …) the cached copy does not.
         //
-        // The proxy endpoint is authenticated (it signs the forwarded request with the actor's key),
-        // so it is only usable when signed in. A signed-out visitor must NOT call it — a 401 here
-        // (a) does nothing useful and (b) makes the browser log a console error for every remote
-        // actor on a public feed (one per avatar). Skip the proxy when the session has no signing
-        // client and fall through to the anonymous live read (actor documents are public).
-        if (_session.Client is not null && IsRemoteActorIri(actorIri))
+        // The signed-in path POSTs to the proxy (the proxy signs the forwarded request with the
+        // actor's key). A SIGNED-OUT visitor's browser cannot reach a cross-origin remote instance
+        // directly (a direct GET is CORS-/CSP-blocked — the signed-out home feed's remote avatars and
+        // the signed-out remote actor-detail page were broken by exactly this), so it reads public
+        // remote content through the SAME-ORIGIN anonymous proxy seam (GET /ap/v1/proxy/{target}, S2/
+        // S14): the proxy relays an unsigned public GET. A local actor is NOT routed here (it dials
+        // directly), and a non-2xx from either proxy path falls through to the live read below.
+        if (IsRemoteActorIri(actorIri))
         {
             try
             {
-                doc = await FetchViaProxyAsync(actorIri);
+                doc = _session.Client is not null
+                    ? await FetchViaProxyAsync(actorIri)
+                    : await FetchViaAnonymousProxyAsync(actorIri);
             }
             catch
             {
@@ -604,9 +611,43 @@ public sealed class UiContext
     }
 
     /// <summary>
-    /// Fetches an actor document via plain HTTP (no ActivityPub signing). Used when signed out
-    /// (the session's signing client is null). The actor document is public, so an unsigned
-    /// <c>GET</c> succeeds. Returns null when the fetch fails or the actor is not found.
+    /// Reads a remote (cross-origin) actor or object document through the home instance's ANONYMOUS
+    /// proxy seam (<c>GET /ap/v1/proxy/{target}</c>, S2/S14). A SIGNED-OUT visitor's browser cannot
+    /// reach a cross-origin remote instance directly (a direct <c>GET</c> is CORS-/CSP-blocked), so it
+    /// reads public remote content through the SAME-ORIGIN proxy: the request is a cookie-less
+    /// <c>GET</c> (no Basic auth, no site cookie) to its own instance, and the proxy relays an unsigned
+    /// public ActivityPub <c>GET</c> to the remote (the remote serves public documents to unsigned
+    /// reads). The proxy is cache-first, so a fresh cached document is served without a live fetch.
+    /// This is the signed-out counterpart of <see cref="FetchViaProxyAsync"/> (the signed-in POST
+    /// path). Returns null on a non-success (404 unknown, 410 gone, 403/429 policy, or any failure) so
+    /// the caller falls through to its live-fetch path.
+    /// </summary>
+    private async Task<IObject?> FetchViaAnonymousProxyAsync(Iri targetIri)
+    {
+        var http = _httpClientFactory.CreateClient("iris");
+        var path = $"/ap/v1/proxy/{Uri.EscapeDataString(targetIri.Value)}";
+        // A cookie-less GET: anonymous (the seam's gate — no Basic auth, no site cookie). The proxy
+        // relays an unsigned public GET to the remote target.
+        using var response = await http.GetAsync(path);
+        if (!response.IsSuccessStatusCode)
+        {
+            // 404 (unknown target), 410 (gone), 401 (anonymous seam disabled), 403/429 (policy), or
+            // any failure: the caller falls through to a live fetch.
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
+    }
+
+    /// <summary>
+    /// Fetches an actor document via plain HTTP (no ActivityPub signing). Used as the last-resort
+    /// fallback for a LOCAL (same-origin) actor when signed out (the session's signing client is
+    /// null): a local actor dials directly (it is not routed through the proxy), and its document is
+    /// public, so an unsigned <c>GET</c> succeeds. A REMOTE actor when signed out is read through the
+    /// anonymous proxy seam (<see cref="FetchViaAnonymousProxyAsync"/>) — a direct cross-origin GET is
+    /// CORS-/CSP-blocked in the browser (S2/S14). Returns null when the fetch fails or the actor is
+    /// not found.
     /// </summary>
     private async Task<IObject?> FetchActorDocumentAnonymousAsync(Iri actorIri)
     {
