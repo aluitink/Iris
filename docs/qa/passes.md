@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 31 (2026-09-20) — Search re-verify + Compose media attachment
+
+- **Build/Live:** deployed `a45f3d4` (== HEAD? y — dev proxy rate-limiter WIP still uncommitted; S2/S14 re-verify remains blocked). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S5 search "alice" re-verify + "Actors only" filter, Compose media-attachment end-to-end (file pick → preview → post → object page → Delete).
+- **Result:** **2 clean** ("Actors only" search filter returns actor-only results; media-attachment post renders image on object page, DB `attachment` JSONB + media URL serve the exact 69-byte PNG, Delete→Tombstone works); **1 re-confirmed OPEN** (S5 orphan `localhost:8088/ap/v1/u/alice` still first result of "alice"). 0 non-environmental console errors.
+- **Checkpoint:** next pass re-verifies S2/S14 once dev's anonymous-proxy rate-limiter WIP is committed+rebuilt; re-check S17 if `PagedCollection.razor` WIP lands.
+
+---
+
 ## Pass 30 (2026-09-20) — Communities detail tabs + "All on this instance" + Settings moderation
 
 - **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted WIP since, now incl. `PagedCollection.razor`; build current). Container `irisweb-iris-web-1` healthy.
