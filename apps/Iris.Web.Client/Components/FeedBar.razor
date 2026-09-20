@@ -1,0 +1,97 @@
+@using Microsoft.AspNetCore.Components.Authorization
+@using Iris.Web.Client.Components
+
+<AuthorizeView>
+    <Authorized>
+        <div class="feed-bar">
+            @if (IsHome)
+            {
+                <div class="feed-bar-tabs">
+                    <button type="button" class="tab @(_activeTab == "posts" ? "tab--active" : "")" @onclick='() => SetTab("posts")' aria-selected="@(_activeTab == "posts")">Posts</button>
+                    <button type="button" class="tab @(_activeTab == "communities" ? "tab--active" : "")" @onclick='() => SetTab("communities")' aria-selected="@(_activeTab == "communities")">Communities</button>
+                </div>
+            }
+            <div class="feed-bar-right">
+                <a class="feed-bar-bell" href="/notifications" aria-label="Notifications">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <NotificationBadge />
+                </a>
+            </div>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
+    private bool _isHome;
+    private string _activeTab = "posts";
+
+    private bool IsHome => _isHome;
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        _isHome = IsHomeLocation(Nav.Uri);
+        LoadTabFromStorage();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _isHome = IsHomeLocation(Nav.Uri);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private static bool IsHomeLocation(string uri)
+    {
+        var path = new Uri(uri).AbsolutePath;
+        return path == "/home" || path.StartsWith("/home/", StringComparison.Ordinal);
+    }
+
+    private void SetTab(string tab)
+    {
+        _activeTab = tab;
+        SaveTabToStorage(tab);
+    }
+
+    private void LoadTabFromStorage()
+    {
+        // localStorage is not available in OnInitialized (WASM); the tab state is
+        // loaded via JS in OnAfterRenderAsync.
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var stored = await Js.InvokeAsync<string>("localStorage.getItem", "iris:homeTab");
+                if (stored is "posts" or "communities")
+                {
+                    _activeTab = stored;
+                }
+            }
+            catch
+            {
+                // localStorage unavailable; default to "posts".
+            }
+        }
+    }
+
+    private async void SaveTabToStorage(string tab)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", "iris:homeTab", tab);
+        }
+        catch
+        {
+            // localStorage unavailable; ignore.
+        }
+    }
+
+    [Inject]
+    private IJSRuntime Js { get; set; } = default!;
+}
