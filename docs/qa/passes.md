@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 73 (2026-09-20) — S20/S2/S14 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed. Container healthy.
+- **Explored:** S20: `/home` Communities tab → 0 new API requests, 0 console errors. S2: clean entry → `/` → 2 proxy 401 errors. S14: signed-out `/actor?iri=mastodon.social/users/deadline` → 5 errors (1 proxy 401 + 4 CSP).
+- **Result:** 0 new; **S20 re-confirmed OPEN** (6th pass, visual-only toggle). **S2 re-confirmed OPEN** (2 proxy 401 — no change). **S14 re-confirmed OPEN** (5 errors — no change).
+- **Checkpoint:** next pass targets S19 (Edit community no-op), S17 (profile over-fetch), S21 (/c/{handle}).
+
+---
+
 ## Pass 72 (2026-09-20) — S16-UX re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed.
