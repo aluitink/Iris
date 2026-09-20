@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 55 (2026-09-20) — S17/S20 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S17: `/profile` → 3 tabs clicked (Your posts, Replies, Likes). **39 outbox requests** (13 per tab × 3 tabs). Each tab click fires 13 sequential outbox requests (page 1–13). The profile page fetches the entire outbox for each tab — no server-side filtering by activity type. S20: `/home` → Posts tab shows following feed (skinnylatte dolphin boost first). Click **Communities** tab → **0 new API requests** (no `?source=` parameter, no community-specific call). Feed content **identical to Posts tab**. 0 console errors. Click back to **Posts** tab → 0 new API requests. The Communities tab is a **visual-only toggle** — changes CSS active state but does not trigger a new feed fetch.
+- **Result:** 0 new; **S17 re-confirmed OPEN** (39 outbox requests for 3 tabs — 13 per tab, no server-side filtering). **S20 re-confirmed OPEN** (Communities tab is visual-only — 0 new API requests on tab switch, feed data never changes).
+- **Checkpoint:** next pass targets S4 (remote interop missing from Following), S16-UX (poll vote inconsistency), S2/S14 (proxy 401 — partially improved).
+
+---
+
 ## Pass 54 (2026-09-20) — S2/S14 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
