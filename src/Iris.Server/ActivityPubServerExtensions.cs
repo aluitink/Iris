@@ -3986,6 +3986,7 @@ public static class ActivityPubServerExtensions
         IdMinter idMinter,
         LocalCollectionPageCache collectionCache,
         LocalActorDocumentCache actorDocumentCache,
+        IFollowFeedService followFeed,
         IActivityPubClient? objectFetch,
         Observability.IDegradedModeGate degraded,
         CancellationToken ct)
@@ -4302,6 +4303,9 @@ public static class ActivityPubServerExtensions
                         {
                             InvalidateLocalCollectionPage(collectionCache, followTargetIri.Value, "followers");
                         }
+                        // The actor's home feed now includes the newly-followed target's posts. Drop the
+                        // per-actor feed cache so the next /feed read reflects the new follow immediately.
+                        followFeed.InvalidateActorFeedCache(actorIri, ct);
                         break;
                     case Block:
                         InvalidateLocalCollectionPage(collectionCache, actorIri, "blocks");
@@ -4337,6 +4341,12 @@ public static class ActivityPubServerExtensions
                                 {
                                     InvalidateLocalCollectionPage(collectionCache, undoneFollowTargetIri.Value, "followers");
                                 }
+                                // The actor's following set just LOST a target (an un-follow). Its home
+                                // feed (the union of the follows' outboxes) must no longer include the
+                                // unfollowed actor's posts. Drop the per-actor feed cache so the next
+                                // /feed read reflects the removed follow immediately — without this the
+                                // 30 s TTL would keep showing "messages from an unfollowed user".
+                                followFeed.InvalidateActorFeedCache(actorIri, ct);
                             }
                         }
 

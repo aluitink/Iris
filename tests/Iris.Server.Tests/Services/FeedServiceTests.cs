@@ -1238,6 +1238,50 @@ public sealed class FeedServiceTests
     }
 
     [Fact]
+    public async Task Feed_Cache_InvalidateActorFeedCache_DropsOnlyThatActor()
+    {
+        var (service, persistence) = Build(persistence: SeedLocal(p =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(p, bob, "Bob");
+            SeedActor(p, carol, "Carol");
+            p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            p.Follows.RecordFollowAsync(carol, bob).GetAwaiter().GetResult();
+            AddPost(p, bob, "b-1", "bob 1");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var carol = Actor(LocalHost, "carol");
+
+        // Warm both actors' feed caches (each follows bob, who has one post).
+        var aliceBefore = await service.GetFeedAsync(alice);
+        var carolBefore = await service.GetFeedAsync(carol);
+        Assert.Single(aliceBefore);
+        Assert.Single(carolBefore);
+
+        // A new post by bob appears for NEITHER until their cache is invalidated.
+        AddPost(persistence, Actor(LocalHost, "bob"), "b-2", "bob 2");
+        var aliceStale = await service.GetFeedAsync(alice);
+        var carolStale = await service.GetFeedAsync(carol);
+        Assert.Single(aliceStale);
+        Assert.Single(carolStale);
+
+        // Invalidating ONLY alice's feed cache drops her entry (rebuilds with b-2) but leaves carol's
+        // entry cached (still the single pre-b-2 item). This is the unfollow seam: the handler drops the
+        // un-follower's cache entry so the next /feed read reflects the removed follow immediately.
+        service.InvalidateActorFeedCache(alice);
+        var aliceFresh = await service.GetFeedAsync(alice);
+        var carolStillStale = await service.GetFeedAsync(carol);
+        Assert.Equal(2, aliceFresh.Count);
+        Assert.Single(carolStillStale);
+
+        // A no-op invalidation of an actor with no cache entry does not throw.
+        service.InvalidateActorFeedCache(Actor(LocalHost, "nobody"));
+    }
+
+    [Fact]
     public async Task Feed_Cache_QueryFilter_AppliedPerRequest()
     {
         var (service, _) = Build(persistence: SeedLocal(persistence =>

@@ -103,6 +103,10 @@ public sealed class FeedService : IFollowFeedService
     public void ClearFeedCache() => _feedCache.Clear();
 
     /// <inheritdoc/>
+    public void InvalidateActorFeedCache(Iri actorIri, CancellationToken ct = default)
+        => _feedCache.TryRemove(actorIri, out _);
+
+    /// <inheritdoc/>
     public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, bool bypassCache = false, CancellationToken ct = default)
     {
         var feed = await BuildFeedAsync(actorIri, threadDepth, bypassCache, ct).ConfigureAwait(false);

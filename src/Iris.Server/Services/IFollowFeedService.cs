@@ -72,4 +72,28 @@ public interface IFollowFeedService
     /// their own and no followed actor has content, or nothing matches the filters). A remote outbox that
     /// cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
     public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, bool bypassCache = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// Invalidates the server-side per-actor feed cache entry for <paramref name="actorIri"/> so the next
+    /// <c>GET /u/{handle}/feed</c> (without <c>?refresh=true</c>) rebuilds from the stores instead of
+    /// serving the cached (pre-change) feed for the rest of the TTL.
+    /// </summary>
+    /// <remarks>
+    /// The per-actor feed cache (<see cref="FeedService"/>, 30 s TTL) merges the actor's <em>current</em>
+    /// <c>following</c> set. When a follow edge the actor depends on changes — most importantly an
+    /// <em>un-follow</em> (an <c>Undo</c> of a <c>Follow</c>) — the cached feed still contains the
+    /// (now-unfollowed) actor's posts until the TTL lapses. Without this invalidation, an un-follower
+    /// "still sees messages from an unfollowed user" for up to the cache TTL (and longer if the client
+    /// honors the feed's <c>Cache-Control</c>). Callers invoke this at the follow-edge write sites (the
+    /// outbox Follow/Undo branches and the inbound handlers that record/remove a local edge). The default
+    /// implementation is a no-op, so an implementation without a server-side cache (or a test double)
+    /// need not override it.
+    /// </remarks>
+    /// <param name="actorIri">The actor whose feed cache entry should be dropped (the un-follower, on the
+    /// actor's home instance).</param>
+    /// <param name="ct">Cancellation token.</param>
+    public virtual void InvalidateActorFeedCache(Iri actorIri, CancellationToken ct = default)
+    {
+        _ = ct;
+    }
 }
