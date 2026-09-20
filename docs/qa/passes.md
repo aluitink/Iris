@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 63 (2026-09-20) — S19 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S19: Community `technology` (andrew, owner) → **Requests tab** → alert: *"We couldn't load the join requests. Please try again."* — **NO network request fired** for the requests endpoint (0 requests matching `requests|join` in network log). API probe: `GET /ap/v1/c/technology/requests` → **404** (endpoint does not exist). `GET /ap/v1/c/technology/members` → **200**. The Requests tab has no backing endpoint and no retry mechanism (no Refresh button).
+- **Result:** 0 new; **S19 re-confirmed OPEN** (requests endpoint still 404s; UI error without API call; no retry button — 3rd community tested: technology, qa-pass46-test, qa-pass51-test).
+- **Checkpoint:** next pass targets S3 (Create persistence), S21 (no auto-follow + /c/{handle} 404), S20 (Communities tab visual-only).
+
+---
+
 ## Pass 62 (2026-09-20) — S4/S16-UX re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
