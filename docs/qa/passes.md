@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 50 (2026-09-20) — S4 re-verify + Directory community follow state on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S4: Communities → Following tab shows **"technology" + "qa-pass46-test"** (both local, both "Leave" button) — remote `lemmy.luit.ink/c/interop` **still missing**. Confirmed follow edge exists: `lemmy.luit.ink/c/interop` actor page shows **"Unfollow"** button. Directory → Communities tab (This instance): `interop` listed with **"Join" button** (not "Leave") — directory does not reflect the existing follow edge. New observation: Directory Communities tab shows "Join" instead of "Leave" for an already-followed remote community (UX inconsistency with Communities page which shows "Leave" for local follows).
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote `interop` community missing from Communities → Following tab, 8 consecutive passes; follow edge confirmed via Unfollow button). New facet: Directory Communities tab shows "Join" for already-followed remote community (should show "Leave").
+- **Checkpoint:** next pass targets S21 (no auto-follow + /c/{handle}), S19 (requests endpoint missing), S3 (Create persistence), S2/S14 (blocked).
+
+---
+
 ## Pass 49 (2026-09-20) — S17/S16-UX/S20 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).

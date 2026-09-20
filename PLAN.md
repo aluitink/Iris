@@ -151,9 +151,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **8 open. No blockers (all S2/S3-sev).** (Pass 49: S17 re-confirmed — 34 outbox requests for 3 tabs. S16-UX re-confirmed — vote count 0 in profile vs 1 in object, badge missing everywhere. S20 deepened — server 403s `?source=` param, no backing endpoint for Communities tab.)
-- **Top priority:** S21 (no auto-follow on community creation + /c/{handle} route missing), S19 (requests endpoint missing + no Accept/Decline in notifications + actor page lacks Requests/Members tabs), S3 (Create-IRI 404 — Create activities not persisted to DB), S20 (Home feed Communities tab non-functional — server 403s `?source=` param), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch — 34 outbox requests for 3 tabs), S16-UX (poll vote count inconsistent + badge missing everywhere). S2/S14 still blocked on dev (proxy 401).
-- **Last pass:** 49 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8 fixed; S18 partially fixed; S21 partially resolved (caching). Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20, S21.
+- **8 open. No blockers (all S2/S3-sev).** (Pass 50: S4 re-confirmed — remote `interop` missing from Communities Following tab (8 consecutive passes); follow edge confirmed via Unfollow button. New facet: Directory Communities tab shows "Join" for already-followed remote community.)
+- **Top priority:** S21 (no auto-follow on community creation + /c/{handle} route missing), S19 (requests endpoint missing + no Accept/Decline in notifications + actor page lacks Requests/Members tabs), S3 (Create-IRI 404 — Create activities not persisted to DB), S20 (Home feed Communities tab non-functional — server 403s `?source=` param), S4 (remote communities missing from Following tab + Directory shows "Join" for followed remote), S17 (profile tabs over-fetch — 34 outbox requests for 3 tabs), S16-UX (poll vote count inconsistent + badge missing everywhere). S2/S14 still blocked on dev (proxy 401).
+- **Last pass:** 50 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8 fixed; S18 partially fixed; S21 partially resolved (caching). Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20, S21.
 
 ## Paused Questions
 
