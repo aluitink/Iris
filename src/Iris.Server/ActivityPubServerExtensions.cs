@@ -1550,6 +1550,34 @@ public static class ActivityPubServerExtensions
                     actorIri = canonicalIri;
                 }
             }
+
+            // S24 Defect 3: a cross-instance followed remote actor (e.g. @ii-a1 followed from instance B)
+            // is stored in the durable actor store under its REMOTE IRI (the RemoteActorPersister persists
+            // it on first encounter during the follow flow), but the route's local IRI ({base}/ap/v1/u/{handle})
+            // never matches it, so the direct GET 404s even though the instance just fetched that exact actor.
+            // Fall back to a stored remote actor whose preferredUsername matches the requested handle and serve
+            // its document AS-IS (the stored document already carries the remote instance's own
+            // inbox/outbox/followers/following IRIs — no Iris-local collection extensions, which are only valid
+            // for local actors). Mirrors ActorByIriHandler's "serve known content" half and the S4
+            // remote-community Following-tab precedent. Only the first match is served, so a handle that
+            // collides with several cached remote actors resolves deterministically by IRI (the store orders
+            // by Id). A local actor already resolved above, so this only fires for a genuine cross-instance miss.
+            var remoteMatches = await persistence.Actors.SearchActorsAsync(handle, limit: 10, offset: 0, ct, localOnly: false).ConfigureAwait(false);
+            var remoteCanonical = remoteMatches.FirstOrDefault(a =>
+                string.Equals(a.PreferredUsername, handle, StringComparison.OrdinalIgnoreCase)
+                && a.Id is { Length: > 0 } rid
+                && !rid.StartsWith(baseOrigin, StringComparison.OrdinalIgnoreCase));
+            if (remoteCanonical?.Id is { Length: > 0 } ridStr)
+            {
+                // Deep-copy so we never mutate the stored document, then serve it verbatim.
+                var remoteDoc = ActivityJson.Deserialize<IObjectOrLink>(ActivityJson.Serialize(remoteCanonical)) as IObject;
+                if (remoteDoc is not null)
+                {
+                    context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+                        ActivityPubServerConstants.ActorCacheControl;
+                    return Results.Text(ActivityJson.Serialize(remoteDoc), NegotiateContentType(context));
+                }
+            }
         }
 
         // Determine whether the request is authenticated for this actor (owner-only extension).

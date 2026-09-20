@@ -135,6 +135,47 @@ public sealed class CrossInstanceSearchDiscoverabilityIntegrationTests : IAsyncL
         Assert.DoesNotContain(AliceIri.Value, items);
     }
 
+    // --- S24 Defect 3: a cross-instance followed remote actor's direct GET ------------
+    // The route GET /ap/v1/u/{handle} reconstructs the IRI as this instance's local base + handle.
+    // A remote actor (stored under its REMOTE IRI during the follow flow) never matches that local
+    // IRI, so the direct GET 404s even though the instance just fetched that exact actor. The fix
+    // falls back to the stored remote actor whose preferredUsername matches the handle and serves
+    // its document as-is.
+
+    [Fact]
+    public async Task RemoteActorDirectGet_ServesStoredRemoteDocument()
+    {
+        // Seed a cross-instance followed remote actor (charlie, on A) into B's actor store under its
+        // REMOTE IRI (the path the RemoteActorPersister takes during a follow). A direct GET of
+        // /ap/v1/u/charlie on B must serve that stored document (200) rather than 404.
+        await _bPersistence.Actors.PutActorAsync(
+            new Actor
+            {
+                Id = "https://search-a.domain.local/ap/v1/u/charlie",
+                Type = ["Person"],
+                PreferredUsername = "charlie",
+                Name = ["Charlie Remote"],
+                Summary = ["a remote actor followed across instances"],
+            },
+            CancellationToken.None);
+
+        var resp = await _bHttp.GetAsync($"https://{BHost}/ap/v1/u/charlie");
+        resp.EnsureSuccessStatusCode();
+        var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        Assert.Equal("https://search-a.domain.local/ap/v1/u/charlie",
+            doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal("Person", doc.RootElement.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task UnknownHandleDirectGet_Still404s()
+    {
+        // A handle that no local or stored remote actor carries still 404s (the new remote fallback
+        // only serves a genuine stored match, so it cannot turn an unknown handle into a false 200).
+        var resp = await _bHttp.GetAsync($"https://{BHost}/ap/v1/u/no-such-actor-xyz");
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+    }
+
     // --- Deep links resolve on the origin instance -----------------------------------------
 
     [Fact]
