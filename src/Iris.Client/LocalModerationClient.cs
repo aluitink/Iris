@@ -717,9 +717,10 @@ public sealed class LocalModerationClient : ILocalModerationClient
 
     /// <summary>
     /// Resolves the local-auth handler from the explicit credentials or the client's default.
-    /// Returns the handler and whether it is request-scoped (owned).
+    /// Returns the handler and whether it is request-scoped (owned). Falls back to the cookie-auth
+    /// passthrough handler (the Blazor WASM client) when no Basic-auth credentials are configured.
     /// </summary>
-    private (LocalAuthHandler handler, bool ownsHandler) ResolveLocalHandler(ProxyCredentials? credentials)
+    private (HttpMessageHandler handler, bool ownsHandler) ResolveLocalHandler(ProxyCredentials? credentials)
     {
         var configured = _localAuth;
         if (credentials is not null && configured is null)
@@ -733,6 +734,10 @@ public sealed class LocalModerationClient : ILocalModerationClient
         else if (configured is not null)
         {
             return (configured, false);
+        }
+        else if (_passthrough is not null)
+        {
+            return (_passthrough, false);
         }
 
         throw new InvalidOperationException(

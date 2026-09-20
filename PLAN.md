@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `HEAD` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `c205d47` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** S3 fixed (Create-activity visibility gate). S21 fixed (auto-follow + /c/{handle}). S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** S3 fixed. S19 facets 1+3 fixed (Requests tab + Edit Save). S21/S20 re-verified working (stale WASM in QA browser). S19 facet 2 (notification Accept/Decline) remains open. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **S21 re-verify — `/c/{handle}` redirect page (dev, 2026-09-20).** QA Pass 66 reports `/c/{handle}` URLs show "Nothing at this address." instead of redirecting. The `CommunityHandleRedirect.razor` page was committed in `8539f3f` but may not be active in the deployed build. Investigate + fix.
+- **S19 facet 2 — Notification Accept/Decline buttons (dev, 2026-09-20).** Follow-request notifications show "sent you a follow request" with no Accept/Decline buttons. `NotificationRow.razor` needs action buttons wired to `POST /local/v1/u/{handle}/requests/accept|reject/{actorIri}`. Facets 1+3 done (change doc 1591). See [QA finding](docs/qa/s19-community-requests-tab-fails.md).
 
 ## Dev Queue
 
@@ -137,6 +137,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 - *(cleared Pass 27, 2026-09-20 — build now current (`a45f3d4` deployed); QA live-verified **S6** remote Join, the **S4** local-community following facet, the **S8** "All on this instance" list, and **S16** poll-vote persistence. S4's remote-community display caveat remains open in [s04](docs/qa/s04-communities-following-remote.md).)*
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
+
+- **S19 facet 2 — Notification Accept/Decline buttons.** [QA finding](docs/qa/s19-community-requests-tab-fails.md)
 
 
 
@@ -163,6 +165,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S19 facets 1+3 — Community Requests tab + Edit Save (2026-09-20):** `ResolveLocalHandler` now falls back to cookie-auth passthrough; Requests tab Retry button added; `manuallyApprovesMembers` flag persists via Add/Remove outbox. 1392 passed. [change doc](docs/changes/1591-s19-community-requests-tab-and-edit-save.md)
+- **S20 re-verify (2026-09-20):** Communities tab IS firing `?source=communities` (200) in a fresh browser. QA's "0 new API requests" was a stale WASM cache artifact. No code change needed.
 - **S3 — Create-activity visibility gate fix (2026-09-20):** `ObjectDocumentHandler` visibility gate now skips Activities (metadata wrappers, not content). `GET /ap/v1/u/{handle}/creates/{id}` → 200. 1392 passed. [change doc](docs/changes/1590-s3-create-activity-visibility-gate.md)
 - **S21 — Community creation auto-follow + `/c/{handle}` route (2026-09-20):** Auto-follow edge on community creation; `/c/{handle}` redirect page. 1391 passed. [change doc](docs/changes/1589-s21-community-creation-autofollow-and-handle-route.md)
 - **① Feed load feel — server-side follow-feed caching (2026-09-20):** Per-actor 30s TTL cache in `FeedService`; `?refresh=true` bypass; 5 new unit tests + 4 integration test fixes. 1390 passed. [change doc](docs/changes/1588-server-side-follow-feed-caching.md)

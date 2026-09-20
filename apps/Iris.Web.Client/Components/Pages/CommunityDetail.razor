@@ -312,6 +312,7 @@ else
             else if (JoinRequestError is not null)
             {
                 <div class="error" role="alert">@JoinRequestError</div>
+                <button class="btn btn-small btn-ghost" @onclick="LoadJoinRequestsAsync">Retry</button>
             }
             else if (JoinRequestActors is { Count: 0 })
             {
