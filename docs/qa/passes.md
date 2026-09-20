@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 32 (2026-09-20) — S2/S14 re-verify + S5 fix confirmation + profile avatar flow
+
+- **Build/Live:** deployed `456b0d9` (== HEAD? y — S2/S14 anonymous-proxy seam + S5 Search fix are live). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S2/S14 signed-out re-verify (proxy 401s unsigned GET), S5 search "alice" re-verify (orphan gone), profile avatar upload/remove round-trip.
+- **Result:** **1 clean** (S5 orphan gone, canonical alice renders, 0 errors on actor detail); **2 re-confirmed OPEN** (S2 signed-out `/` → 11 console errors, proxy 401s unsigned GET for Mastodon; S14 signed-out remote actor detail → proxy 401 → "Actor not found."); **1 fixed** (S5 → `456b0d9`). Profile avatar: upload works (media IRI persisted), remove works (icon cleared), but in-page avatar cache is stale after save (shows old media IRI until hard refresh). 0 non-environmental console errors.
+- **Checkpoint:** next pass explores fresh areas (Compose "Article" type, Settings → Security/Change password, Directory "Find someone" re-verify for S7, Notifications tab filtering).
+
+---
+
 ## Pass 31 (2026-09-20) — Search re-verify + Compose media attachment
 
 - **Build/Live:** deployed `a45f3d4` (== HEAD? y — dev proxy rate-limiter WIP still uncommitted; S2/S14 re-verify remains blocked). Container `irisweb-iris-web-1` healthy.

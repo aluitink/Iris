@@ -1,8 +1,8 @@
 # S2 — Signed-out remote reads bypass the proxy (CORS/blank avatars)
 
 - **Class:** bug (console-noise + broken avatars) — **Severity:** S2
-- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
-- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20 (signed-out `/`), 23, 24, 25, 27
+- **Status:** open (re-confirmed Pass 32, 2026-09-20 — the S2/S14 anonymous-proxy seam is live but the unsigned GET 401s)
+- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20 (signed-out `/`), 23, 24, 25, 27, 32
 - **Related:** [S14](s14-signed-out-actor-detail-csp.md) (same root, actor-detail facet)
 
 ## Symptom
@@ -29,3 +29,5 @@ Add a **public/anonymous GET proxy path** — the server already resolves these 
 Clean entry (fresh browser, signed out): signed-out `/` → 0 console errors, remote avatars render (no fallbacks).
 
 **Re-verification evidence (Pass 27, 2026-09-20, clean entry):** signed-out `/` → **CORS/`ERR_FAILED` console errors** on numeric-ID remote actor docs + **blank/fallback avatars**. STILL OPEN.
+
+**Re-verification evidence (Pass 32, 2026-09-20, deployed `456b0d9`):** the S2/S14 anonymous-proxy seam is now live — the client routes signed-out remote actor reads through the same-origin `GET /ap/v1/proxy/{target}` instead of a direct cross-origin fetch (no more CORS/`ERR_FAILED` for username-path actors). However, the proxy **still 401s the unsigned GET** for Mastodon targets: `GET /ap/v1/proxy/https%3A%2F%2Fmastodon.social%2Fusers%2Fgnomon` → **401** `{"error":"Request not signed"}` (curl, no cookie, no Basic auth). Signed-out `/` → **11 console errors** (7× proxy 401 for Mastodon username + numeric-ID actors, 2× CORS, 2× `ERR_FAILED` for the numeric-ID direct fallback). The `isAnonymousRead` gate in `ProxyHandler` (`ActivityPubServerExtensions.cs:1885-1891`) should allow a cookie-less GET, but something upstream (likely a middleware or the route's auth policy) intercepts the unsigned GET and returns 401 before `ProxyHandler` runs. Hachyderm username actors also 401 (previously 200 via the direct `ACAO:*` path). STILL OPEN — the seam is deployed but not functional for unsigned GETs.

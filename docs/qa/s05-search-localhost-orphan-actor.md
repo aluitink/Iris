@@ -1,8 +1,8 @@
 # S5 — Search lists a stale orphaned local actor (localhost IRI)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (re-confirmed Pass 31, 2026-09-20)
-- **Found:** Pass 13 (2026-09-20) — re-confirmed Passes 15, 27, 31
+- **Status:** fixed (2026-09-20, `456b0d9`)
+- **Found:** Pass 13 (2026-09-20) — re-confirmed Passes 15, 27, 31; **fixed + live-verified Pass 32**
 
 ## Symptom
 
@@ -25,3 +25,5 @@ Search "alice" → exactly one alice card (the public-IRI one); clicking it rend
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** search "alice" → **26 results** including both `alice` cards — the good public-IRI one **and** the stale `http://localhost:8088/ap/v1/u/alice` orphan. STILL OPEN.
 
 **Re-verification evidence (Pass 31, 2026-09-20, andrew):** search "alice" → **100 results**; the stale `http://localhost:8088/ap/v1/u/alice` orphan is the **first** result. Clicking it → `/actor?iri=http%3A%2F%2Flocalhost:8088%2Fap%2Fv1%2Fu%2Falice` → 2 console errors → page shows **"Actor not found."** STILL OPEN.
+
+**Re-verification evidence (Pass 32, 2026-09-20, andrew, deployed `456b0d9`):** search "alice" → **20 results**; the stale `http://localhost:8088/ap/v1/u/alice` orphan is **gone** — only the canonical `https://iris.luit.ink/ap/v1/u/alice` actor card appears (first result). Clicking it → actor detail renders (banner, "Posts (17)" tab, Follow button) with **0 console errors** on initial load (one unrelated 504 on a remote `iris-dev1.luit.ink` note proxy, not S5-related). **FIXED.**

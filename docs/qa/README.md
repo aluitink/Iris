@@ -39,7 +39,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S2 | Signed-out remote reads bypass the proxy (CORS/blank avatars) | bug | S2 | open | [s02](s02-signed-out-proxy-bypass.md) |
 | S3 | Object-detail 404s a local post's collections (Create-activity IRI) | bug | S3 | open | [s03](s03-object-detail-create-iri-404.md) |
 | S4 | Communities "Following" tab drops followed REMOTE communities | UX / bug | S2 | open | [s04](s04-communities-following-remote.md) |
-| S5 | Search lists a stale orphaned local actor (localhost IRI) | bug / data-integrity | S2 | open | [s05](s05-search-localhost-orphan-actor.md) |
+| S5 | Search lists a stale orphaned local actor (localhost IRI) | bug / data-integrity | S2 | fixed (2026-09-20, `456b0d9`) | [s05](s05-search-localhost-orphan-actor.md) |
 | S6 | Join on a remote community is a silent no-op (CSP-blocked browser POST) | bug | S2 | fix committed (`68ae703`), not yet live | [s06](s06-remote-join-csp-blocked.md) |
 | S7 | Directory external lookup stuck on the spinner forever | bug | S2 | open | [s07](s07-directory-external-lookup-stuck.md) |
 | S8 | Communities "All on this instance" list is incomplete/inconsistent | bug / data | S2 | open | [s08](s08-communities-all-tab-incomplete.md) |
@@ -55,7 +55,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S18 | Following a local account: follow "succeeds" but follower's Home timeline stays empty | bug / data-integrity | S2 | open | [s18](s18-local-follow-timeline-empty.md) |
 | S19 | Community "Requests" tab always fails to load (no request fires, no retry) | bug | S2 | open | [s19](s19-community-requests-tab-fails.md) |
 
-**17 open, 1 fix-committed-not-live (S6). No S1/blockers.**
+**16 open, 1 fix-committed-not-live (S6), 1 fixed (S5). No S1/blockers.**
 
 > Note: S1 was the Pass-10 defect set (signed-out 401 spam, proxy 500, Lemmy misclassification) — all fixed and verified Pass 11; it is recorded in [docs/changes/997-ui-ux-review.md](../changes/997-ui-ux-review.md), not here.
 
