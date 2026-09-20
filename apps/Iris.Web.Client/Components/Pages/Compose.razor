@@ -1325,9 +1325,16 @@
     /// </summary>
     private async Task PostAsync()
     {
+        // S11a: a poll's question lives in PollQuestion (or falls back to Content), so the
+        // empty-Content guard must not silently discard a valid body-less poll.
+        var isPoll = ContentType == "Poll";
+        var hasContent = string.IsNullOrWhiteSpace(Content)
+            ? (isPoll && !string.IsNullOrWhiteSpace(PollQuestion))
+            : true;
+
         if (Session.ActorId is not { } actorId
             || Session.Client is not { } client
-            || string.IsNullOrWhiteSpace(Content)
+            || !hasContent
             || Busy)
         {
             return;
