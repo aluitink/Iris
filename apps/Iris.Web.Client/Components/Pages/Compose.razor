@@ -177,11 +177,7 @@
             ? "This reply is threaded under the parent note and visible in its replies."
             : CommunityIri is not null
                 ? "This post is attributed to the community and visible to its members."
-                    : ContentType == "Poll"
-                        ? "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines."
-                        : ContentType == "Article"
-                            ? "An article addressed to the public — it lands in your outbox and appears in your followers' timelines."
-                            : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
+                : ComposeHint)
     </p>
 
     <div class="compose-actions">
@@ -1111,6 +1107,30 @@
     private string Visibility { get; set; } = "public";
 
     private const int MaxChars = 500;
+
+    /// <summary>
+    /// The compose visibility hint (S15): reflects the selected content type and visibility level so
+    /// the user is not told a Direct message is "addressed to the public."
+    /// </summary>
+    private string ComposeHint
+    {
+        get
+        {
+            var type = ContentType switch
+            {
+                "Poll" => "A poll",
+                "Article" => "An article",
+                _ => "A note",
+            };
+
+            return Visibility switch
+            {
+                "followers" => $"{type} visible to followers only — it lands in your outbox and appears in your followers' timelines.",
+                "direct" => $"{type} sent as a direct message — not visible in public or follower timelines.",
+                _ => $"{type} addressed to the public — it lands in your outbox and appears in your followers' timelines.",
+            };
+        }
+    }
 
     /// <summary>
     /// The cap on the number of the actor's recent outbox objects scanned to build the <c>#</c>
