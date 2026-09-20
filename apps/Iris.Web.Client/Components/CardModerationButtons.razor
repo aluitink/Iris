@@ -19,12 +19,21 @@
                 <path d="M17 9l6 6" />
             </svg>
         </button>
-        <button type="button" class="card-moderate-btn" title="Report @HandleOf(author)" aria-label="Report @HandleOf(author)"
-                disabled="@Busy" @onclick="OnReport">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
-                <line x1="4" y1="22" x2="4" y2="15" />
-            </svg>
+        <button type="button" class="card-moderate-btn" title="@(IsReported ? "Reported" : $"Report {HandleOf(author)}")" aria-label="@(IsReported ? "Reported" : $"Report {HandleOf(author)}")"
+                disabled="@(Busy || IsReported)" @onclick="OnReport">
+            @if (IsReported)
+            {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M20 6L9 17l-5-5" />
+                </svg>
+            }
+            else
+            {
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                    <line x1="4" y1="22" x2="4" y2="15" />
+                </svg>
+            }
         </button>
     </div>
 }
@@ -41,6 +50,12 @@
     /// </summary>
     [Parameter]
     public bool Busy { get; set; }
+
+    /// <summary>
+    /// S9: when true, the Report button shows a "Reported" checkmark and is disabled (dedup).
+    /// </summary>
+    [Parameter]
+    public bool IsReported { get; set; }
 
     /// <summary>Fires when the Block button is clicked.</summary>
     [Parameter]

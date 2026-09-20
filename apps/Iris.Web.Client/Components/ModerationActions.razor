@@ -15,7 +15,16 @@
     {
         <button class="btn btn-sm button--warning" disabled="@Busy" @onclick="BlockAsync">Block</button>
         <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="MuteAsync">Mute</button>
-        <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="FlagAsync">Report</button>
+        <button class="btn btn-sm button--ghost" disabled="@(Busy || IsReported)" @onclick="FlagAsync">
+            @if (IsReported)
+            {
+                <span>Reported ✓</span>
+            }
+            else
+            {
+                <span>Report</span>
+            }
+        </button>
     }
     else
     {
@@ -45,6 +54,7 @@
     private bool Busy { get; set; }
     private bool IsBlocked { get; set; }
     private bool IsMuted { get; set; }
+    private bool IsReported { get; set; }
     private string? _blockIri;
     private string? _flagIri;
 
@@ -91,6 +101,7 @@
         _lastTargetIri = targetValue;
         IsBlocked = false;
         IsMuted = false;
+        IsReported = false;
         _blockIri = null;
         _flagIri = null;
 
@@ -196,7 +207,7 @@
 
     private async Task FlagAsync()
     {
-        if (Client is not { } client || Session.ActorId is not { } me || TargetActorIri is not { } target)
+        if (Client is not { } client || Session.ActorId is not { } me || TargetActorIri is not { } target || IsReported)
         {
             return;
         }
@@ -208,11 +219,13 @@
             if (result.IsSuccess)
             {
                 _flagIri = result.MintedId;
+                IsReported = true;
             }
         }
         finally
         {
             Busy = false;
+            StateHasChanged();
         }
     }
 }

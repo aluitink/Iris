@@ -381,6 +381,10 @@ public partial class ObjectView
     // keeps a double-click from firing two deliveries.
     private bool _cardModBusy;
 
+    // S9 — the author IRI that this card has already reported (dedup: the Report button
+    // disables once reported so a second click can't file a duplicate flag).
+    private Iri? _reportedAuthorIri;
+
     /// <summary>
     /// The author of the fetched parent ("in reply to") object, for the context card's "In reply to
     /// @author" label. Null until the parent is fetched or when the parent has no author.
@@ -1222,12 +1226,14 @@ public partial class ObjectView
     /// <summary>
     /// Reports (flags) the author from the card header (Phase 102). A federated moderation report
     /// (a <c>Flag</c>) via the signed client. Fire-and-forget with the same non-fatal-on-failure
-    /// contract as <see cref="CardBlockAsync(Iri)"/>.
+    /// contract as <see cref="CardBlockAsync(Iri)"/>. S9: once a successful flag lands, the
+    /// author's IRI is remembered so the Report button disables (no duplicate flags, visible
+    /// "Reported" state).
     /// </summary>
     /// <param name="author">The author actor's IRI (the moderation target).</param>
     private async Task CardReportAsync(Iri author)
     {
-        if (_cardModBusy || Session.ActorId is not { } me || Session.Client is not { } client)
+        if (_cardModBusy || _reportedAuthorIri is { } reported && reported.Equals(author) || Session.ActorId is not { } me || Session.Client is not { } client)
         {
             return;
         }
@@ -1235,7 +1241,11 @@ public partial class ObjectView
         _cardModBusy = true;
         try
         {
-            await client.FlagAsync(me, author, CancellationToken.None);
+            var result = await client.FlagAsync(me, author, CancellationToken.None);
+            if (result.IsSuccess)
+            {
+                _reportedAuthorIri = author;
+            }
         }
         catch
         {
