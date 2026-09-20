@@ -1,7 +1,7 @@
 # S3 — Object-detail 404s a local post's collections (Create-activity IRI)
 
 - **Class:** bug (console-noise) — **Severity:** S3
-- **Status:** open (re-confirmed Pass 43, 2026-09-20, on deployed `65ccfa0`)
+- **Status:** FIXED (Pass 68, 2026-09-20, deployed `c205d47` — Create IRI now serves the Note; UI functional)
 - **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27, 35, 38, 39, 41, 42, 43
 - **Related:** distinct from [S13](s13-remote-lemmy-404-noise.md) (remote Lemmy collections)
 
