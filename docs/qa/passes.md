@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 78 (2026-09-20) — S4/S21 re-verify (container restarted 12:15:50)
+
+- **Build/Live:** Container restarted 12:15:50. Healthy.
+- **Explored:** S4: Following tab — 3 local communities, remote `interop` still missing. `interop` actor page shows "Unfollow". S21: `/c/technology` → "Nothing at this address." (redirect not active after restart).
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote interop missing — 13th pass). **S21 /c/{handle} re-confirmed OPEN** (redirect not active — 10th pass, persists after container restart).
+- **Checkpoint:** next pass targets S19 (Edit community no-op), S17 (profile over-fetch), S20 (Communities tab).
+
+---
+
 ## Pass 77 (2026-09-20) — S20/S16-UX re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed. Container healthy.
