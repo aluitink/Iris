@@ -419,4 +419,5 @@
 - **③④ Unified home feed — Phases 1-7 (COMPLETE):** Two feed tabs + FeedBar bottom strip + community IA rework (management page + Profile Communities tab). [changes/1587](changes/1587-e2e-verification.md)
 - **① Feed load feel — server-side follow-feed caching (COMPLETE):** Per-actor 30s TTL cache; `?refresh=true` bypass. [changes/1588](changes/1588-server-side-follow-feed-caching.md)
 - **S20 re-verify (COMPLETE):** Communities tab fires `?source=communities`; QA's "0 new API requests" was stale WASM.
+- **Shared-inbox route (COMPLETE):** `POST /ap/v1/shared-inbox` implemented (was advertised but unhandled — a shared-inbox-preferring sender like Mastodon had deliveries silently dropped). Fans content (Create/Announce) out to the author's local followers; routes object-addressed (Follow/Accept/Undo) to the object. 4 new integration tests. 1891 passed, 0 failed. [changes/1598](changes/1598-shared-inbox-route.md)
 - **③ Phase 3-6 (COMPLETE):** FeedBar + `?source=` wiring + community delete + Profile Communities tab. [changes/1583-1586](changes/1583-feedbar-bottom-control-strip.md)
