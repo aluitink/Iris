@@ -345,17 +345,22 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             deliveryTransport: () => a.CreateHandler());
         using var scope = new DisposeBoth(bRef, a);
 
-        // alice follows bob over the wire. B validates alice's signature and records the provisional
-        // follow edge (alice → bob). Because bob is manually-approving, B does NOT schedule an Accept.
+        // alice follows bob over the wire. B validates alice's signature. Because bob is manually-approving,
+        // B does NOT auto-accept: the Follow edge is WITHHELD and only a pending follow-request edge is
+        // recorded (S34) — the operator must respond with an explicit Accept/Reject.
         var follow = BuildFollow(aliceActorIri, bobActorIri);
         await aPersistence.Activities.PutActivityAsync(follow);
         await aPersistence.Follows.RecordFollowAsync(aliceActorIri, bobActorIri);
         using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(bobInboxIri, follow);
         Assert.Equal(202, statusCode.StatusCode);
-        Assert.True(
+        // B withholds the Follow edge (no auto-accept) and holds the inbound follow as a pending request.
+        Assert.False(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
-            "B should record the provisional follow edge (alice → bob) without auto-accepting");
+            "B (manually-approving) should NOT record the follow edge before the operator accepts");
+        Assert.True(
+            await bPersistence.Follows.HasFollowRequestAsync(aliceActorIri, bobActorIri),
+            "B should hold the inbound follow as a pending request");
         Assert.True(
             await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "A should record alice's own follow of bob");
@@ -379,7 +384,8 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var bobOutbox = await bPersistence.Activities.GetOutboxAsync(bobActorIri);
         Assert.Contains(bobOutbox, a => a.Id == rejectIri.Value);
 
-        // B removed the provisional local follow edge (alice → bob) immediately, without waiting for A.
+        // B still records no follow edge (alice → bob) — it was withheld while pending (S34) and the
+        // operator's Reject drained the pending request without ever materializing the Follow edge.
         Assert.False(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "After the operator reject, B should no longer record that alice follows bob");

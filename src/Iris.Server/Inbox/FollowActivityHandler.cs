@@ -149,19 +149,6 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         }
         else
         {
-            // The recipient is a local person: record the directed follow edge follower → recipient.
-            // When the person has manuallyApprovesFollowers set, the edge is still recorded (the
-            // follower's content should reach the local followers' outboxes via the federation path),
-            // but the follow is NOT auto-accepted — the operator must respond with an explicit
-            // Accept or Reject (J-10 / Resolved Decision #46).
-            await _persistence.Follows
-                .RecordFollowAsync(followerIri.Value, delivery.RecipientIri, ct)
-                .ConfigureAwait(false);
-
-            // Invalidate the recipient's followers collection page so the next non-?refresh read
-            // re-renders with the new follower (mirrors the outbox-page invalidation contract).
-            _collectionCache?.Invalidate(new Iri(delivery.RecipientIri + "/followers"));
-
             // Surface the inbound follow in the followed actor's own outbox (the activity store alone is
             // not enumerable by the UI). The sample's "Inbound follows" list reads the followed actor's
             // outbox for Follow activities so the operator can see — and Accept/Reject — the request.
@@ -173,16 +160,31 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
 
             if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
             {
-                // The follow is held for approval: record a pending follow-request edge (Phase 100) so
-                // the actor's follow-approval queue (GET /local/v1/u/{handle}/requests) lists it. The
-                // edge is independent of the provisional Follow edge (already recorded above) and is
-                // removed when the operator Accepts or Rejects (RecordFollowDecisionLocalAsync).
+                // The recipient manually approves followers (J-10 / Resolved Decision #46): the follow is
+                // HELD for approval. Only a pending follow-request edge (Phase 100) is recorded — the
+                // directed Follow edge is WITHHELD, so the requesting actor does NOT appear in the public
+                // followers collection (GET /ap/v1/u/{handle}/followers) until the owner Accepts. (The
+                // public collection reads EdgeKind.Follow via IFollowStore.GetFollowersAsync, so recording
+                // the Follow edge up front — the pre-S34 behavior — leaked the pending requester publicly.)
+                // The pending edge is removed when the operator Accepts or Rejects
+                // (RecordFollowDecisionLocalAsync / ApplyFollowDecisionEdgeAsync); on Accept that path
+                // records the Follow edge, materializing the follower.
                 await _persistence.Follows
                     .RecordFollowRequestAsync(followerIri.Value, delivery.RecipientIri, ct)
                     .ConfigureAwait(false);
 
                 return;
             }
+
+            // The recipient is a local person with auto-approve (the default): record the directed follow
+            // edge follower → recipient.
+            await _persistence.Follows
+                .RecordFollowAsync(followerIri.Value, delivery.RecipientIri, ct)
+                .ConfigureAwait(false);
+
+            // Invalidate the recipient's followers collection page so the next non-?refresh read
+            // re-renders with the new follower (mirrors the outbox-page invalidation contract).
+            _collectionCache?.Invalidate(new Iri(delivery.RecipientIri + "/followers"));
         }
 
         // Respond to the follow: construct an Accept (actor = the local actor/community being followed,

@@ -46,11 +46,16 @@ public sealed class FollowActivityHandlerTests
         Assert.Equal(LocalPerson, job.ActorIri);
     }
 
-    // --- manuallyApprovesFollowers: the edge is recorded, but NO Accept --------------------
+    // --- manuallyApprovesFollowers: the follow is HELD — pending request only, NO Accept ----
 
     [Fact]
-    public async Task HandleAsync_LocalPersonManuallyApproves_RecordsEdgeAndSchedulesNoAccept()
+    public async Task HandleAsync_LocalPersonManuallyApproves_HoldsFollowRequestWithholdsFollowEdge()
     {
+        // S34: when the recipient manually approves followers, the inbound follow is HELD for approval —
+        // only a pending follow-request edge is recorded, and the directed Follow edge is WITHHELD so the
+        // requesting actor does NOT appear in the public followers collection (GET /ap/v1/u/{h}/followers)
+        // before the owner Accepts. The operator must respond with an explicit Accept/Reject (the Accept
+        // path materializes the Follow edge via ApplyFollowDecisionEdgeAsync).
         var persistence = new InMemoryPersistenceProvider();
         await SeedManuallyApprovingPersonAsync(persistence, LocalManuallyApproving);
         var (handler, delivery) = BuildHandler(persistence);
@@ -58,10 +63,14 @@ public sealed class FollowActivityHandlerTests
 
         await handler.HandleAsync(new InboxDelivery(LocalManuallyApproving, follow), follow);
 
-        // The follow edge IS recorded (the follower's content can reach the local followers' outboxes
-        // via the federation path) ...
-        Assert.True(await persistence.Follows.IsFollowingAsync(RemoteFollower, LocalManuallyApproving));
-        // ... but NO Accept is scheduled: the operator must respond with an explicit Accept/Reject.
+        // A pending follow request is recorded (the /local/v1/u/{handle}/requests queue lists it) ...
+        Assert.True(await persistence.Follows.HasFollowRequestAsync(RemoteFollower, LocalManuallyApproving));
+        Assert.Contains(RemoteFollower, await persistence.Follows.GetFollowRequestsAsync(LocalManuallyApproving));
+        // ... but the directed Follow edge is WITHHELD (the public followers collection must not list the
+        // pending requester before acceptance) ...
+        Assert.False(await persistence.Follows.IsFollowingAsync(RemoteFollower, LocalManuallyApproving));
+        Assert.DoesNotContain(RemoteFollower, await persistence.Follows.GetFollowersAsync(LocalManuallyApproving));
+        // ... and NO Accept is scheduled: the operator must respond with an explicit Accept/Reject.
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 

@@ -57,8 +57,10 @@ public interface IFollowStore
     /// <summary>
     /// Records a pending follow request from <paramref name="followerIri"/> to <paramref name="targetIri"/>
     /// (Phase 100). This is the follow-approval queue edge: it exists only while <paramref name="targetIri"/>
-    /// has <c>manuallyApprovesFollowers</c> set and an inbound <c>Follow</c> is held (not auto-accepted). It
-    /// is independent of the <c>Follow</c> edge (which is always recorded when the recipient is local).
+    /// has <c>manuallyApprovesFollowers</c> set and an inbound <c>Follow</c> is held (not auto-accepted).
+    /// While the request is pending the <c>Follow</c> edge is WITHHELD (not recorded), so the requesting
+    /// actor is excluded from the public <c>followers</c> collection until the owner Accepts — at which
+    /// point the decision path records the <c>Follow</c> edge and removes this pending edge (S34).
     /// </summary>
     /// <param name="followerIri">The IRI of the actor requesting to follow.</param>
     /// <param name="targetIri">The IRI of the (local) actor whose approval is required.</param>
