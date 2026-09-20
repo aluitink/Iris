@@ -1,7 +1,7 @@
 # S18 — Following a local account: follow "succeeds" but the follower's Home timeline stays empty
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (re-confirmed Pass 36, 2026-09-20, on deployed `bb28dcf`)
+- **Status:** partially fixed (Pass 39, 2026-09-20, on deployed `4f5dd5c` — follow state now persists, Home timeline populates; follow request not auto-approved)
 - **Found:** Pass 29 (2026-09-20) — re-confirmed Passes 34, 36
 - **Related:** [s11](s11-poll-silent-noop-and-outbox.md) (outbox/timeline data), the Home timeline
 
@@ -49,3 +49,5 @@ Clean entry, fresh local account A, follow local account B (who has public posts
 **Re-verification evidence (Pass 36, 2026-09-20, andrew, deployed `bb28dcf`):** Registered fresh account `qa36test`, followed local `andrew` (777 posts). Follow button flipped to "Unfollow"; `qa36test` appears in andrew's Followers (3) tab. `qa36test` → Home → **"Your timeline is empty. Follow people to see their posts here."** after 3s. andrew's posts do not appear. Additionally: on hard-refresh of andrew's actor page, the button shows **"Follow"** again (not "Unfollow") even though the follower edge exists — the follow state is not persisted server-side or the UI re-checks against an incomplete data source. STILL OPEN.
 
 **Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** andrew's Followers tab shows **4** followers: `qa34test`, `qa36test`, + 2 others (likely remote). **`qa37test` is NOT present** (registered + followed andrew in Pass 37) — the follow state was lost (same as Pass 36's hard-refresh symptom). Home timeline emptiness not re-tested this pass (would require a fresh account). STILL OPEN (follow state not persisted).
+
+**Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** Registered fresh account `qa39test`, followed local `andrew` (780 posts). Follow button flipped to "Unfollow". `qa39test` → Home → **timeline populated with posts** (CiaraNi, stephen, and others from andrew's follows). Hard-refresh of andrew's actor page → button still shows **"Unfollow"** (state persisted). andrew's notifications show "qa39test sent you a follow request" (with NO Accept/Decline buttons — see S19). andrew's Followers tab shows count **4** (not 5). **PARTIALLY FIXED:** follow state now persists server-side, Home timeline populates correctly. Remaining issue: the follow request is not auto-approved (andrew must accept it), and the Followers count doesn't increment until acceptance.

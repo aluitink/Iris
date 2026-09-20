@@ -1,7 +1,7 @@
 # S15 — Compose visibility hint is misleading for Followers/Direct
 
 - **Class:** UX / cosmetic — **Severity:** S3
-- **Status:** mostly fixed (2026-09-20, verified Pass 38 on rebuilt container post-`bdc0e66`); minor grammar issue remains
+- **Status:** **FIXED** (verified Pass 39, 2026-09-20, on deployed `4f5dd5c`)
 - **Found:** Pass 22 (2026-09-20) — re-confirmed Passes 24, 28, 37; **hint now visibility-aware (Pass 38)**
 
 ## Symptom
@@ -40,3 +40,13 @@ In compose, switch the visibility selector through Public / Followers / Direct (
 - Poll + Direct → "A poll **a** private message — not visible in public or follower timelines." (same grammar issue)
 
 The core misleading-hint defect is **FIXED** — the hint now correctly reflects the selected visibility level in all 6 cases. Minor remaining issue: the Direct-variant text has a grammar error ("A note a private message" → should be "A note **is** a private message" or "A private message —…"). Downgraded to S3-cosmetic.
+
+**Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** the hint is now correct in all 6 cases with no grammar issues:
+- Note + Public → "A note addressed to the public — it lands in your outbox and appears in your followers' timelines." ✓
+- Note + Followers → "A note visible to followers only — it lands in your outbox and appears in your followers' timelines." ✓
+- Note + Direct → "A note sent as a direct message — not visible in public or follower timelines." ✓ (grammar fixed)
+- Poll + Public → "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines." ✓
+- Poll + Followers → "A poll visible to followers only — it lands in your outbox and appears in your followers' timelines." ✓
+- Poll + Direct → "A poll sent as a direct message — not visible in public or follower timelines." ✓ (grammar fixed)
+
+**FIXED.**

@@ -151,9 +151,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **8 open. No blockers (all S2/S3-sev).** (Pass 38: S9 + S11a/b + S12a + S10 confirmed FIXED; S15 mostly fixed (minor grammar); S4 remote + S18 + S3 + S13 + S16-UX + S17 + S19 re-confirmed open.)
-- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), S17 (profile tabs over-fetch), S4 (remote communities missing from Following tab). S3-sev: S3 (Create-IRI 404, narrow scope), S13 (Lemmy 404 noise), S15 (minor grammar), S16-UX (poll badge re-hydration).
-- **Last pass:** 38 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S9, S11, S12a, S10 fixed; S15 mostly fixed. Remaining open: S3, S4 (remote), S13, S15 (grammar), S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
+- **6 open. No blockers (all S2/S3-sev).** (Pass 39: S13 + S15 confirmed FIXED; S18 partially fixed (state persists now); S3, S4 remote, S16-UX, S17, S19 re-confirmed open.)
+- **Top priority:** S19 (follow request acceptance UI missing — no Accept/Decline buttons, /requests 404), S3 (Create-IRI 404), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll badge re-hydration). S2/S14 still blocked on dev (proxy 401).
+- **Last pass:** 39 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15 fixed; S18 partially fixed (state persists, follow request not auto-approved). Remaining open: S3, S4 (remote), S16-UX, S17, S19, S2/S14 (blocked on dev).
 
 ## Paused Questions
 

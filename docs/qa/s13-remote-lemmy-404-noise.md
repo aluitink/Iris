@@ -1,7 +1,7 @@
 # S13 — Remote Lemmy object-detail logs expected proxy 404s (console noise)
 
 - **Class:** UX / bug (console-noise) — **Severity:** S3
-- **Status:** open (re-confirmed Pass 37, 2026-09-20, on deployed `bb28dcf`)
+- **Status:** **FIXED** (verified Pass 39, 2026-09-20, on deployed `4f5dd5c`)
 - **Found:** Pass 19 (2026-09-20); data point added Pass 21 — re-confirmed Passes 27, 37
 - **Related:** distinct from [S3](s03-object-detail-create-iri-404.md) (local Create-IRI `/replies` 404)
 
@@ -28,3 +28,5 @@ Open a remote Lemmy post's object detail: 0 console 404s; the comment count and 
 **Re-verification evidence (Pass 37, 2026-09-20, andrew, deployed `bb28dcf`):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`GET …/proxy/…/post/1/{replies|likes|shares}`), post renders ("Hello from Lemmy interop"), Replies tab shows "No replies yet". STILL OPEN.
 
 **Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`GET …/proxy/…/post/1/{replies|likes|shares}`), post renders, UI degrades gracefully. STILL OPEN.
+
+**Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** `lemmy.luit.ink/post/1` detail → **0 console errors** (was 3 in Pass 38). Post renders ("Hello from Lemmy interop"), Replies tab shows "No replies yet", Likes/Shares tabs render. **FIXED.**
