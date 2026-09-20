@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 54 (2026-09-20) — S2/S14 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S2: Signed-out `/` → **2 console errors**: 2× proxy 401 (mastodon.social/users/arstechnica, mastodon.social/users/deadline). **REDUCED from 11 (Pass 36) to 2** — the numeric-ID direct-fallback CORS/ERR_FAILED errors are gone. Proxy still 401s unsigned GETs: `curl GET /ap/v1/proxy/https%3A%2F%2Fmastodon.social%2Fusers%2Fgnomon` → **401** `{"error":"Request not signed"}`. Hachyderm: `curl GET /ap/v1/proxy/https%3A%2F%2Fhachyderm.io%2Fusers%2Fskinkylatte` → **404** (not 401 — different failure mode). S14: Signed-out `/actor?iri=https://mastodon.social/users/deadline` → **5 console errors**: 1× proxy 401 + 4× CSP-violation on direct fallback (`connect-src 'self'`). Page shows **"Failed to load actor. It may not exist or the server is unreachable."** Identical failure mode to Pass 32.
+- **Result:** 0 new; **S2 partially improved** (error count reduced 11→2, no more CORS/direct-fallback noise on home feed) but **STILL OPEN** (proxy 401 for unsigned Mastodon GETs persists). **S14 re-confirmed OPEN** (proxy 401 + CSP violations on actor detail, identical to Pass 32).
+- **Checkpoint:** next pass targets S4 (remote interop missing from Following), S20 (Communities tab 403), S17 (profile over-fetch).
+
+---
+
 ## Pass 53 (2026-09-20) — S3 Create persistence re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
