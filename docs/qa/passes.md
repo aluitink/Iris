@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 64 (2026-09-20) — S3 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S3: Created fresh post "QA Pass 64: S3 Create persistence test post" (Note IRI: `…/notes/06GBX23XJHPVJ6HGNE4ZVE5PCW`, Create IRI: `…/creates/06GBX23XJHPVJ6HGNE4ZVE5PCR`). POST `/ap/v1/u/andrew/outbox` → **202 Accepted**. DB: Create IRI → **0 rows**. Only the Note is stored (1 row). Note IRI → **200** (clean render). Create IRI → **HTTP 404** + "Object not found." alert + 1 console 404 error.
+- **Result:** 0 new; **S3 re-confirmed OPEN** (Create activities not persisted to DB — 7th consecutive pass).
+- **Checkpoint:** next pass targets S21 (no auto-follow + /c/{handle} 404), S20 (Communities tab visual-only), S17 (profile over-fetch).
+
+---
+
 ## Pass 63 (2026-09-20) — S19 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
