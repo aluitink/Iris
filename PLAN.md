@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `bdc0e66` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `b5eef5c` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **S10 — Article "(long-form)" mislabeled (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** Selector now says "Article"; tip + hint are type-aware and honest about the shared 500-char limit. [change doc](docs/changes/1579-article-longform-mislabeled.md)
+- **S15 — Compose visibility hint misleading (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** Hint is now visibility-aware (Public/Followers/Direct) + type-aware (Note/Article/Poll). [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
 
 ## Dev Queue
 
@@ -140,7 +140,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **S3** (S3) — object-detail 404s local post collections: [s03](docs/qa/s03-object-detail-create-iri-404.md)
 - **S13** (S3) — remote-Lemmy object-detail 404 noise: [s13](docs/qa/s13-remote-lemmy-404-noise.md)
-- **S15** (S3) — compose visibility hint misleading: [s15](docs/qa/s15-visibility-hint-misleading.md)
+
 
 **Feature scope:**
 
@@ -164,6 +164,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S15 — Compose visibility hint misleading (2026-09-20):** Hint extracted into `ComposeHint` computed property; visibility-aware (Public/Followers/Direct) + type-aware (Note/Article/Poll). All 6 cases live-verified. All suites green (Web 106). [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
 - **S10 — Article "(long-form)" mislabeled (2026-09-20):** Selector now says "Article"; formatting tip + compose hint are type-aware and honest about the shared 500-char limit. Live-verified: selector + tip + hint all correct. All suites green (Web 106). [change doc](docs/changes/1579-article-longform-mislabeled.md)
 - **S12a — Case-sensitive same-instance mention → dead link (2026-09-20):** `ActorDocumentHandler` falls back to a case-insensitive `preferredUsername` match (same-instance origin filtered) on exact-case miss, so `@Alice` resolves to the canonical `/ap/v1/u/alice`. Live-verified: `/ap/v1/u/Alice` → 200 (canonical alice). All suites green (Server 1380, Web 106). [change doc](docs/changes/1578-mention-case-sensitive-dead-link.md)
 - **S11 — Poll silent no-op + invisible in "Your posts" (2026-09-20):** S11a: Poll exempt from empty-Content guard (validates `PollQuestion`). S11b: `Question` added to `IsContentItem` so polls appear in Your posts, actor Posts, home + public feeds. Live-verified: body-less poll posts (202) and appears in Profile. All suites green (Web 106). [change doc](docs/changes/1577-poll-silent-noop-and-invisible.md)
