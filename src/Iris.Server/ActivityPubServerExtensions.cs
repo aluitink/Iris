@@ -4692,10 +4692,26 @@ public static class ActivityPubServerExtensions
             .RecordFollowAsync(followerIri, targetIri.Value, ct)
             .ConfigureAwait(false);
 
-        if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+        if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out var community, ct).ConfigureAwait(false)
+            && community is not null)
         {
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
-            await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+
+            // A follow of a local community is a join (members are followers — change 221). When the
+            // community manually approves members, the membership (followers) edge is withheld and a
+            // pending join request is recorded so the creator's requests tab lists it; the creator's
+            // Accept/Reject grants or drops the membership (RecordJoinDecisionLocalAsync). Otherwise the
+            // membership edge is recorded immediately (an auto-accepted join).
+            if (await IsManuallyApprovingMembersAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
+            {
+                await persistence.Communities
+                    .AddJoinRequestAsync(targetIri.Value, followerIri, ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+            }
         }
         else if (!alreadyFollowing && await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
         {
@@ -4930,6 +4946,32 @@ public static class ActivityPubServerExtensions
         {
             return localActor.ExtensionData is { } ext
                 && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Reports whether a local <em>community</em> has <c>manuallyApprovesMembers</c> set — i.e. should hold
+    /// an inbound follow (a join, since members are followers — change 221) for approval rather than
+    /// auto-accepting it. The flag lives in the stored community's <c>ExtensionData</c> (change 217). A
+    /// missing community or a missing/false value means auto-accept (the default). This is the
+    /// outbox-side twin of <see cref="Inbox.FollowActivityHandler"/>'s community gate: local follows are
+    /// recorded via <see cref="RecordFollowLocalAsync"/> (the outbox-publish path), not the inbox handler,
+    /// so the pending join request must be recorded here too or a local join of a gated community would
+    /// never appear in the creator's requests tab.
+    /// </summary>
+    private static async Task<bool> IsManuallyApprovingMembersAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        CancellationToken ct)
+    {
+        if (await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            && community is { } localCommunity)
+        {
+            return localCommunity.ExtensionData is { } ext
+                && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var value)
                 && value.ValueKind == System.Text.Json.JsonValueKind.True;
         }
 

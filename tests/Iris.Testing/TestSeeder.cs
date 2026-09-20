@@ -401,7 +401,9 @@ public static class TestSeeder
             owner = communityIri.Value,
             publicKeyPem = key.ExportPublicKeyPem(),
         });
-        community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+        // A community's members are its followers (change 221), so the gate on an inbound follow (a join)
+        // is manuallyApprovesMembers, not manuallyApprovesFollowers.
+        community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
             JsonDocument.Parse("true").RootElement.Clone();
         persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
 
@@ -453,7 +455,9 @@ public static class TestSeeder
             owner = communityIri.Value,
             publicKeyPem = key.ExportPublicKeyPem(),
         });
-        community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+        // A community's members are its followers (change 221), so the gate on an inbound follow (a join)
+        // is manuallyApprovesMembers, not manuallyApprovesFollowers.
+        community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
             JsonDocument.Parse("true").RootElement.Clone();
         persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
 

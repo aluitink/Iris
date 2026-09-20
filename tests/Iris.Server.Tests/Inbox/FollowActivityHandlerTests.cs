@@ -166,16 +166,16 @@ public sealed class FollowActivityHandlerTests
         Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
     }
 
-    // --- Community manuallyApprovesFollowers: edges recorded, but NO Accept (19.5.3) --------
+    // --- Community manuallyApprovesMembers: follow held as a join request, NO Accept --------
 
     [Fact]
-    public async Task HandleAsync_LocalCommunityManuallyApproves_RecordsEdgesAndSchedulesNoAccept()
+    public async Task HandleAsync_LocalCommunityManuallyApproves_HoldsJoinRequestAndSchedulesNoAccept()
     {
-        // A community with manuallyApprovesFollowers set suppresses the auto-accept on an inbound follow:
-        // both community edges are still recorded (the follower's content can reach members via the
-        // federation path), but NO Accept is scheduled — the operator responds with an explicit Accept or
-        // Reject via the community follow-decision endpoint (the community's Reject half of the gate, 19.5.3,
-        // the community variant of J-10 / Resolved Decision #46).
+        // A community with manuallyApprovesMembers set does NOT auto-accept an inbound follow (a join —
+        // members are followers, change 221): the community's follows edge is still recorded (the
+        // follower's content can reach members via the federation path) and a pending join request is
+        // recorded, but the membership (followers) edge is WITHHELD and NO Accept is scheduled — the
+        // creator responds with an explicit Accept/Reject via the community join-request endpoints.
         var persistence = new InMemoryPersistenceProvider();
         await SeedCommunityWithFlagAsync(persistence, Community, JsonDocument.Parse("true").RootElement.Clone());
         var (handler, delivery) = BuildHandler(persistence);
@@ -183,11 +183,13 @@ public sealed class FollowActivityHandlerTests
 
         await handler.HandleAsync(new InboxDelivery(Community, follow), follow);
 
-        // Both community edges are still recorded (the community follows the follower; the follower
-        // follows the community) ...
+        // The community follows the follower (the follows edge) ...
         Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowsAsync(Community));
-        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
-        // ... but NO Accept is scheduled: the operator must respond with an explicit Accept/Reject.
+        // ... but the membership (followers) edge is withheld ...
+        Assert.DoesNotContain(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
+        // ... and a pending join request is recorded for the creator to approve ...
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetJoinRequestsAsync(Community));
+        // ... with NO Accept scheduled: the creator must respond with an explicit Accept/Reject.
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 
@@ -302,7 +304,9 @@ public sealed class FollowActivityHandlerTests
             Name = [name],
         };
         community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = flag;
+        // A community's members are its followers (change 221), so the gate on an inbound follow (a join)
+        // is manuallyApprovesMembers, not manuallyApprovesFollowers.
+        community.ExtensionData[ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] = flag;
         return persistence.Communities.PutCommunityAsync(community);
     }
 

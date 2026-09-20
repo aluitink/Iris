@@ -132,26 +132,30 @@ public sealed class CommunityGatedPeeringIntegrationTests : IAsyncLifetime
             (await _bPersistence.Communities.GetFollowsAsync(_lumenCommunityIri)).Contains(_irisCommunityIri),
             "B should record lumen's follows edge (lumen → iris) on publish.");
 
-        // Step 2: A's FollowActivityHandler community branch recorded the follows + followers edges
-        // (iris → lumen / lumen → iris) and surfaced the request in iris's outbox, but — because iris is
-        // manually-approving — emitted NO Accept. Assert both halves: the edges are present locally on A,
-        // AND no Accept has reached B's activity store (the gate suppressed the auto-Accept).
+        // Step 2: A's FollowActivityHandler community branch recorded the follows edge (iris → lumen),
+        // held the membership (followers) edge, and recorded a pending join request (members are
+        // followers — change 221; a gated community does not auto-accept a join), but emitted NO Accept.
+        // Assert both halves: the follows edge + join request are present locally on A, AND no Accept has
+        // reached B's activity store (the gate suppressed the auto-Accept).
         await WaitForAsync(
             async () =>
             {
                 var irisFollows = await _aPersistence.Communities.GetFollowsAsync(_irisCommunityIri);
-                var irisFollowers = await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri);
+                var irisJoinRequests = await _aPersistence.Communities.GetJoinRequestsAsync(_irisCommunityIri);
                 return irisFollows.Contains(_lumenCommunityIri)
-                    && irisFollowers.Contains(_lumenCommunityIri)
+                    && irisJoinRequests.Contains(_lumenCommunityIri)
                     && await _aPersistence.Activities.TryGetActivityAsync(mintedFollowId!.Value, out _);
             },
             timeout: TimeSpan.FromSeconds(30));
 
-        // The gate is observable: A holds the provisional edges (the relationship exists locally) ...
+        // The gate is observable: A holds the follows edge + a pending join request (the membership is
+        // withheld until the operator approves) ...
         Assert.True(
             (await _aPersistence.Communities.GetFollowsAsync(_irisCommunityIri)).Contains(_lumenCommunityIri),
             "A should record the community's follows edge (iris → lumen) after B delivered the Follow, even when gated.");
-        Assert.Contains(_lumenCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri));
+        Assert.Contains(_lumenCommunityIri, await _aPersistence.Communities.GetJoinRequestsAsync(_irisCommunityIri));
+        // The membership (followers) edge is withheld until the operator Accepts.
+        Assert.DoesNotContain(_lumenCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_irisCommunityIri));
 
         // ... but NO auto-Accept was delivered back to B (the gate suppressed it). Give the (non-existent)
         // delivery a short window and assert it never arrives — the non-vacuous "held" signal.
