@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 81 (2026-09-20) — S19 facet 2 re-verify (deployment gap)
+
+- **Build/Live:** Container built 12:15:50. Dev commit `8b6a234` (Accept/Decline buttons) landed 12:31:16 — AFTER build.
+- **Explored:** S19 facet 2: Notifications page — 3 follow requests (qa39test, qa36test, qa34test) with NO Accept/Decline buttons.
+- **Result:** 0 new; **S19 facet 2 deployment gap** — fix commit not in live build. Notifications still missing Accept/Decline.
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S20 (Communities tab). Re-verify S19 facet 2 after next deploy.
+
+---
+
 ## Pass 80 (2026-09-20) — S17 re-verify (profile over-fetch, container 12:15:50)
 
 - **Build/Live:** Container restarted 12:15:50. Healthy.
