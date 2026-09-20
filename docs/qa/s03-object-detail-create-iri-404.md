@@ -1,8 +1,8 @@
 # S3 — Object-detail 404s a local post's collections (Create-activity IRI)
 
 - **Class:** bug (console-noise) — **Severity:** S3
-- **Status:** open
-- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27
 - **Related:** distinct from [S13](s13-remote-lemmy-404-noise.md) (remote Lemmy collections)
 
 ## Symptom
@@ -26,3 +26,5 @@ Secondary server-side option: serve a Create activity's object's collections too
 ## Re-verify
 
 Open a local post's object detail via the `/object?iri=…/creates/{id}` deep-link: 0 console errors, Replies/Likes/Shares tabs load the (empty) collections.
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** navigating a Create-activity IRI (`…/creates/06GBSGQTYCMVSXEYC9XCMK6MPM`) still yields **"Object not found"** (404). STILL OPEN.

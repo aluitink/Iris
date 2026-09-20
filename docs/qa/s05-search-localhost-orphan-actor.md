@@ -1,8 +1,8 @@
 # S5 — Search lists a stale orphaned local actor (localhost IRI)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open
-- **Found:** Pass 13 (2026-09-20) — re-confirmed Pass 15
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 13 (2026-09-20) — re-confirmed Passes 15, 27
 
 ## Symptom
 
@@ -21,3 +21,5 @@ A record persisted under the dev `http://localhost:8088` base URL instead of the
 ## Re-verify
 
 Search "alice" → exactly one alice card (the public-IRI one); clicking it renders the actor detail, no proxy 502.
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** search "alice" → **26 results** including both `alice` cards — the good public-IRI one **and** the stale `http://localhost:8088/ap/v1/u/alice` orphan. STILL OPEN.

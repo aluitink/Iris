@@ -1,7 +1,7 @@
 # S8 — Communities "All on this instance" list is incomplete/inconsistent
 
 - **Class:** bug / data — **Severity:** S2
-- **Status:** open
+- **Status:** fixed (2026-09-20, verified Pass 27 against the 2026-09-20 03:31 UTC rebuild; deployed-commit label in PLAN.md was stale, see Pass 27 note)
 - **Found:** Pass 15 (2026-09-20) — re-confirmed Passes 16, 17
 
 ## Symptom
@@ -19,3 +19,5 @@ Make the local-Group list a complete, correctly-scoped local query: dedupe by no
 ## Re-verify
 
 Create a fresh local community; it appears in Communities → "All on this instance" immediately; the tab count equals the local-Group store count (no remote Groups listed).
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** Communities → "All on this instance" now lists **all 6 local communities** (interop, owner-test-5428, qa-pass15, technology, test-882, test-community-541 — matching the DB's 6 local `Group` objects) plus the seeded remote ones (interopX, piefed-test), with correct Join/Leave state (technology = Leave) and **0 console errors**. FIXED. (Note: the tab still surfaces the 2 seeded remote cards, but the original "missing local community" defect is gone.)

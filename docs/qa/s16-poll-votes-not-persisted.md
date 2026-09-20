@@ -1,8 +1,8 @@
 # S16 — Poll votes are not persisted (data-integrity)
 
 - **Class:** bug / data-integrity — **Severity:** S3
-- **Status:** open
-- **Found:** Pass 25 (2026-09-20)
+- **Status:** fixed (2026-09-20, verified Pass 27 against the 2026-09-20 03:31 UTC rebuild; deployed-commit label in PLAN.md was stale, see Pass 27 note)
+- **Found:** Pass 25 (2026-09-20); re-verified Pass 27 (2026-09-20)
 
 ## Symptom
 
@@ -19,3 +19,5 @@ Persist the vote: deliver a `Vote`/`Add` activity to the poll and reflect it in 
 ## Re-verify
 
 Vote on a poll's object-detail page, then hard-refresh: the count and "You voted" badge persist; the DB shows the vote recorded (Vote/Add activity or stored choice) and it is reflected in the poll's `votes`.
+
+**Re-verification evidence (Pass 27, 2026-09-20, clean entry, andrew):** the Pass-25 poll (`…/objects/06GBSGQTYCMVSXEYC9XCMK6MPR`) now shows **Option A: 1 / Option B: 0 / "1 votes"** on a fresh load — the earlier vote survived the container rebuild. DB confirms server-side persistence: `poll.voters = [https://iris.luit.ink/ap/v1/u/QAUser1]`, `options[0].votesCount = 1`, `totalVotes = 1`. FIXED.

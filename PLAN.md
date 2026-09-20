@@ -134,16 +134,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
-- **Rebuild + redeploy** the container to go live (deployed `5da2a1d` is stale). Then QA re-verifies: **S6** remote Join ([doc](docs/qa/s06-remote-join-csp-blocked.md)), plus the S4/S8 facets of Inbox ②.
+- *(cleared Pass 27, 2026-09-20 — container rebuilt to `a45f3d4`; QA live-verified **S6** remote Join, the **S4** local-community following facet, the **S8** "All on this instance" list, and **S16** poll-vote persistence. S4's remote-community display caveat remains open in [s04](docs/qa/s04-communities-following-remote.md).)*
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
 - **S2/S14** (S2-sev, top) — signed-out remote reads bypass the proxy → CORS/CSP + blank avatars: [s02](docs/qa/s02-signed-out-proxy-bypass.md), [s14](docs/qa/s14-signed-out-actor-detail-csp.md)
-- **S16** (S3, data-integrity) — poll votes not persisted: [s16](docs/qa/s16-poll-votes-not-persisted.md)
 - **S5** (S2, data-integrity) — stale orphaned `localhost` actor in Search: [s05](docs/qa/s05-search-localhost-orphan-actor.md)
-- **S4** (S2) — Communities "Following" drops remote communities: [s04](docs/qa/s04-communities-following-remote.md)
 - **S7** (S2) — Directory external lookup stuck on spinner: [s07](docs/qa/s07-directory-external-lookup-stuck.md)
-- **S8** (S2) — Communities "All on this instance" incomplete: [s08](docs/qa/s08-communities-all-tab-incomplete.md)
 - **S9** (S2) — Report/flag silent no-op: [s09](docs/qa/s09-report-silent-noop.md)
 - **S11** (S2) — Poll silent no-op + invisible in "Your posts": [s11](docs/qa/s11-poll-silent-noop-and-outbox.md)
 - **S12** (S2) — @mention case + autocomplete mismatch: [s12](docs/qa/s12-mention-case-and-autocomplete.md)
@@ -162,9 +159,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **14 open + S6 fix committed, not yet live. No blockers (all S2/S3-sev).**
-- **Top priority:** S2/S14 (signed-out proxy bypass), S16 (poll votes not persisted), then the S2-sev bugs S4–S12.
-- **Last pass:** 25 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass begins at the stale-build gate (deployed `5da2a1d` ≠ HEAD `f51246a`), then the page inventory from the checkpoint route.
+- **10 open. No blockers (all S2/S3-sev).** (Pass 27, 2026-09-20: S4 local-community following, S6 remote join, S8 "All on this instance", and S16 poll-vote persistence are now **fixed + live-verified** against the rebuilt container; S4's *remote* community display caveat remains — see [s04](docs/qa/s04-communities-following-remote.md).)
+- **Top priority:** S2/S14 (signed-out proxy bypass), then the S2-sev bugs S5, S7, S9, S11, S12; S3-sev S3, S10, S13, S15.
+- **Last pass:** 27 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass continues at S15 (compose visibility hint) + S12b (autocomplete), then fresh exploratory areas.
 
 ## Paused Questions
 

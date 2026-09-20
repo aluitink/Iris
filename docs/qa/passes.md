@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 27 (2026-09-20) — full re-verification of all open findings post-rebuild
+
+- **Build/Live:** container `irisweb-iris-web-1` rebuilt 2026-09-20 ~03:31 UTC (image `018ecaff`); deployed HEAD `a45f3d4` (== HEAD? y). **Note:** the deployed-commit label in PLAN.md was stale (it still said `c4511c0`); the rebuild actually contains `a45f3d4`.
+- **Explored:** clean-entry (andrew + signed-out) re-verification of every open finding (S2–S16), incl. DB cross-checks.
+- **Result:** **3 FIXED** (S4 local-community following, S6 remote join single-button, S8 "All on this instance" now lists all 6 local communities), **1 re-confirmed-fixed** (S16 poll votes persist: DB `poll.voters` + `votesCount=1` survive rebuild), **9 re-confirmed OPEN** (S2, S3, S5, S7, S9, S10, S11a+b, S12a, S13, S14), S15 not re-exercised (stays open). No new defects.
+- **Checkpoint:** next pass continues at S15 (compose visibility hint) + S12b (autocomplete), then fresh exploratory areas.
+
+---
+
 ## Legacy passes (10–25) — verbose, archived as-is
 
 The entries below predate the brief format (they were extracted verbatim from PLAN.md on 2026-09-20). They are kept for history but are **not** the model to follow — new passes use the brief format above.

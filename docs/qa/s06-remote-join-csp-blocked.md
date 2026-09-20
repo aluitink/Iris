@@ -1,8 +1,8 @@
 # S6 — Join on a remote community is a silent no-op (CSP-blocked browser POST)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** fix committed (`68ae703`, 2026-09-20), **not yet live** (no container rebuild)
-- **Found:** Pass 12 (2026-09-20) — re-confirmed Passes 14, 15; fixed in Inbox ② Phase 4 (Join/Leave → Follow/Undo)
+- **Status:** fixed (2026-09-20, verified Pass 27 against the 2026-09-20 03:31 UTC rebuild; deployed-commit label in PLAN.md was stale, see Pass 27 note)
+- **Found:** Pass 12 (2026-09-20) — re-confirmed Passes 14, 15; fixed in Inbox ② Phase 4 (Join/Leave → Follow/Undo), live-verified Pass 27
 - **Related:** folded into [Inbox ② community simplification](../plans/community-simplification.md)
 
 ## Symptom
@@ -22,3 +22,5 @@ Implemented in Inbox ② Phase 4 ("Join/Leave drive Follow/Undo", commit `68ae70
 ## Re-verify (after rebuild)
 
 Rebuild the container, then on a remote community: Join → button flips to Leave, no console errors, the follow edge exists server-side; Leave round-trips back.
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** the remote community `lemmy.luit.ink/c/interop` now shows a **single "Unfollow"** button (Join/Leave are gone — the old double-button symptom is resolved), with **0 console errors** and no direct browser POST to the remote inbox. FIXED.

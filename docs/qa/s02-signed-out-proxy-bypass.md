@@ -1,8 +1,8 @@
 # S2 — Signed-out remote reads bypass the proxy (CORS/blank avatars)
 
 - **Class:** bug (console-noise + broken avatars) — **Severity:** S2
-- **Status:** open
-- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20 (signed-out `/`), 23, 24, 25
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20 (signed-out `/`), 23, 24, 25, 27
 - **Related:** [S14](s14-signed-out-actor-detail-csp.md) (same root, actor-detail facet)
 
 ## Symptom
@@ -27,3 +27,5 @@ Add a **public/anonymous GET proxy path** — the server already resolves these 
 ## Re-verify
 
 Clean entry (fresh browser, signed out): signed-out `/` → 0 console errors, remote avatars render (no fallbacks).
+
+**Re-verification evidence (Pass 27, 2026-09-20, clean entry):** signed-out `/` → **CORS/`ERR_FAILED` console errors** on numeric-ID remote actor docs + **blank/fallback avatars**. STILL OPEN.
