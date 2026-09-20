@@ -34,7 +34,7 @@ Why a worktree instead of editing in place:
 ```bash
 scripts/qa-worktree.sh create     # creates /workspace/.worktrees/qa on branch qa
 scripts/qa-worktree.sh status     # show worktree + branch + uncommitted docs
-scripts/qa-worktree.sh sync       # fast-forward qa to the main branch (before a pass)
+scripts/qa-worktree.sh sync       # rebase qa onto the main branch (before a pass)
 scripts/qa-worktree.sh merge      # merge qa into the main branch, then reset qa to main
 scripts/qa-worktree.sh destroy    # remove the worktree (only when clean)
 ```
