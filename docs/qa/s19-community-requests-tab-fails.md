@@ -46,3 +46,5 @@ Clean entry, owner of a community with (and without) pending join requests:
 **Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** Community `technology` → Requests tab → **"We couldn't load the join requests. Please try again."** — no Refresh button, no retry. No network request fires for the tab. 0 non-environmental console errors. STILL OPEN.
 
 **Re-verification evidence (Pass 36, 2026-09-20, andrew, deployed `bb28dcf`):** Community `technology` (andrew, owner) → Requests tab → **"We couldn't load the join requests. Please try again."** — no Refresh button, no retry. Only network request: `GET /ap/v1/c/technology/members` (200, for Members tab). No requests-specific call fires. 0 console errors. STILL OPEN.
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** Community `technology` (andrew, owner) → Requests tab → **"We couldn't load the join requests. Please try again."** — no Refresh button, no retry. No requests-specific network call fires (filtered on `requests|join` — zero matches). 0 console errors. STILL OPEN.

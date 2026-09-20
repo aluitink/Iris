@@ -1,8 +1,8 @@
 # S15 — Compose visibility hint is misleading for Followers/Direct
 
 - **Class:** UX / cosmetic — **Severity:** S3
-- **Status:** open (re-confirmed Pass 37, 2026-09-20, deployed `bb28dcf`)
-- **Found:** Pass 22 (2026-09-20) — re-confirmed Passes 24, 28, 37
+- **Status:** mostly fixed (2026-09-20, verified Pass 38 on rebuilt container post-`bdc0e66`); minor grammar issue remains
+- **Found:** Pass 22 (2026-09-20) — re-confirmed Passes 24, 28, 37; **hint now visibility-aware (Pass 38)**
 
 ## Symptom
 
@@ -30,3 +30,13 @@ In compose, switch the visibility selector through Public / Followers / Direct (
 **Re-verification evidence (Pass 28, 2026-09-20, andrew):** in compose, the hint renders **"A note addressed to the public…"** for **Public, Followers, AND Direct** (all three Note-variant cases wrong), and the **Poll** variant renders **"A poll addressed to the public…"** (also hard-coded). Only the Public case is correct; the other five are misleading. STILL OPEN.
 
 **Re-verification evidence (Pass 37, 2026-09-20, andrew, deployed `bb28dcf`):** in compose, the hint renders **"A note addressed to the public — it lands in your outbox and appears in your followers' timelines."** for **Public, Followers, AND Direct** (all three Note-variant cases wrong), and the **Poll** variant renders **"A poll addressed to the public — it lands in your outbox and appears in your followers' timelines."** (also hard-coded, verified with Direct visibility still selected). Only the Public case is correct; the other five are misleading. STILL OPEN.
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** the hint is now **visibility-aware** in all 6 cases:
+- Note + Public → "A note addressed to the public — it lands in your outbox and appears in your followers' timelines." ✓
+- Note + Followers → "A note visible to followers only — it lands in your outbox and appears in your followers' timelines." ✓
+- Note + Direct → "A note **a** private message — not visible in public or follower timelines." (minor grammar: missing "is")
+- Poll + Public → "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines." ✓
+- Poll + Followers → "A poll visible to followers only — it lands in your outbox and appears in your followers' timelines." ✓
+- Poll + Direct → "A poll **a** private message — not visible in public or follower timelines." (same grammar issue)
+
+The core misleading-hint defect is **FIXED** — the hint now correctly reflects the selected visibility level in all 6 cases. Minor remaining issue: the Direct-variant text has a grammar error ("A note a private message" → should be "A note **is** a private message" or "A private message —…"). Downgraded to S3-cosmetic.

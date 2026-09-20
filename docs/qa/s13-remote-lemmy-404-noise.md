@@ -26,3 +26,5 @@ Open a remote Lemmy post's object detail: 0 console 404s; the comment count and 
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`POST …/proxy/…/post/1/{replies|likes|shares}`), post renders, UI degrades gracefully. STILL OPEN.
 
 **Re-verification evidence (Pass 37, 2026-09-20, andrew, deployed `bb28dcf`):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`GET …/proxy/…/post/1/{replies|likes|shares}`), post renders ("Hello from Lemmy interop"), Replies tab shows "No replies yet". STILL OPEN.
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`GET …/proxy/…/post/1/{replies|likes|shares}`), post renders, UI degrades gracefully. STILL OPEN.
