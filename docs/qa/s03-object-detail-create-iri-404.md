@@ -1,8 +1,8 @@
 # S3 — Object-detail 404s a local post's collections (Create-activity IRI)
 
 - **Class:** bug (console-noise) — **Severity:** S3
-- **Status:** open (re-confirmed Pass 39, 2026-09-20, on deployed `4f5dd5c`)
-- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27, 35
+- **Status:** open (re-confirmed Pass 43, 2026-09-20, on deployed `65ccfa0`)
+- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27, 35, 38, 39, 41, 42, 43
 - **Related:** distinct from [S13](s13-remote-lemmy-404-noise.md) (remote Lemmy collections)
 
 ## Symptom
@@ -38,3 +38,5 @@ Open a local post's object detail via the `/object?iri=…/creates/{id}` deep-li
 **Re-verification evidence (Pass 41, 2026-09-20, andrew, deployed `59ff4ec`):** Create-IRI `…/creates/06GBVQB28WTGQCAYWQM58KD4JC` → **HTTP 404** (net::ERR_HTTP_RESPONSE_CODE_FAILURE in Playwright). Note IRI `…/notes/06GBVQB2920X0D9R9611ANV1MG` → 200, clean render. Profile "Open post" links use Note/Object IRIs (no Create-activity IRIs in UI). STILL OPEN (narrow scope — only reachable via direct `?iri=…/creates/{id}` deep-link).
 
 **Re-verification evidence (Pass 42, 2026-09-20, andrew, deployed `65ccfa0`):** Created fresh post "QA Pass 42 S3 re-verify post" (Note IRI: `…/notes/06GBW1RWNE5TQ90WV5PNX4G6R8`). DB query shows **only the Note object** stored — **no Create activity** in the `Objects` table for this post. Note IRI → 200, clean render. Profile "Open post" link uses Note IRI. **New observation:** Create activities may not be persisted to the database at all (only Note objects are stored), which would explain why Create-IRIs consistently 404 — the server has no record of them. This suggests the root cause is deeper than just collection derivation: the Create activity IRI is generated (and exposed in the outbox?) but never stored as an Object. STILL OPEN.
+
+**Re-verification evidence (Pass 43, 2026-09-20, andrew, deployed `65ccfa0`):** Created fresh post "QA Pass 43 S3 re-verify post" (Note IRI: `…/notes/06GBW5EY16SRJ99N0SKGB3PJQW`). POST `/ap/v1/u/andrew/outbox` → 202. Profile "Open post" link uses Note IRI (no Create-activity IRIs in UI). DB query confirms: `SELECT "Document"->>'type', COUNT(*) FROM "Objects" GROUP BY 1` shows **Create: 1** (the `s7test` account from an earlier test), **Announce: 1** (andrew's dolphin boost), **Note: 3612** — but **zero Create activities for andrew**. The Create activity is generated and returned in the outbox response (202), but **never persisted to the database**. This is the root cause: the server creates the Create activity IRI in-memory for the outbox response but does not store it as an Object, so any subsequent GET on the Create IRI 404s. STILL OPEN.

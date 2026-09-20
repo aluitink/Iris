@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 43 (2026-09-20) — S3/S19 re-verify + community page routing on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S3: Created post "QA Pass 43 S3 re-verify post" (Note IRI: `…/notes/06GBW5EY16SRJ99N0SKGB3PJQW`). POST outbox → 202. DB confirms **zero Create activities for andrew** — Create activities generated in-memory for outbox but **never persisted to Objects table**. S19: `/c/technology` → **"Not found"** (404). Community only reachable via `/actor?iri=…/c/technology` (generic actor page: Posts/Followers/Following tabs — **no Requests, no Members tab**). S19 scope changed. S8 re-confirmed fixed (management page tabs work).
+- **Result:** 0 new; **S3 re-confirmed OPEN** (root cause: Create activities not persisted to DB); **S19 re-confirmed OPEN** (scope changed: /c/{name} 404s, actor page lacks Requests/Members tabs); **S8 re-confirmed FIXED**.
+- **Checkpoint:** next pass targets S19 (community page 404 + missing tabs), S3 (Create persistence), S20 (Home Communities tab), S4, S17, S2/S14 (blocked).
+
+---
+
 ## Pass 42 (2026-09-20) — S16/S3/S4/S19/S17 re-verify + Home feed Communities tab on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).

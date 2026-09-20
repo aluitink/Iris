@@ -42,7 +42,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S5 | Search lists a stale orphaned local actor (localhost IRI) | bug / data-integrity | S2 | fixed (2026-09-20, `456b0d9`) | [s05](s05-search-localhost-orphan-actor.md) |
 | S6 | Join on a remote community is a silent no-op (CSP-blocked browser POST) | bug | S2 | fix committed (`68ae703`), not yet live | [s06](s06-remote-join-csp-blocked.md) |
 | S7 | Directory external lookup stuck on the spinner forever | bug | S2 | fixed (2026-09-20, `456b0d9`) | [s07](s07-directory-external-lookup-stuck.md) |
-| S8 | Communities "All on this instance" list is incomplete/inconsistent | bug / data | S2 | open | [s08](s08-communities-all-tab-incomplete.md) |
+| S8 | Communities "All on this instance" list is incomplete/inconsistent | bug / data | S2 | fixed (2026-09-20, Pass 27) | [s08](s08-communities-all-tab-incomplete.md) |
 | S9 | Report/flag is a silent no-op (no feedback, duplicate flags) | UX / bug | S2 | fixed (2026-09-20, Pass 38) | [s09](s09-report-silent-noop.md) |
 | S10 | Article "(long-form)" is mislabeled | UX / feature-gap | S2 | fixed (2026-09-20, Pass 38) | [s10](s10-article-longform-mislabeled.md) |
 | S11 | Poll broken (silent no-op w/o body + invisible in "Your posts") | bug | S2 | fixed (2026-09-20, Pass 38) | [s11](s11-poll-silent-noop-and-outbox.md) |
@@ -53,10 +53,10 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S16 | Poll votes are not persisted | bug / data-integrity | S3 | fixed (2026-09-20, Pass 37); UX badge gap remains | [s16](s16-poll-votes-not-persisted.md) |
 | S17 | Profile tabs over-fetch the entire outbox (on load + every tab switch) | perf / request-spam | S2 | open | [s17](s17-profile-tabs-overfetch-outbox.md) |
 | S18 | Following a local account: follow "succeeds" but follower's Home timeline stays empty | bug / data-integrity | S2 | partially fixed (Pass 39 — state persists, timeline populates; follow request not auto-approved) | [s18](s18-local-follow-timeline-empty.md) |
-| S19 | Community "Requests" tab always fails to load (no request fires, no retry) | bug | S2 | open (Pass 39 — new facet: follow requests in notifications lack Accept/Decline UI) | [s19](s19-community-requests-tab-fails.md) |
+| S19 | Community page 404s; actor page has no Requests tab; notifications lack Accept/Decline | bug | S2 | open (Pass 43 — scope changed: /c/{name} 404s, actor page has no Requests/Members tabs) | [s19](s19-community-requests-tab-fails.md) |
 | S20 | Home feed "Communities" tab is non-functional (no API call, same content as Posts) | bug / feature-gap | S2 | open (found Pass 42) | [s20](s20-home-feed-communities-tab-nonfunctional.md) |
 
-**7 open, 1 fix-committed-not-live (S6), 8 fixed (S5, S7, S9, S10, S11, S12, S13, S15), 1 partially-fixed (S18), 1 core-fixed-UX-gap (S16). No S1/blockers.**
+**7 open, 1 fix-committed-not-live (S6), 9 fixed (S5, S7, S8, S9, S10, S11, S12, S13, S15), 1 partially-fixed (S18), 1 core-fixed-UX-gap (S16). No S1/blockers.**
 
 > Note: S1 was the Pass-10 defect set (signed-out 401 spam, proxy 500, Lemmy misclassification) — all fixed and verified Pass 11; it is recorded in [docs/changes/997-ui-ux-review.md](../changes/997-ui-ux-review.md), not here.
 

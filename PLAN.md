@@ -151,9 +151,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **7 open. No blockers (all S2/S3-sev).** (Pass 42: S3, S4 remote, S16-UX, S17, S19 re-confirmed open; **S20 NEW** — Home feed Communities tab non-functional. S3 scope note: Create activities may not be persisted to DB at all.)
-- **Top priority:** S19 (follow request acceptance UI missing — no Accept/Decline buttons, /requests 404), S3 (Create-IRI 404 — possibly Create activities not stored in DB), S20 (Home feed Communities tab non-functional — no API call, same content as Posts), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll badge re-hydration on object page). S2/S14 still blocked on dev (proxy 401).
-- **Last pass:** 42 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7 fixed; S18 partially fixed. Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20.
+- **7 open. No blockers (all S2/S3-sev).** (Pass 43: S3, S19 re-confirmed open; S8 re-confirmed fixed. S19 scope changed: /c/{name} 404s, actor page lacks Requests/Members tabs. S3 root cause deepened: Create activities not persisted to DB.)
+- **Top priority:** S19 (community page 404s + actor page lacks Requests/Members tabs + notifications lack Accept/Decline), S3 (Create-IRI 404 — Create activities not persisted to DB), S20 (Home feed Communities tab non-functional), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll badge re-hydration on object page). S2/S14 still blocked on dev (proxy 401).
+- **Last pass:** 43 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8 fixed; S18 partially fixed. Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20.
 
 ## Paused Questions
 
