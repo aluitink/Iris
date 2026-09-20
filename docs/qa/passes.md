@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 84 (2026-09-20) — S4/S21 re-verify (container 12:15:50)
+
+- **Build/Live:** Container 12:15:50. Healthy.
+- **Explored:** S4: Following tab — 3 local communities, remote `interop` still missing. S21: `/c/technology` → "Nothing at this address." (redirect not active).
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote interop missing — 14th pass). **S21 /c/{handle} re-confirmed OPEN** (redirect not active — 11th pass). Note: `qa-pass46-test` description now shows "QA Pass 79 re-verify" (Pass 79 Edit partially persisted).
+- **Checkpoint:** next pass targets S19 facet 2 (re-verify after deploy), S20 (Communities tab), S17 (profile over-fetch).
+
+---
+
 ## Pass 83 (2026-09-20) — S16-UX re-verify (badge missing, IRI format changed)
 
 - **Build/Live:** Container 12:15:50. Healthy.
