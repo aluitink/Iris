@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 28 (2026-09-20) — S15 + S12b + Notifications + CW + S7
+
+- **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted proxy WIP since; build current). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S15 (all 6 visibility-hint cases), S12b (autocomplete candidate pool), Notifications (tabs + mark-all-read), content-warning post→render→Show/Hide, S7 (directory external lookup).
+- **Result:** **5 clean** (Notifications, CW end-to-end, /admin gating, Notifications mark-all-read, no request spam); **2 re-confirmed OPEN** (S15 all-6-cases, S7 spinner-stuck); S12b candidate pool confirmed remote-contaminated (orphan localhost `alice` first + many remote actors) — stays open. No new defects.
+- **Checkpoint:** next pass continues at S2/S14 re-verify (dev's anonymous-proxy rate-limiter WIP is uncommitted — needs rebuild first), then fresh areas (Profile tabs, Settings, multi-account moderation).
+
+---
+
 ## Pass 27 (2026-09-20) — full re-verification of all open findings post-rebuild
 
 - **Build/Live:** container `irisweb-iris-web-1` rebuilt 2026-09-20 ~03:31 UTC (image `018ecaff`); deployed HEAD `a45f3d4` (== HEAD? y). **Note:** the deployed-commit label in PLAN.md was stale (it still said `c4511c0`); the rebuild actually contains `a45f3d4`.

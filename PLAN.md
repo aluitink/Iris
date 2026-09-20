@@ -161,7 +161,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **10 open. No blockers (all S2/S3-sev).** (Pass 27, 2026-09-20: S4 local-community following, S6 remote join, S8 "All on this instance", and S16 poll-vote persistence are now **fixed + live-verified** against the rebuilt container; S4's *remote* community display caveat remains — see [s04](docs/qa/s04-communities-following-remote.md).)
 - **Top priority:** S2/S14 (signed-out proxy bypass), then the S2-sev bugs S5, S7, S9, S11, S12; S3-sev S3, S10, S13, S15.
-- **Last pass:** 27 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass continues at S15 (compose visibility hint) + S12b (autocomplete), then fresh exploratory areas.
+- **Last pass:** 28 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass continues at S2/S14 re-verify (dev's anonymous-proxy rate-limiter WIP is uncommitted — needs a rebuild first), then fresh areas (Profile tabs, Settings, multi-account moderation).
 
 ## Paused Questions
 

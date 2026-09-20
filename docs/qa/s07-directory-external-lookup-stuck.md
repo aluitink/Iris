@@ -21,3 +21,5 @@ Trace `LookupExternalAsync` to completion: confirm `_externalResult` is set and 
 Directory → external lookup of a known remote handle → the resolved actor card appears (no spinner), pressing Enter again does not re-fire the WebFinger+actor fetch pair.
 
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** Directory → external lookup of `lemmyadmin@lemmy.luit.ink` → WebFinger + actor doc both **200** through the proxy, but the UI **stays on the spinner** (no result card, no error, 0 console errors). STILL OPEN.
+
+**Re-verification evidence (Pass 28, 2026-09-20, andrew):** same lookup (`lemmyadmin@lemmy.luit.ink`) → `POST /ap/v1/proxy/…/webfinger` **200** + `POST /ap/v1/proxy/…/u/lemmyadmin` **200**, but the UI **still stays on the spinner** (no result card, no error, 0 console errors). STILL OPEN.
