@@ -57,3 +57,5 @@ With QAUser1 (follows only the remote interop community): Communities → Follow
 **Re-verification evidence (Pass 92, 2026-09-20, andrew, container 13:26:35):** Communities → Following tab shows **"technology" + "qa-pass46-test" + "qa-pass65-test"** (all local, all with "Leave" button) — the remote `lemmy.luit.ink/c/interop` community is **still missing**. STILL OPEN for remote communities (now 18 consecutive passes).
 
 **Re-verification evidence (Pass 93, 2026-09-20, andrew, container 13:26:35):** Communities → Following tab shows **"technology" + "qa-pass46-test" + "qa-pass65-test"** (all local) — the remote `lemmy.luit.ink/c/interop` community is **still missing**. STILL OPEN (19 consecutive passes).
+
+**Re-verification evidence (Pass 94, 2026-09-20, andrew, container 13:26:35):** Communities → Following tab shows 3 local communities (technology, qa-pass46-test, qa-pass65-test) — remote interop still missing. **STILL OPEN** (20 consecutive passes).
