@@ -159,9 +159,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **10 open. No blockers (all S2/S3-sev).** (Pass 27, 2026-09-20: S4 local-community following, S6 remote join, S8 "All on this instance", and S16 poll-vote persistence are now **fixed + live-verified** against the rebuilt container; S4's *remote* community display caveat remains — see [s04](docs/qa/s04-communities-following-remote.md).)
-- **Top priority:** S2/S14 (signed-out proxy bypass), then the S2-sev bugs S5, S7, S9, S11, S12; S3-sev S3, S10, S13, S15.
-- **Last pass:** 28 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass continues at S2/S14 re-verify (dev's anonymous-proxy rate-limiter WIP is uncommitted — needs a rebuild first), then fresh areas (Profile tabs, Settings, multi-account moderation).
+- **16 open. No blockers (all S2/S3-sev).** (Pass 27: S4 local-community following, S6 remote join, S8 "All on this instance", and S16 poll-vote persistence **fixed + live-verified**; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
+- **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy bypass), then the S2-sev bugs S5, S7, S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
+- **Last pass:** 29 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass re-verifies S2/S14 once dev's anonymous-proxy rate-limiter WIP is committed+rebuilt, then fresh areas (multi-account moderation, Communities detail, Communities "All known").
 
 ## Paused Questions
 

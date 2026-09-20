@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 29 (2026-09-20) — Profile tabs + actor page + object-detail + Settings + multi-account follow
+
+- **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted proxy WIP since; build current). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew) then fresh local account `qa29test`. Profile tabs (Your posts/Replies/Likes), public `/actor` page, object-detail (note IRI + Delete owner flow), Settings (Account/Content/Danger + account-deletion confirm), register + follow (multi-account).
+- **Result:** **3 clean** (object-detail note IRI + Delete→Tombstone, Settings tabs + read-only security + 2-step account-delete, register flow); **2 NEW** (S17 profile tabs over-fetch the entire outbox on load + every tab switch — ~40 redundant requests; S18 local follow "succeeds" but follower's Home timeline stays empty — followers collection + inbox never updated); 0 console errors.
+- **Checkpoint:** next pass re-verifies S2/S14 once dev's anonymous-proxy rate-limiter WIP is committed+rebuilt, then fresh areas (multi-account moderation, Communities detail, Communities "All known").
+
+---
+
 ## Pass 28 (2026-09-20) — S15 + S12b + Notifications + CW + S7
 
 - **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted proxy WIP since; build current). Container `irisweb-iris-web-1` healthy.
