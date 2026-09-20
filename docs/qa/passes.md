@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 69 (2026-09-20) — S17 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed.
+- **Explored:** S17: `/profile` → "Your posts" fired **6 outbox requests** (pages 1–6). Replies tab → **13-page fan-out** (pages 1–13). Likes tab → **13-page fan-out** (pages 1–13). Total: **32 outbox requests** for 3 tabs viewed.
+- **Result:** 0 new; **S17 re-confirmed OPEN** (32 outbox requests for 3 tabs; initial load 6 pages, tab-switch still 13 pages each).
+- **Checkpoint:** next pass targets S21 (/c/{handle} redirect), S2/S14 (proxy 401), S4 (remote interop missing).
+
+---
+
 ## Pass 68 (2026-09-20) — S3 re-verify (Dev fix `c205d47` deployed)
 
 - **Build/Live:** Dev fix `c205d47` ("S3: skip visibility gate for Activities in ObjectDocumentHandler") deployed.
