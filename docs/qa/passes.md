@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 48 (2026-09-20) — S19/S21 re-verify + API probe on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S19: Community `technology` actor page: tabs **Posts (0), Followers (2), Following (0)** — no Requests, no Members tab. Followers tab: andrew + 1 other. API probes: `GET /ap/v1/c/technology/members` → **200**, `GET /ap/v1/c/technology/requests` → **404** (endpoint doesn't exist), `GET /local/v1/c/technology/owners` → **403** (unauthenticated). Community `qa-pass46-test` actor page: same tab structure, Followers (1). Notifications: follow requests still visible with NO Accept/Decline buttons. S21: `/communities` → Following tab now shows **both "technology" AND "qa-pass46-test"** (Pass 47's manual follow now reflected — likely Blazor cache refresh). Both show "Leave" button (not "Follow"). "All on this instance" tab shows both. `/c/qa-pass46-test` still 404. S20: Home → Communities tab fires **same** `GET /ap/v1/u/andrew/feed` as Posts tab — no community-specific call.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (`/ap/v1/c/{name}/requests` endpoint 404s — no backing endpoint for Requests tab); **S21 PARTIALLY RESOLVED** (manual follow now populates Following tab — caching issue, not a filter bug; but no auto-follow on creation + /c/{handle} still 404s); **S20 re-confirmed OPEN** (Communities tab uses same feed endpoint as Posts).
+- **Checkpoint:** next pass targets S21 (no auto-follow on creation + /c/{handle} route), S19 (requests endpoint missing), S3 (Create persistence), S2/S14 (blocked).
+
+---
+
 ## Pass 47 (2026-09-20) — S19/S21 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
