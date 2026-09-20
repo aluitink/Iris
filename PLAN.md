@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `3d151c0` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `65ccfa0` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **③④ Unified home feed — Phase 4: wire the tabs to the feed (dev, 2026-09-20).** `HomeTimeline.razor`: read `iris:homeTab`, set `FeedIri` = `{actor}/feed?source=…`. FeedBar ↔ HomeTimeline active-tab sync. Per-tab empty states. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
+- **③④ Unified home feed — Phase 5: community management page (dev, 2026-09-20).** Server `DELETE /local/v1/c/{name}` (last-owner-only) + `DeleteCommunityAsync`. `/communities` repurposed as management page (my-communities + create + delete/leave). Top menu "Communities" → management page. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 
 ## Dev Queue
 
@@ -163,17 +163,12 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
-- **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`: Posts/Communities tabs (`/home` only) + global `🔔` bell. Tab state in localStorage. Live-verified: tabs on `/home`, bell-only elsewhere, hidden signed-out. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
+- **③ Phase 4 — Wire home-feed tabs to `?source=` filter (2026-09-20):** `HomeTabState` scoped service bridges FeedBar ↔ HomeTimeline. Tab switch triggers `?source=people|communities` feed request; per-tab empty states. Live-verified: 0 console errors. [change doc](docs/changes/1584-home-feed-tab-source-wiring.md)
+- **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`: Posts/Communities tabs + global `🔔` bell. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
 - **③ Phase 2 — Server `?source=` filter (2026-09-20):** `GET /u/{handle}/feed?source=people|communities` filters by attributedTo Group. All suites green (Server 1380, Web 106).
-- **S13 — Remote Lemmy object-detail 404 noise (2026-09-20):** Collection walks skipped for non-local objects. Live-verified: 0 console errors. [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
-- **S3 — Object-detail 404s local post collections (2026-09-20):** `ContentIri` resolves to Note IRI for Create/Update activities. [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
+- **S13 — Remote Lemmy object-detail 404 noise (2026-09-20):** Collection walks skipped for non-local objects. [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
+- **S3 — Object-detail 404s local post collections (2026-09-20):** `ContentIri` resolves to Note IRI. [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
 - **S15 — Compose visibility hint misleading (2026-09-20):** `ComposeHint` visibility + type aware. [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
-- **S10 — Article "(long-form)" mislabeled (2026-09-20):** Selector + hints type-aware. [change doc](docs/changes/1579-article-longform-mislabeled.md)
-- **S7 — Directory external lookup stuck on spinner (2026-09-20):** `LookupExternalAsync` now routes the actor fetch through `Ui.GetActorAsync` (the shared proxy path) instead of a direct cross-origin `client.GetObjectAsync` (CORS/CSP-blocked), and the keydown handler is `async Task` (awaited by Blazor → auto re-render). Live-verified: Directory → type `lemmyadmin@lemmy.luit.ink` + Enter → actor card appears, no spinner. All suites green (Web 106). [change doc](docs/changes/1575-directory-external-lookup-stuck-spinner.md)
-- **S5 — drop the stale orphaned `localhost` actor from Search (2026-09-20):** `GlobalSearchService` mixed (Search, `localOnly=false`) path now drops a **local** actor (carries a `preferredUsername`) whose IRI is not under the instance base IRI — the stale `http://localhost:8088/ap/v1/u/alice` ghost (persisted under the dev base when `Iris:AdvertiseBase` was unset) is gone; the canonical public-base row and genuine remote actors remain. Closes S5 (the ghost surfaced in Search but not Directory, and 502'd on click). Live-verified: Search "alice" → exactly one local alice (canonical IRI); clicking it renders the profile + Posts (17) tab, no 502. All suites green (Server 1380, Client 190, Web 106). [change doc](docs/changes/1574-search-drop-stale-local-actor-foreign-base.md)
-- **S2/S14 — signed-out remote reads via the same-origin anonymous proxy seam (2026-09-20):** a cookie-less `GET /ap/v1/proxy/{target}` now relays an **unsigned** public read (no actor to sign with), allowlist-checked + per-client-IP rate-limited; disabled via `ProxySettings.AllowAnonymousReads=false`. `ActivityPubClientFactory` builds an unsigned client for a null `ActorId`. The client (`UiContext.FetchActorAsync`, `PagedCollection` anonymous read) routes **every** signed-out remote actor + collection read through the same-origin proxy instead of a direct cross-origin fetch (CORS/CSP-blocked). Closes S2 (signed-out `/` blank avatars + CORS noise) and S14 (signed-out remote actor-detail, incl. the Posts-tab outbox CSP facet). Live-verified: signed-out `/` → 0 console errors, all remote actors via proxy 200; `/actor?iri={remote}` → profile + Posts tab render, 0 console errors. All suites green (Server 1377, Client 190, Web 106). [change doc](docs/changes/1573-signed-out-remote-reads-via-anonymous-proxy-seam.md)
-- **Inbox ③ Phase 1 — home-feed `Page` drop fix (2026-09-20):** added `Page` to `IsContentItem` in `HomeTimeline.razor` (`/home`) + `Home.razor` (`/`) so Lemmy community posts (`Page` type) are no longer silently dropped from the home and public feeds. Live-verified via Playwright (the "Page type" fixture post renders in `/home`). Web build green, 106 web tests pass. [change doc](docs/changes/1002-inbox-3-phase1-page-drop-fix.md)
-- **Inbox ② Community simplification — unify members with followers (2026-09-20):** collapsed the separate `CommunityMember` axis into the community's followers axis (Lemmy-shape): members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, community feed + `/members` read followers, single **Follow** button (labeled **Join**/**Leave** for communities — `JoinButton.razor` deleted), retired the dead `ICommunityStore` member methods (kept `EdgeKind.CommunityMember` for the startup migration), fixed the two stale `cref`s that broke the build (QA Pass 23). All suites green (Server 1371, Web 106, Client 190, Core 467, …). Committed but **not yet live** — the container must be rebuilt; re-verify then ([S6](docs/qa/s06-remote-join-csp-blocked.md), plus the S4/S8 facets). Live Lemmy interop (Phase 6) deferred to a live pass. [change doc](docs/changes/1001-inbox-2-community-simplification.md)
 - **Inbox ① card header polish (2026-09-20):** moderation icons removed from feed cards (reserved for actor detail), header color strip extended to full width, boost "replying to" hint dropped. Feed load feel investigation deferred (server-side caching needed). [change doc](docs/changes/1000-inbox-1-card-header-polish.md)
 
 
