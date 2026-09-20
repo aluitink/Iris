@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 74 (2026-09-20) — S19 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed. Container healthy.
+- **Explored:** S19: Community `technology` — (1) Edit community: changed Description → Save → `POST /ap/v1/c/technology/outbox` → 202, body includes new description, but DB `summary` is NULL (not persisted). (2) Requests tab: "We couldn't load the join requests" — 0 new API requests.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (Update activity 202 but not persisted to DB; Requests tab still has no backing endpoint). Improvement: Update body now includes the changed field (was missing in Pass 52), but the DB is still not updated.
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S21 (/c/{handle}), S4 (remote communities).
+
+---
+
 ## Pass 73 (2026-09-20) — S20/S2/S14 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed. Container healthy.
