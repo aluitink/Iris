@@ -174,31 +174,37 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
 
     /// <summary>
-    /// Requests to join a community as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Join"/>
-    /// (actor = <paramref name="actorId"/>, object = <paramref name="communityIri"/>) and publishes it through
-    /// the signed pipeline to the community's inbox. When the community has <c>manuallyApprovesMembers</c>
-    /// set, the server records a pending join request (the operator must Accept or Reject); otherwise the
-    /// server auto-grants membership (19.5.2).
+    /// Requests to join a community as <paramref name="actorId"/>. A community's members are its
+    /// followers (change 221), so joining is a <see cref="KristofferStrube.ActivityStreams.Follow"/> of the
+    /// community: published to the actor's own outbox and delivered to the community's inbox. When the
+    /// community has <c>manuallyApprovesMembers</c> set, the server withholds the membership (followers)
+    /// edge and records a pending join request (the operator must Accept or Reject); otherwise the server
+    /// auto-grants membership.
     /// </summary>
     /// <param name="actorId">The IRI of the actor requesting to join (must match the client's signing
     /// identity so the request is signed as that actor).</param>
     /// <param name="communityIri">The IRI of the community to join.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted Follow id (pass it to <see cref="RequestLeaveAsync"/> to leave later).</returns>
     public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
 
     /// <summary>
-    /// Leaves a community as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Leave"/>
-    /// whose <c>actor</c> is the leaving member and whose <c>object</c> references the member (the handler
-    /// reads <c>object</c> to determine who to remove), then delivers it to the community's inbox.
-    /// The server's <c>MembershipActivityHandler</c> removes the member from the community's member set.
+    /// Leaves a community as <paramref name="actorId"/>: builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Undo"/> whose <c>object</c> references the original
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> that granted the membership
+    /// (<paramref name="originalFollowId"/>), then publishes it to the actor's own outbox and delivers it
+    /// to the community's inbox. The server's <c>UndoActivityHandler</c> removes the membership (followers)
+    /// and follows edges.
     /// </summary>
     /// <param name="actorId">The IRI of the actor leaving (must match the client's signing identity so
     /// the request is signed as that actor).</param>
-    /// <param name="communityIri">The IRI of the community to leave.</param>
+    /// <param name="originalFollowId">The IRI of the <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// being undone — the id learned from <see cref="DeliveryResult.MintedId"/> when the join was made via
+    /// <see cref="RequestJoinAsync"/>.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
-    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default);
 
     /// <summary>
     /// Accepts a pending join request for a community as <paramref name="communityIri"/> (the community

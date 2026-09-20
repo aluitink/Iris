@@ -322,7 +322,7 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>

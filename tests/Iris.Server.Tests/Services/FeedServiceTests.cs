@@ -1338,7 +1338,7 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
-        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)

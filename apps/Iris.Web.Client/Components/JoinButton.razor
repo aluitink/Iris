@@ -50,6 +50,7 @@
     private bool Busy { get; set; }
     private bool IsMember { get; set; }
     private string? _lastCommunityIri;
+    private string? _joinFollowActivityIri;
 
     private bool IsSelf
     {
@@ -90,6 +91,7 @@
         }
 
         _lastCommunityIri = iri.Value;
+        _joinFollowActivityIri = null;
         IsMember = await Ui.IsMemberAsync(iri);
     }
 
@@ -105,15 +107,26 @@
         {
             if (IsMember)
             {
-                await client.RequestLeaveAsync(me, communityIri);
-                IsMember = false;
-                Ui.InvalidateMembership(communityIri);
+                // Leaving is the inverse of joining: an Undo of the original Follow. Find the join's
+                // follow activity IRI (from the last join in this circuit, or by scanning the outbox).
+                var followIri = _joinFollowActivityIri ?? await Ui.GetFollowActivityIriAsync(communityIri);
+                if (followIri is { Length: > 0 })
+                {
+                    await client.RequestLeaveAsync(me, new Iri(followIri));
+                    IsMember = false;
+                    _joinFollowActivityIri = null;
+                    Ui.InvalidateMembership(communityIri);
+                    Ui.InvalidateFollowing();
+                }
             }
             else
             {
-                await client.RequestJoinAsync(me, communityIri);
+                // Joining a community is a Follow of it (members are followers — change 221).
+                var result = await client.RequestJoinAsync(me, communityIri);
+                _joinFollowActivityIri = result.MintedId;
                 IsMember = true;
                 Ui.InvalidateMembership(communityIri);
+                Ui.InvalidateFollowing();
             }
         }
         catch

@@ -353,41 +353,24 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <inheritdoc/>
     public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
     {
-        // A Join is delivered to the community's inbox (the membership's owner). The community's
-        // MembershipActivityHandler interprets it: when manuallyApprovesMembers is set, the server
-        // records a pending join request; otherwise the server auto-grants membership (19.5.2).
-        //
-        // The Join's `object` is the **member** (the actor joining) — the handler reads `object` to
-        // determine who to add to the community's member set. The community itself is implied by the
-        // delivery target (the community's inbox), not by the `object` field.
-        //
-        // The inbox endpoint requires the activity to have an id (the server does not mint ids for
-        // inbox-received activities — that is the outbox-publish path). The client mints a unique id
-        // under the actor's own tree.
-        var join = new Join
-        {
-            Id = $"{actorId.Value.TrimEnd('/')}/joins/{Guid.NewGuid():N}",
-            Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = actorId.Uri }],
-        };
-
-        return DeliverAsync(communityIri.InboxOf(), join, ct);
+        // A community's members are its followers (change 221), so joining a community is a Follow of
+        // the community. The Follow is published to the actor's OWN outbox and delivered to the
+        // community's inbox, whose FollowActivityHandler interprets it: when manuallyApprovesMembers is
+        // set the membership (followers) edge is withheld and a pending join request is recorded;
+        // otherwise the membership is granted immediately.
+        return FollowAsync(actorId, communityIri, ct);
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
     {
-        // A Leave is delivered to the community's inbox (the membership's owner). The community's
-        // MembershipActivityHandler interprets it: the handler reads `object` to determine who to
-        // remove from the member set. The `object` is the leaving member (same as the actor).
-        var leave = new Leave
-        {
-            Id = $"{actorId.Value.TrimEnd('/')}/leaves/{Guid.NewGuid():N}",
-            Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = actorId.Uri }],
-        };
-
-        return DeliverAsync(communityIri.InboxOf(), leave, ct);
+        // Leaving a community is the inverse of joining it: an Undo of the original Follow.
+        // <paramref name="originalFollowId"/> is the id the server minted for the follow that granted
+        // the membership (learned from <see cref="DeliveryResult.MintedId"/> when the join was made via
+        // <see cref="RequestJoinAsync"/>, or by scanning the actor's outbox). The Undo is published to the
+        // actor's own outbox and delivered to the community's inbox, whose UndoActivityHandler removes the
+        // membership (followers) + follows edges.
+        return UndoFollowAsync(actorId, originalFollowId, ct);
     }
 
     /// <inheritdoc/>
