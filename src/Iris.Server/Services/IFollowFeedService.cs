@@ -59,10 +59,13 @@ public interface IFollowFeedService
     /// audience/visibility filter — without it an anonymous request to <c>GET /u/{handle}/feed</c>
     /// would surface the owner's direct messages and their follows' non-public posts (the Phase
     /// 136.18 / 139.2-s5 gap, follow-feed surface).</param>
+    /// <param name="source">Optional source filter (unified-home-feed Phase 2): <c>"people"</c> → items
+    /// whose <c>attributedTo</c> does not include a <c>Group</c>; <c>"communities"</c> → items whose
+    /// <c>attributedTo</c> does include a <c>Group</c>; null/absent → full merged feed (back-compat).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the feed items (the actor's own posts plus the follows' posts;
-    /// filtered when a query/type filter is supplied; empty only when the actor has no posts of their own
-    /// and no followed actor has content, or nothing matches the filters). A remote outbox that cannot be
-    /// fetched contributes nothing (it does not fail the whole feed).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, CancellationToken ct = default);
+    /// filtered when a query/type/source filter is supplied; empty only when the actor has no posts of
+    /// their own and no followed actor has content, or nothing matches the filters). A remote outbox that
+    /// cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, CancellationToken ct = default);
 }

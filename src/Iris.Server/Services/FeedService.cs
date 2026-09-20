@@ -87,7 +87,7 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, CancellationToken ct = default)
     {
         var feed = await BuildFeedAsync(actorIri, threadDepth, ct).ConfigureAwait(false);
 
@@ -114,6 +114,15 @@ public sealed class FeedService : IFollowFeedService
         // content. Filtering after the query/type filters (and before the handler's paginate) means the
         // viewer is not returned a page dominated by content they cannot legitimately see.
         feed = feed.Where(item => VisibilityFilter.IsFeedItemVisibleTo(item, requesterIri)).ToList();
+
+        // Source filter (unified-home-feed Phase 2): split the feed into "people" (attributedTo has no
+        // Group) and "communities" (attributedTo includes a Group). A null/absent source returns the
+        // full merged feed (back-compat).
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            var communitiesOnly = string.Equals(source, "communities", StringComparison.OrdinalIgnoreCase);
+            feed = feed.Where(item => IsFromCommunity(item) == communitiesOnly).ToList();
+        }
 
         return feed;
     }
@@ -244,6 +253,70 @@ public sealed class FeedService : IFollowFeedService
 
         // Fallback: non-public audience indicates a directed reply (Phase 101 heuristic).
         return contentObj.GetAudienceIris().Count > 0;
+    }
+
+    /// <summary>
+    /// Reports whether a feed item is from a community (unified-home-feed Phase 2, <c>?source=</c>
+    /// filter): its <c>attributedTo</c> (or, for <c>Create</c>/<c>Announce</c>, the referenced
+    /// object's <c>attributedTo</c>) includes a <c>Group</c>. A <c>Group</c> is detected either as an
+    /// inline <c>Group</c> object in the attributedTo collection, or as an IRI whose path matches the
+    /// common community pattern (<c>/c/</c> segment — Lemmy, Pleroma, Mastodon, Iris).
+    /// </summary>
+    private static bool IsFromCommunity(IObjectOrLink item)
+    {
+        if (item is not IObject obj)
+        {
+            return false;
+        }
+
+        // For activities (Create, Announce, etc.), check the referenced object's attributedTo.
+        if (obj is Activity activity)
+        {
+            foreach (var referenced in activity.Object ?? [])
+            {
+                if (referenced is IObject refObj && AttributedToIncludesGroup(refObj))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // For bare objects (Note, Article, Page, etc.), check their own attributedTo.
+        return AttributedToIncludesGroup(obj);
+    }
+
+    /// <summary>
+    /// Returns true when the object's <c>attributedTo</c> collection includes a <c>Group</c>: either an
+    /// inline <c>Group</c> document or an IRI whose path contains a <c>/c/</c> segment (the common
+    /// community path in Lemmy, Pleroma, and Iris).
+    /// </summary>
+    private static bool AttributedToIncludesGroup(IObject obj)
+    {
+        var attributedTo = obj.AttributedTo;
+        if (attributedTo is null)
+        {
+            return false;
+        }
+
+        foreach (var attr in attributedTo)
+        {
+            // Inline Group document (some platforms embed the full actor in attributedTo).
+            if (attr is Group)
+            {
+                return true;
+            }
+
+            // IRI (link): check if the path matches the community pattern.
+            if (attr.ResolveObjectIri() is { } iri &&
+                iri.Value.Contains("/c/", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

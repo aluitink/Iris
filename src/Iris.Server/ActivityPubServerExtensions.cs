@@ -9347,6 +9347,11 @@ public static class ActivityPubServerExtensions
         // When absent, all replies from followed actors are filtered out (default behavior).
         int? threadDepth = int.TryParse(context.Request.Query["depth"].ToString(), out var d) && d > 0 ? (int?)d : null;
 
+        // A ?source query (unified-home-feed Phase 2) filters the feed by source:
+        // "people" → items whose attributedTo has no Group; "communities" → items whose
+        // attributedTo includes a Group; absent → full merged feed (back-compat).
+        var source = context.Request.Query["source"].ToString();
+
         // Resolve the requesting actor first so the feed can apply the audience/visibility filter
         // (139.2-s5, follow-feed surface): an anonymous / unsigned request sees only public content;
         // the feed's owner (a signed request as the actor) additionally sees their own non-public posts
@@ -9370,6 +9375,7 @@ public static class ActivityPubServerExtensions
             activityType.Length > 0 ? activityType : null,
             threadDepth,
             requesterIri,
+            source.Length > 0 ? source : null,
             ct).ConfigureAwait(false);
 
         // Enrich nested objects with likedCount/sharedCount (+ isLiked/isShared for authenticated
