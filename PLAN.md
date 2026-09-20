@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `ecfccb6` (shared-inbox route `POST /ap/v1/shared-inbox` — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy; includes ⑤ Lemmy interop fixes from `e5fe8d1`)
+- **Deployed commit:** `c845567` (shared-inbox route `POST /ap/v1/shared-inbox` — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy; includes ⑤ Lemmy interop fixes from `e5fe8d1`)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** ⑤ Lemmy interop unblocked: (1) actor documents now carry `published` (Lemmy `objects::instance` requires it — was 400 "missing field `published`"); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split — was silently skipped). **⑤ live re-verify (2026-09-20): a person's Follow to Lemmy `c/interop` reached Lemmy end-to-end** (Lemmy `community_follower` gained a row, `pending=f`). The shared-inbox route (`POST /ap/v1/shared-inbox`) is now implemented (was advertised but unhandled — Mastodon dropped its deliveries) — [change doc 1598](docs/changes/1598-shared-inbox-route.md). **Open:** Lemmy Undo (unfollow) returns 400 (dead-lettered). S2/S14 proxy seam still 401s unsigned GETs.
 
