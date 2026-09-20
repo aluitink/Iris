@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 33 (2026-09-20) — Compose Article type + Settings Security/Password + Notifications + S7 re-verify
+
+- **Build/Live:** deployed `456b0d9` (== HEAD? y). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). Compose "Article (long-form)" end-to-end, Settings → Security + Change password, Notifications tab filtering (All/Follows), Directory external lookup (S7 re-verify).
+- **Result:** **3 clean** (Article compose → 202 → renders on profile + AP doc type=Article; Change password → success message + re-login works; Notifications Follows filter shows only follow requests); **1 fixed** (S7 → `456b0d9`, external lookup renders resolved actor card, 0 errors). 0 non-environmental console errors.
+- **Checkpoint:** next pass explores S18 (local follow → empty Home timeline) re-verify, S19 (community Requests tab), S11 (Poll compose), and Settings → Danger tab.
+
+---
+
 ## Pass 32 (2026-09-20) — S2/S14 re-verify + S5 fix confirmation + profile avatar flow
 
 - **Build/Live:** deployed `456b0d9` (== HEAD? y — S2/S14 anonymous-proxy seam + S5 Search fix are live). Container `irisweb-iris-web-1` healthy.

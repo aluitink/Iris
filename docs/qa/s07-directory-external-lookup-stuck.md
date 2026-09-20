@@ -1,8 +1,8 @@
 # S7 — Directory external lookup stuck on the spinner forever
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
-- **Found:** Pass 15 (2026-09-20) — re-confirmed Pass 18 (not exercised in depth), 27
+- **Status:** fixed (2026-09-20, `456b0d9`)
+- **Found:** Pass 15 (2026-09-20) — re-confirmed Passes 18, 27, 28; **fixed + live-verified Pass 33**
 
 ## Symptom
 
@@ -23,3 +23,5 @@ Directory → external lookup of a known remote handle → the resolved actor ca
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** Directory → external lookup of `lemmyadmin@lemmy.luit.ink` → WebFinger + actor doc both **200** through the proxy, but the UI **stays on the spinner** (no result card, no error, 0 console errors). STILL OPEN.
 
 **Re-verification evidence (Pass 28, 2026-09-20, andrew):** same lookup (`lemmyadmin@lemmy.luit.ink`) → `POST /ap/v1/proxy/…/webfinger` **200** + `POST /ap/v1/proxy/…/u/lemmyadmin` **200**, but the UI **still stays on the spinner** (no result card, no error, 0 console errors). STILL OPEN.
+
+**Re-verification evidence (Pass 33, 2026-09-20, andrew, deployed `456b0d9`):** Directory → external lookup of `lemmyadmin@lemmy.luit.ink` → status shows `finally (result=https://lemmy.luit.ink/u/lemmyadmin, error=null)`, resolved actor card **renders** (link to `/actor?iri=https://lemmy.luit.ink/u/lemmyadmin`), **0 console errors**. **FIXED.**

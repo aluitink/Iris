@@ -157,9 +157,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **16 open. No blockers (all S2/S3-sev).** (Pass 32: **S5 fixed + live-verified** on `456b0d9`; S2/S14 re-confirmed open — the anonymous-proxy seam is deployed but the unsigned GET 401s; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
-- **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S19 (community Requests tab dead-end — moderation entry point broken), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), then the S2-sev bugs S7, S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
-- **Last pass:** 32 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores fresh areas (Compose "Article" type, Settings → Security/Change password, Directory "Find someone" re-verify for S7, Notifications tab filtering).
+- **15 open. No blockers (all S2/S3-sev).** (Pass 33: **S7 fixed + live-verified** on `456b0d9`; S2/S14 re-confirmed open — the anonymous-proxy seam is deployed but the unsigned GET 401s; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
+- **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S19 (community Requests tab dead-end — moderation entry point broken), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), then the S2-sev bugs S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
+- **Last pass:** 33 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S18 (local follow → empty Home timeline) re-verify, S19 (community Requests tab), S11 (Poll compose), and Settings → Danger tab.
 
 ## Paused Questions
 
