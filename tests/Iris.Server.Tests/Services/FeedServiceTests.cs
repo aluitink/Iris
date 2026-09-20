@@ -639,6 +639,118 @@ public sealed class FeedServiceTests
         Assert.Empty(feed);
     }
 
+    // --- S25: a delivered remote post surfaces in the follower's home feed ------------
+    // When a remote Create is delivered to a local recipient, the CreateActivityHandler stores the
+    // embedded object in the object store (keyed by its attributedTo). The home feed for a remote
+    // follow walks the remote's outbox over the wire; if that walk yields nothing (an
+    // unreachable/broken remote outbox, or a fresh delivery not yet reflected in the walked page),
+    // the feed must still surface the delivered content from the object store (the same store/path
+    // the inbox write lands in) rather than leaving the follower's timeline empty.
+
+    [Fact]
+    public async Task Feed_RemoteFollow_DeliveredContentInObjectStore_SurfacesInFeed()
+    {
+        var remote = Actor(RemoteHost, "bob");
+        var noteIri = $"https://{RemoteHost}/notes/delivered-s25";
+        // The remote follow's outbox walk yields nothing (no collection document mapped for the
+        // outbox IRI), but a post from that remote author was delivered to a local recipient and is
+        // stored in the object store (the production inbox path).
+        var (service, persistence) = Build(
+            persistence: SeedLocal(p =>
+            {
+                p.Follows.RecordFollowAsync(Actor(LocalHost, "alice"), remote).GetAwaiter().GetResult();
+                // Store the delivered remote Note in the object store, attributed to the remote author
+                // (mirrors CreateActivityHandler.StoreEmbeddedObjectAsync).
+                p.Objects.PutObjectAsync(new Note
+                {
+                    Id = noteIri,
+                    Content = ["delivered s25 payload"],
+                    AttributedTo = [new Link { Href = new Uri(remote.Value) }],
+                    To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                }).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages())); // outbox walk yields nothing
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The delivered remote post surfaces in alice's home feed even though the outbox walk was empty.
+        Assert.Contains(feed, item => IdOf(item) == noteIri);
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_DeliveredAndWireContent_Deduplicated()
+    {
+        var remote = Actor(RemoteHost, "bob");
+        var noteIri = $"https://{RemoteHost}/notes/dedup-s25";
+        // The same note is both (a) in the remote's outbox (walked over the wire, embedded) and
+        // (b) stored in the object store as delivered content. The feed must render it once.
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                p.Follows.RecordFollowAsync(Actor(LocalHost, "alice"), remote).GetAwaiter().GetResult();
+                p.Objects.PutObjectAsync(new Note
+                {
+                    Id = noteIri,
+                    Content = ["dedup s25 payload"],
+                    AttributedTo = [new Link { Href = new Uri(remote.Value) }],
+                    To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                }).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages(
+                Page($"{remote.Value}/outbox",
+                    [CreateItem(noteIri, embedded: true)],
+                    next: null))));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Exactly one copy of the note: the wire-walked Create and the delivered-content Create both
+        // reference the same object IRI, so the content-object coalesce pass renders it once.
+        Assert.Single(feed);
+        var content = (feed[0] as Create)?.Object?.FirstOrDefault() as Note;
+        Assert.NotNull(content);
+        Assert.Equal(noteIri, content!.Id);
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_DeliveredTombstone_NotInFeed()
+    {
+        var remote = Actor(RemoteHost, "bob");
+        var noteIri = $"https://{RemoteHost}/notes/tombstone-s25";
+        // A deleted (tombstoned) object in the object store must not surface in the feed.
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                p.Follows.RecordFollowAsync(Actor(LocalHost, "alice"), remote).GetAwaiter().GetResult();
+                p.Objects.PutObjectAsync(new Tombstone
+                {
+                    Id = noteIri,
+                    Deleted = DateTime.UtcNow,
+                }).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages()));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+        Assert.Empty(feed);
+    }
+
     // --- Mixed local + remote, dedup, cap --------------------------------------------
 
     [Fact]

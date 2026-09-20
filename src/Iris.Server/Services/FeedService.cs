@@ -259,12 +259,23 @@ public sealed class FeedService : IFollowFeedService
             {
                 try
                 {
-                    IReadOnlyList<IObjectOrLink> items =
-                        await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
-                            ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
-                            : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
+                    if (await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false))
+                    {
+                        // A local follow's outbox is read from the local store (no network).
+                        return (await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)).ToList();
+                    }
 
-                    return items.ToList();
+                    // A remote follow's feed is the union of (a) its outbox walked over the wire and
+                    // (b) the content this instance has already received in its inbox from that author
+                    // (stored in the object store by the CreateActivityHandler's StoreEmbeddedObjectAsync
+                    // when a remote Create was delivered to a local recipient — S25: the delivered post
+                    // must surface in the follower's home feed even when the live outbox walk yields
+                    // nothing, e.g. a broken/unreachable remote outbox or a fresh delivery not yet
+                    // reflected in the walked page). De-duplicated by IRI + content object in
+                    // TruncateDedup, so an item present in both is rendered once.
+                    var items = new List<IObjectOrLink>(await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false));
+                    items.AddRange(await GetDeliveredContentAsync(followIri, ct).ConfigureAwait(false));
+                    return items;
                 }
                 catch
                 {
@@ -524,6 +535,61 @@ public sealed class FeedService : IFollowFeedService
         }
 
         return items;
+    }
+
+    /// <summary>
+    /// Returns the content this instance has already received in its inbox from <paramref name="actorIri"/>
+    /// (a remote followed author), as feed items — the S25 "delivered remote post" half of the home feed.
+    /// When a remote <c>Create</c> is delivered to a local recipient, the <see cref="CreateActivityHandler"/>
+    /// stores the embedded object in the <see cref="IObjectStore"/> under the object's own IRI (keyed by its
+    /// <c>attributedTo</c>). <see cref="IObjectStore.ListByActorAsync"/> lists those objects; each is wrapped
+    /// in a synthetic <c>Create</c> (activity IRI = the object IRI) so it flows through the feed's existing
+    /// de-dup/coalesce, reply filter, and visibility filter exactly like a wire-walked outbox <c>Create</c>.
+    /// </summary>
+    /// <remarks>
+    /// This is the same store/path the inbox write lands in (the object store), so a delivered remote post
+    /// surfaces in the follower's home feed even when the live outbox walk of the remote author contributes
+    /// nothing (an unreachable/broken remote outbox, or a delivery not yet reflected in the walked page).
+    /// Objects attributed to the author that are not posts (e.g. a <see cref="Tombstone"/>) are skipped. A
+    /// store failure contributes nothing (a single broken follow must not fail the whole feed — 147.2).
+    /// </remarks>
+    private async Task<IReadOnlyList<IObjectOrLink>> GetDeliveredContentAsync(Iri actorIri, CancellationToken ct)
+    {
+        try
+        {
+            var objects = await _persistence.Objects.ListByActorAsync(actorIri, ct).ConfigureAwait(false);
+            var result = new List<IObjectOrLink>(objects.Count);
+            foreach (var obj in objects)
+            {
+                if (obj is Tombstone)
+                {
+                    continue; // a deleted object has no feedable content
+                }
+
+                var objectIri = obj.ResolveObjectIri();
+                if (objectIri is null)
+                {
+                    continue;
+                }
+
+                // Wrap the bare object in a synthetic Create (activity IRI = object IRI) so the feed's
+                // Create-oriented de-dup/coalesce and reply/visibility filters apply uniformly. The object
+                // is embedded (not link-only), so it renders in place.
+                result.Add(new Create
+                {
+                    Id = objectIri.ToString(),
+                    Actor = [new Link { Href = new Uri(actorIri.Value) }],
+                    Object = [obj],
+                });
+            }
+
+            return result;
+        }
+        catch (Exception)
+        {
+            // A store failure contributes nothing; a single broken follow must not fail the whole feed.
+            return [];
+        }
     }
 
     /// <summary>
