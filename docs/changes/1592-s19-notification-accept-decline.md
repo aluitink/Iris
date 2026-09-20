@@ -21,6 +21,13 @@ decline, which is an unnecessary round-trip.
 - **`apps/Iris.Web.Client/wwwroot/css/app.css`** — Added `.notification-card__actions` styles
   (flex row, gap, top margin) for the button row.
 
+- **`apps/Iris.Web/WebAppFactory.cs`** — The `/local/v1/notifications` endpoint now filters out
+  `Follow` notifications whose request is no longer pending (already accepted/rejected). Without
+  this, the notification row (and its Accept/Decline buttons) would remain visible after the user
+  acted on it, because the inbox still contains the historical Follow activity. The filter queries
+  `IFollowStore.GetFollowRequestsAsync` and drops any Follow notification whose requester is not in
+  the pending set.
+
 ## Verification
 
 - 1392 server tests passed (0 failed)
@@ -34,4 +41,6 @@ decline, which is an unnecessary round-trip.
   5. s19-test unfollowed + re-followed s7test → new follow request.
   6. Clicked **Decline** → `POST /local/v1/u/s7test/requests/reject/…` → **204**. s19-test does
      **not** appear in s7test's followers.
-  7. 0 console errors throughout.
+  7. After each action, refreshed the Notifications page: the follow-request row is **gone**
+     (filtered out because the request is no longer pending).
+  8. 0 console errors throughout.

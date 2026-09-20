@@ -1024,6 +1024,27 @@ public static class WebAppFactory
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
             var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs, account.ActorId);
 
+            // Filter out Follow notifications that are no longer pending (already accepted/rejected).
+            // A Follow notification is actionable only when the follow request is still in the queue.
+            // Once decided (edge removed), the notification becomes historical noise.
+            var pendingRequests = await persistence.Follows.GetFollowRequestsAsync(account.ActorId, ct);
+            var pendingSet = pendingRequests.Select(r => r.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            filtered = filtered.Where(item =>
+            {
+                if (item is not Activity { Type: { } t } act)
+                {
+                    return true;
+                }
+
+                if (t.FirstOrDefault() != "Follow")
+                {
+                    return true;
+                }
+
+                var requesterIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
+                return requesterIri is { } ri && pendingSet.Contains(ri.Value);
+            }).ToList();
+
             // Optional type filter (e.g. ?type=Like for likes only). "Mention" is a
             // composite filter: Create activities whose content mentions the actor.
             if (!string.IsNullOrWhiteSpace(type))
