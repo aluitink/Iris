@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 49 (2026-09-20) — S17/S16-UX/S20 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S17: `/profile` → "Your posts" fired `outbox` **8 times** (pages 1–8). Switched to **Replies** tab → full 13-page outbox fan-out (requests 91–103). Switched to **Likes** tab → full 13-page outbox fan-out a third time (requests 104–116). Switched back to **Your posts** → no additional requests (cached). Total: **34 outbox requests** for 3 tabs viewed. Replies tab: empty list, no "No replies yet" message. Likes tab: empty list with "Load more" button. S16-UX: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Profile listing: A:0/B:0/**0 votes**, NO badge. Object detail page: A:1/B:0/**1 votes**, NO badge. Vote count inconsistency persists (0 vs 1). Badge missing from both. S20: Home → Communities tab fires same `GET /ap/v1/u/andrew/feed` as Posts (no `?source=` param). API probe: `GET /ap/v1/u/andrew/feed?source=communities` → **403** (server rejects `source` param). `GET /ap/v1/u/andrew/feed` (no param) → 200. Server does not support `source` filtering.
+- **Result:** 0 new; **S17 re-confirmed OPEN** (34 outbox requests for 3 tabs; tab-switch still pulls all 13 pages); **S16-UX re-confirmed OPEN** (vote count 0 in profile vs 1 in object; badge missing everywhere); **S20 re-confirmed OPEN** (server 403s `?source=` param — no backing endpoint for Communities tab).
+- **Checkpoint:** next pass targets S21 (no auto-follow + /c/{handle}), S19 (requests endpoint missing), S3 (Create persistence), S2/S14 (blocked).
+
+---
+
 ## Pass 48 (2026-09-20) — S19/S21 re-verify + API probe on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
