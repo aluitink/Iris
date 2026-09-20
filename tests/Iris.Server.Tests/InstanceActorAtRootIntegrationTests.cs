@@ -104,6 +104,50 @@ public sealed class InstanceActorAtRootIntegrationTests : IDisposable
         Assert.DoesNotContain("privateKey", body);
     }
 
+    [Fact]
+    public async Task Root_SiteActorDocument_CarriesPublished()
+    {
+        // ⑤ Lemmy interop: Lemmy's objects::instance parser REQUIRES a `published` field on a site
+        // actor's document (it dereferences the follower's site when it receives a Follow, and rejects
+        // the activity with 400 when `published` is absent — "missing field `published`"). The root
+        // document must therefore always carry `published`.
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
+
+        using var response = await _http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        Assert.True(
+            root.TryGetProperty("published", out var published) &&
+            published.ValueKind is JsonValueKind.String or JsonValueKind.Number,
+            "site actor document must carry a `published` field (Lemmy objects::instance requires it)");
+    }
+
+    [Fact]
+    public async Task PersonDocument_CarriesPublished()
+    {
+        // The `published` field is set on every public actor document (not just the site actor), so a
+        // remote instance dereferencing a Person's site during a Follow also parses it successfully.
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Alice}");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
+
+        using var response = await _http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+
+        Assert.True(
+            root.TryGetProperty("published", out var published) &&
+            published.ValueKind is JsonValueKind.String or JsonValueKind.Number,
+            "person actor document must carry a `published` field (Lemmy objects::instance requires it)");
+    }
+
     private static TestServer StartServer(
         Iris.Server.InMemory.InMemoryPersistenceProvider persistence,
         Iri siteActorIri)

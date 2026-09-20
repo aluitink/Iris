@@ -4185,10 +4185,20 @@ public static class ActivityPubServerExtensions
                 //    Without this gate, every repeated follow click mints a new ULID IRI and lands a
                 //    duplicate row in the recipient's inbox (the IRI-based dedup in AddToInboxAsync
                 //    cannot collapse them because each Follow has a distinct server-minted id).
+                //
+                // The local/remote split is HOST-BASED (IsOnInstance), not store-membership-based. A
+                // REMOTE community this instance has followed (e.g. a peered Lemmy community) is cached
+                // in its own actor store — so TryGetCommunityAsync(recipient) is TRUE for it, and the
+                // old store-membership test misclassified it as local and SKIPPED the cross-instance
+                // delivery (the Follow was recorded in the follower's outbox + the local follows edge,
+                // but never sent to the remote community's inbox, so the peer never recorded the
+                // follower). The host comparison against the instance's advertised base IRI is the
+                // authoritative "is this on my instance" signal — the same fix GetCrossPostTargetsAsync
+                // applies (the cross-post path hit this exact trap first). A genuinely-local recipient
+                // (on this host) still short-circuits to the local inbox write.
                 if (recipientIri is { } recipient)
                 {
-                    var isLocal = await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false)
-                        || await persistence.Communities.TryGetCommunityAsync(recipient, out _, ct).ConfigureAwait(false);
+                    var isLocal = IsOnInstance(recipient, baseUrl);
                     if (isLocal)
                     {
                         if (!(activity is Follow) || isNewFollow)
@@ -6496,6 +6506,15 @@ public static class ActivityPubServerExtensions
         CancellationToken ct)
     {
         var doc = BuildActorDocumentCore(actor, actorIri, authenticatedHandle, persistence, options);
+
+        // Lemmy interop (138.x / ⑤): Lemmy's objects::instance parser REQUIRES a `published` field on a
+        // site actor's document (it dereferences the follower's site when it receives a Follow, and
+        // rejects the activity with 400 when `published` is absent — "missing field `published`"). The
+        // core ActivityStreams Actor model does not force it, so it is set here on every public document.
+        // It is a best-effort fallback (now, when the actor's creation time is not otherwise recorded) —
+        // the field only needs to be present for the remote parser to accept the document.
+        doc.Published ??= DateTime.UtcNow;
+
         var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
         var ns = IrisExtensionNamespace(options);
 

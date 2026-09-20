@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `e5e7d9d` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `ab8edf5` (⑤ Lemmy interop: actor `published` field + follow delivery for cached remote communities — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** S3 fixed. S19 all facets fixed + deployed (Requests tab + Edit Save + notification Accept/Decline + decided-request filter). S19 facet 3 verified working (Edit Save persists). NEW FIX: auto-accepted follows now visible in notifications (was incorrectly filtered). S21/S20 re-verified working. NEW: Community co-owner Leave flow added. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** ⑤ Lemmy interop unblocked: (1) actor documents now carry `published` (Lemmy `objects::instance` requires it — was 400 "missing field `published`"); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split — was silently skipped). S3/S19/co-owner Leave all fixed + deployed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- *(none — S19 complete; next from Dev Queue)*
+- *(none — ⑤ Lemmy interop unblocked; ⑤ live re-verify + Mastodon unfollow-fanout next from Dev Queue)*
 
 ## Dev Queue
 
@@ -145,7 +145,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Feature scope:**
 
-- **②④⑤ Community simplification — unify members with followers (Lemmy-shape). ② Phases 1-6 DONE; ④ control surfaces (nearly done) + ⑤ live-interop re-verify remain.** Members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, single **Follow** button (labeled **Join**/**Leave** for communities), dead `ICommunityStore` member methods retired (kept `EdgeKind.CommunityMember` for the startup migration). **Peering** is the single owner-only extra. **④ done:** "My communities" tab + "Manage peers →" link per owned community. **④ remaining:** co-owner Leave/Remove-owner flow. **⑤** live Lemmy interop re-verify (gated by `IRIS_LIVE_INTEROP`). See [docs/plans/community-simplification.md](docs/plans/community-simplification.md) + [change doc](docs/changes/1593-community-management-my-communities-tab.md).
+- **⑤ Live Lemmy interop re-verify (NEXT).** Both interop blockers are fixed + deployed (actor `published` field + follow delivery for cached remote communities — [change doc 1597](docs/changes/1597-lemmy-follow-delivery-and-actor-published.md)). Remaining: live-verify a person's Follow reaches Lemmy's `c/interop` (Lemmy `community_follower` gains a row) end-to-end. Gated by `IRIS_LIVE_INTEROP` (local Lemmy at `lemmy.luit.ink` is up). **Mastodon unfollow-fanout** observation: user still sees messages from an unfollowed user — investigate whether the Undo-fanout to followers' feeds is dropped.
+- **②④⑤ Community simplification — unify members with followers (Lemmy-shape). ② Phases 1-6 DONE; ④ control surfaces DONE (incl. co-owner Leave); ⑤ live-interop unblocked (see above).** Members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, single **Follow** button (labeled **Join**/**Leave** for communities), dead `ICommunityStore` member methods retired (kept `EdgeKind.CommunityMember` for the startup migration). **Peering** is the single owner-only extra. See [docs/plans/community-simplification.md](docs/plans/community-simplification.md) + [change doc](docs/changes/1593-community-management-my-communities-tab.md).
 - **③④ Unified home feed — COMPLETE (Phases 1-7, 2026-09-20).** Two feed tabs + bottom strip + community IA rework. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 - **① Minor UI fixes — feed load feel — COMPLETE (2026-09-20).** (1)(2)(3) Done. (4) Server-side per-actor follow-feed cache (30s TTL + `?refresh=true` bypass). [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
 
@@ -165,6 +166,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **⑤ Lemmy interop unblock (2026-09-20):** (1) actor documents carry `published` (Lemmy `objects::instance` requires it); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split). New regression test fails on old code, passes on fix. Full suite green. [change doc](docs/changes/1597-lemmy-follow-delivery-and-actor-published.md)
 - **④ Community co-owner Leave flow (2026-09-20):** Co-owners can leave communities (demoted from owner); last owner protected. 1559 passed. [change doc](docs/changes/1596-community-co-owner-leave-flow.md)
 - **Notification follow-filter fix (2026-09-20):** Auto-accepted follows now visible in notifications (was incorrectly filtered out). 1559 passed. [change doc](docs/changes/1595-notification-follow-filter-fix.md)
 - **S19 facet 3 verification (2026-09-20):** Edit community Save verified working; regression test added. 1393 passed. [change doc](docs/changes/1594-s19-edit-community-save-verified-fixed.md)
