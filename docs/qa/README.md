@@ -53,8 +53,9 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S16 | Poll votes are not persisted | bug / data-integrity | S3 | open | [s16](s16-poll-votes-not-persisted.md) |
 | S17 | Profile tabs over-fetch the entire outbox (on load + every tab switch) | perf / request-spam | S2 | open | [s17](s17-profile-tabs-overfetch-outbox.md) |
 | S18 | Following a local account: follow "succeeds" but follower's Home timeline stays empty | bug / data-integrity | S2 | open | [s18](s18-local-follow-timeline-empty.md) |
+| S19 | Community "Requests" tab always fails to load (no request fires, no retry) | bug | S2 | open | [s19](s19-community-requests-tab-fails.md) |
 
-**16 open, 1 fix-committed-not-live (S6). No S1/blockers.**
+**17 open, 1 fix-committed-not-live (S6). No S1/blockers.**
 
 > Note: S1 was the Pass-10 defect set (signed-out 401 spam, proxy 500, Lemmy misclassification) — all fixed and verified Pass 11; it is recorded in [docs/changes/997-ui-ux-review.md](../changes/997-ui-ux-review.md), not here.
 

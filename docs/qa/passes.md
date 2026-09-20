@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 30 (2026-09-20) — Communities detail tabs + "All on this instance" + Settings moderation
+
+- **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted WIP since, now incl. `PagedCollection.razor`; build current). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). Community detail (Feed/Members/Owners/Peers/Requests), Communities "All on this instance" tab, Settings → Account → Moderation (Blocked/Muted/Reported).
+- **Result:** **4 clean** (community Feed/Members/Owners/Peers tabs, "All on this instance" lists all local communities [S8 still fixed], Settings moderation lists load with correct empty states); **1 NEW** (S19 community "Requests" tab always shows "couldn't load the join requests" — no request fires, no console error, no retry); 0 non-environmental console errors (only remote `lemmy.ml` proxy 502s).
+- **Checkpoint:** next pass re-verifies S2/S14 once dev's anonymous-proxy rate-limiter WIP is committed+rebuilt, then fresh areas (Search page, "Edit profile" flow, media attachments, Communities "Create a community" re-verify).
+
+---
+
 ## Pass 29 (2026-09-20) — Profile tabs + actor page + object-detail + Settings + multi-account follow
 
 - **Build/Live:** deployed `a45f3d4` (== HEAD? y — only docs + dev uncommitted proxy WIP since; build current). Container `irisweb-iris-web-1` healthy.
