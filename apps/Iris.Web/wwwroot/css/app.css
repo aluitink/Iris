@@ -4154,3 +4154,55 @@ body > #app {
        show through (the theme's --surface can differ from the page background). */
     background: #1f242e;
 }
+
+/* Feed bar: signed-in bottom strip (unified-home-feed Phase 3). Mirrors the auth-bar's
+   sticky-bottom styling; shows feed tabs on /home + a global notification bell. */
+.feed-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-125);
+    border-top: 1px solid var(--border);
+    background: #1f242e;
+}
+
+.feed-bar-tabs {
+    display: flex;
+    gap: var(--space-1);
+}
+
+.feed-bar-tabs .tab {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius, 4px);
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.feed-bar-tabs .tab--active {
+    color: var(--text);
+    background: var(--surface-alt, rgba(255, 255, 255, 0.08));
+}
+
+.feed-bar-right {
+    display: flex;
+    align-items: center;
+}
+
+.feed-bar-bell {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: var(--space-1);
+}
+
+.feed-bar-bell:hover {
+    color: var(--text);
+}
