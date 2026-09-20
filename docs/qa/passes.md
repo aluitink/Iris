@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 56 (2026-09-20) — S16-UX/S4 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S16-UX: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — (1) Profile "Your posts" listing: shows A:1/B:0/**1 votes** + **"You voted" badge** visible (badge now appears in profile context — regression from Pass 49 where badge was missing). (2) Object detail page: fresh load shows A:1/B:0/**1 votes** + **NO "You voted" badge**. Vote count now consistent across views (1 in both), but "You voted" badge still missing on object detail page while visible in profile listing. Inconsistent badge re-hydration persists. Core data-integrity still FIXED. S4: Communities → Following tab shows **"technology" + "qa-pass46-test"** (both local, both with "Leave" button) — the remote `lemmy.luit.ink/c/interop` community is **still missing**. Confirmed the follow edge exists: navigating to `lemmy.luit.ink/c/interop` actor page shows **"Unfollow" button** (not "Follow"). 0 console errors.
+- **Result:** 0 new; **S16-UX partially improved** (vote count now consistent across views — 1 in both profile and object page; "You voted" badge now visible in profile listing) but **STILL OPEN** (badge still missing on object detail page). **S4 re-confirmed OPEN** (remote `interop` community missing from Following tab — 9th consecutive pass).
+- **Checkpoint:** next pass targets S20 (Communities tab visual-only), S17 (profile over-fetch), S19 (requests endpoint missing).
+
+---
+
 ## Pass 55 (2026-09-20) — S17/S20 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
