@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 88 (2026-09-20) — S4 re-verify (remote interop missing, 15th pass)
+
+- **Build/Live:** Container 12:43:01. Healthy.
+- **Explored:** S4: Following tab — 3 local communities, remote `interop` still missing. `interop` actor page shows "Unfollow" (follow edge confirmed).
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote interop missing — 15th consecutive pass).
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S16-UX (poll badge), S21 (/c/{handle}).
+
+---
+
 ## Pass 87 (2026-09-20) — S20 re-verify (Communities tab visual-only, 9th pass)
 
 - **Build/Live:** Container 12:43:01. Healthy.
