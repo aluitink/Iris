@@ -151,9 +151,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **8 open. No blockers (all S2/S3-sev).** (Pass 46: **S21 NEW** — newly created community missing from Following tab + /c/{handle} 404s. S3 re-confirmed open.)
-- **Top priority:** S21 (community creation: no follow edge + /c/{handle} route missing), S19 (community page 404s + actor page lacks Requests/Members tabs + notifications lack Accept/Decline), S3 (Create-IRI 404 — Create activities not persisted to DB), S20 (Home feed Communities tab non-functional), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll vote count inconsistent + badge missing everywhere). S2/S14 still blocked on dev (proxy 401).
-- **Last pass:** 46 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8 fixed; S18 partially fixed. Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20, S21.
+- **8 open. No blockers (all S2/S3-sev).** (Pass 47: S19, S21 re-confirmed open. S21: manual follow doesn't populate Following tab. S19: no Accept/Decline, no Requests/Members tabs on community actor pages.)
+- **Top priority:** S21 (community creation: no follow edge + manual follow doesn't populate Following tab + /c/{handle} route missing), S19 (community page 404s + actor page lacks Requests/Members tabs + notifications lack Accept/Decline), S3 (Create-IRI 404 — Create activities not persisted to DB), S20 (Home feed Communities tab non-functional), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll vote count inconsistent + badge missing everywhere). S2/S14 still blocked on dev (proxy 401).
+- **Last pass:** 47 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8 fixed; S18 partially fixed. Remaining open: S2, S3, S4 (remote), S6 (fix committed), S14, S16-UX, S17, S18 (partial), S19, S20, S21.
 
 ## Paused Questions
 

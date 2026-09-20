@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 47 (2026-09-20) — S19/S21 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S19: Notifications — follow requests from qa34test/qa36test/qa39test visible, NO Accept/Decline buttons. Community actor pages (technology, qa-pass46-test): tabs Posts/Followers/Following only — no Requests, no Members. `/c/technology` and `/c/qa-pass46-test` both 404. S21: After manually following `qa-pass46-test` (Follow → Unfollow), `/communities` → Following tab **still shows only "technology"** (follow edge exists but community not listed). "All on this instance" tab shows `qa-pass46-test`. `/c/qa-pass46-test` still 404.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (no Accept/Decline, no Requests/Members tabs); **S21 re-confirmed OPEN** (no auto-follow, manual follow doesn't populate Following tab, /c/{handle} 404s).
+- **Checkpoint:** next pass targets S21 (Following tab filter/caching), S19 (Requests/Members tabs + Accept/Decline), S3 (Create persistence), S20 (Home Communities tab), S2/S14 (blocked).
+
+---
+
 ## Pass 46 (2026-09-20) — S3 re-verify + community creation flow on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).

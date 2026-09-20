@@ -46,3 +46,5 @@ Clean entry, logged in:
 3. Navigating to `/c/{handle}` renders the community detail page (not 404).
 4. The community page has tabs for Posts, Members, and Requests (at minimum).
 5. 0 console errors.
+
+**Re-verification evidence (Pass 47, 2026-09-20, andrew, deployed `65ccfa0`):** After creating `qa-pass46-test` (Pass 46), manually followed the community via `/actor?iri=…/c/qa-pass46-test` → "Follow" button changed to "Unfollow" (follow succeeded). However, `/communities` → **Following tab still shows only "technology"** — `qa-pass46-test` still **missing** from the Following tab despite the follow edge now existing. "All on this instance" tab shows `qa-pass46-test`. `/c/qa-pass46-test` still 404. Actor page for `qa-pass46-test`: tabs **Posts (0), Followers (0), Following (0)** — no Requests, no Members. S21 confirmed: (1) no auto-follow on creation, (2) manual follow does not populate the Following tab (possible caching or filter issue), (3) /c/{handle} route missing. STILL OPEN.
