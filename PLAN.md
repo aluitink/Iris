@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `456b0d9` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `bb28dcf` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S2/S14 anonymous-proxy seam + the S5 Search fix are live. QA can re-verify S2 + S14 (signed-out remote reads via the same-origin proxy) and S5 (Search "alice" now shows only the canonical local alice; the stale `localhost` ghost is gone) from a clean entry.
 
