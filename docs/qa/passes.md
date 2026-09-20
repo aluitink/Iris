@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 96 (2026-09-20) — S4/S17/S16-UX re-confirmed; S23 still open (container 14:09:44)
+- **Build/Live:** container `irisweb-iris-web-1` started 14:09:44 (same as Pass 95; no new deploy).
+- **Explored:** `/communities` (Following tab), `/profile` (3 tabs), object detail (poll).
+- **Result:** **S4 re-confirmed OPEN** (22nd pass — remote interop missing). **S17 re-confirmed OPEN** (39 outbox requests, identical). **S16-UX re-confirmed OPEN** (1 votes, NO badge). **S23 still OPEN** (not re-tested, same container — Accept/Decline 404s). 2 console errors (ERR_NETWORK_CHANGED — environmental).
+- **Checkpoint:** next pass — wait for dev to fix S23 (register accept/reject endpoints). Otherwise: S4, S17, or S16-UX.
+
 ## Pass 95 (2026-09-20) — S22 FIXED; S19 facet 2 PARTIALLY FIXED; NEW BUG S23 (Accept/Decline 404) (container 14:09:44)
 - **Build/Live:** container `irisweb-iris-web-1` started 14:09:44 (7th restart; dev deployed `ee47565` — "Fix notification follow-filter + verify S19 facet 3").
 - **Explored:** `/notifications` (Follows tab — 7 follow requests with Accept/Decline buttons), Accept/Decline button testing (404 errors), DB edge verification.
