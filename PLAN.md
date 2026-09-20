@@ -151,9 +151,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **6 open. No blockers (all S2/S3-sev).** (Pass 39: S13 + S15 confirmed FIXED; S18 partially fixed (state persists now); S3, S4 remote, S16-UX, S17, S19 re-confirmed open.)
+- **6 open. No blockers (all S2/S3-sev).** (Pass 40: S7 confirmed FIXED; S3, S4 remote, S16-UX, S17, S19 re-confirmed open.)
 - **Top priority:** S19 (follow request acceptance UI missing — no Accept/Decline buttons, /requests 404), S3 (Create-IRI 404), S4 (remote communities missing from Following tab), S17 (profile tabs over-fetch), S16-UX (poll badge re-hydration). S2/S14 still blocked on dev (proxy 401).
-- **Last pass:** 39 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15 fixed; S18 partially fixed (state persists, follow request not auto-approved). Remaining open: S3, S4 (remote), S16-UX, S17, S19, S2/S14 (blocked on dev).
+- **Last pass:** 40 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7 fixed; S18 partially fixed. Remaining open: S3, S4 (remote), S16-UX, S17, S19, S2/S14 (blocked on dev).
 
 ## Paused Questions
 

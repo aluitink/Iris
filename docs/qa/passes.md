@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 40 (2026-09-20) — S17/S4/S16/S19/S7 authless re-verify on `4f5dd5c`
+
+- **Build/Live:** deployed `4f5dd5c` (== HEAD? y).
+- **Explored:** S17: profile → "Your posts" fired 6 outbox pages (1–6) on load; Replies tab fired full 13-page fan-out (19 total for 2 tabs). S4: Communities → Following shows only "technology" (local), remote "interop" still missing. S16: poll `06GBVCXGF7HRK17GJTH9N2ZXS0` → Option A: 2 / Option B: 0 / "2 votes", no "You voted" badge (badge re-hydration still broken). S19: technology Requests tab → "couldn't load" dead-end, no request fires, 0 non-environmental console errors (3× lemmy.ml 502s). S7: Directory lookup `lemmyadmin@lemmy.luit.ink` → actor card appears, 0 console errors. Authless `/` → 0 console errors, feed renders, "Log in"/"Register" links present; clicking "Open post" → 302 to login (correct gating).
+- **Result:** 0 new; **5 re-confirmed OPEN** (S17, S4 remote, S16-UX badge, S19, S3); **1 confirmed FIXED** (S7 — Directory external lookup works).
+- **Checkpoint:** next pass targets S3 (Create-IRI 404), S19 (follow request acceptance), S2/S14 (signed-out proxy 401 — blocked on dev).
+
+---
+
 ## Pass 39 (2026-09-20) — S13/S3/S15/S18/S19 re-verify on `4f5dd5c`
 
 - **Build/Live:** deployed `4f5dd5c` (includes S13 fix, S3 fix, S15 fix, S10 fix, S12a fix, S11 fix, S9 fix).
