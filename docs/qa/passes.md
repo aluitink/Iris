@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 92 (2026-09-20) — S22 re-confirmed (2nd pass); S4/S17/S16-UX re-confirmed; Peers tab works (container 13:26:35)
+- **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (6th restart today; dev deployed `45e5b70` — Peers tab).
+- **Explored:** `/notifications` (Follows tab), `/register` (new account qa92test), actor page (follow andrew), `/communities` (Following tab), `/profile` (3 tabs), object detail (poll), community detail (Peers tab).
+- **Result:** **S22 re-confirmed OPEN** (2nd pass — new follow from qa92test → andrew: edge exists in DB but NO notification created; API returns 0 items; both qa91test and qa92test affected); **S19 facet 2 CANNOT RE-VERIFY** (blocked by S22); **S4 re-confirmed OPEN** (18th pass — remote interop missing); **S17 re-confirmed OPEN** (39 outbox requests, identical); **S16-UX re-confirmed OPEN** (1 votes, NO badge); **Peers tab works correctly** (shows 1 peer: andrew, with Follow/Look up/Refresh actions).
+- **Checkpoint:** next pass — investigate S22 root cause (DB: check if notification rows exist for follow edges), S4, S17, or S16-UX.
+
 ## Pass 91 (2026-09-20) — S19 facet 3 FIXED; NEW BUG: follow notifications not created (container 13:19:52)
 - **Build/Live:** container `irisweb-iris-web-1` started 13:19:52 (5th restart today; dev deployed `a661cdd`).
 - **Explored:** `/home`, `/register` (new account qa91test), actor page (follow andrew), `/notifications` (Follows tab), community detail (Edit Save), `/communities` (Following tab), `/profile` (3 tabs + Communities tab), object detail (poll).

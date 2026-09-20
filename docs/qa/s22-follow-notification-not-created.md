@@ -39,3 +39,5 @@ Clean entry, two local accounts:
 5. 0 console errors.
 
 **Re-verification evidence (Pass 91, 2026-09-20, andrew, container 13:19:52):** Registered `qa91test` → followed `andrew` (edge created in DB). `andrew`'s notifications → Follows tab → **"No notifications yet"** (0 items). API: `GET /local/v1/notifications?limit=20&offset=0&type=Follow` → **200**, `{"items":[],"totalItems":0}`. The follow edge exists but no notification was created. **NEW BUG confirmed.**
+
+**Re-verification evidence (Pass 92, 2026-09-20, andrew, container 13:26:35):** Registered `qa92test` → followed `andrew` (edge created in DB). `andrew`'s notifications → Follows tab → **"No notifications yet"** (0 items). API: `GET /local/v1/notifications?limit=20&offset=0&type=Follow` → **200**, `{"items":[],"totalItems":0}`. Both `qa91test` and `qa92test` follow edges exist in DB but NO notifications were created. **S22 STILL OPEN (2nd pass).**
