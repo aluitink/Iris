@@ -1,8 +1,8 @@
 # S19 — Community "Requests" tab always fails to load (no request fires, no retry)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (re-confirmed Pass 34, 2026-09-20)
-- **Found:** Pass 30 (2026-09-20) — re-confirmed Pass 34
+- **Status:** open (re-confirmed Pass 36, 2026-09-20, on deployed `bb28dcf`)
+- **Found:** Pass 30 (2026-09-20) — re-confirmed Passes 34, 36
 - **Related:** [s04](s04-communities-following-remote.md), [s06](s06-remote-join-csp-blocked.md) (community join flow), [s09](s09-report-silent-noop.md) (silent-failure pattern)
 
 ## Symptom
@@ -44,3 +44,5 @@ Clean entry, owner of a community with (and without) pending join requests:
 - If the endpoint is down, the tab shows a retryable error (Refresh button), not a dead-end.
 
 **Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** Community `technology` → Requests tab → **"We couldn't load the join requests. Please try again."** — no Refresh button, no retry. No network request fires for the tab. 0 non-environmental console errors. STILL OPEN.
+
+**Re-verification evidence (Pass 36, 2026-09-20, andrew, deployed `bb28dcf`):** Community `technology` (andrew, owner) → Requests tab → **"We couldn't load the join requests. Please try again."** — no Refresh button, no retry. Only network request: `GET /ap/v1/c/technology/members` (200, for Members tab). No requests-specific call fires. 0 console errors. STILL OPEN.

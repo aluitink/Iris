@@ -154,9 +154,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **15 open. No blockers (all S2/S3-sev).** (Pass 35: S12a, S9, S17, S3, S10 re-confirmed open on `bb28dcf`; S12b appears fixed; S3 scope narrowed — UI routes through Note IRIs.)
-- **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S19 (community Requests tab dead-end — moderation entry point broken), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), then the S2-sev bugs S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
-- **Last pass:** 35 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S2/S14 (proxy 401 — blocked on dev), S11 (poll), S18 (follow→Home), S19 (community requests).
+- **15 open. No blockers (all S2/S3-sev).** (Pass 36: S11, S19, S18, S2 re-confirmed open on `bb28dcf`; S18 new facet — follow state lost on hard-refresh.)
+- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
+- **Last pass:** 36 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S4 (communities following remote), S8 (all-on-instance list), S13 (remote Lemmy 404 noise), S15 (visibility hint), S16 (poll votes).
 
 ## Paused Questions
 
