@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `d729c66` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `b6987d4` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **S11 — Poll silent no-op + invisible in "Your posts" (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** S11a: Poll exempt from empty-Content guard (validates `PollQuestion`). S11b: `Question` added to `IsContentItem` in `OutboxFilter` + `HomeTimeline` + `Home`. [change doc](docs/changes/1577-poll-silent-noop-and-invisible.md)
+- **S12a — Case-sensitive same-instance mention → dead link (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** `ActorDocumentHandler` falls back to a case-insensitive `preferredUsername` match (same-instance origin filtered) on exact-case miss. [change doc](docs/changes/1578-mention-case-sensitive-dead-link.md)
 
 ## Dev Queue
 
@@ -138,7 +138,6 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S12** (S2) — @mention case + autocomplete mismatch: [s12](docs/qa/s12-mention-case-and-autocomplete.md)
 - **S3** (S3) — object-detail 404s local post collections: [s03](docs/qa/s03-object-detail-create-iri-404.md)
 - **S10** (S2) — Article "(long-form)" mislabeled: [s10](docs/qa/s10-article-longform-mislabeled.md)
 - **S13** (S3) — remote-Lemmy object-detail 404 noise: [s13](docs/qa/s13-remote-lemmy-404-noise.md)
@@ -166,6 +165,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S12a — Case-sensitive same-instance mention → dead link (2026-09-20):** `ActorDocumentHandler` falls back to a case-insensitive `preferredUsername` match (same-instance origin filtered) on exact-case miss, so `@Alice` resolves to the canonical `/ap/v1/u/alice`. Live-verified: `/ap/v1/u/Alice` → 200 (canonical alice). All suites green (Server 1380, Web 106). [change doc](docs/changes/1578-mention-case-sensitive-dead-link.md)
 - **S11 — Poll silent no-op + invisible in "Your posts" (2026-09-20):** S11a: Poll exempt from empty-Content guard (validates `PollQuestion`). S11b: `Question` added to `IsContentItem` so polls appear in Your posts, actor Posts, home + public feeds. Live-verified: body-less poll posts (202) and appears in Profile. All suites green (Web 106). [change doc](docs/changes/1577-poll-silent-noop-and-invisible.md)
 - **S9 — Report/flag silent no-op (2026-09-20):** Report button now shows "Reported ✓" (actor detail) or a checkmark (post cards) and disables after a successful flag; dedup prevents duplicate flags. Live-verified: actor detail + post card both show reported state. All suites green (Web 106). [change doc](docs/changes/1576-report-flag-silent-noop.md)
 - **S7 — Directory external lookup stuck on spinner (2026-09-20):** `LookupExternalAsync` now routes the actor fetch through `Ui.GetActorAsync` (the shared proxy path) instead of a direct cross-origin `client.GetObjectAsync` (CORS/CSP-blocked), and the keydown handler is `async Task` (awaited by Blazor → auto re-render). Live-verified: Directory → type `lemmyadmin@lemmy.luit.ink` + Enter → actor card appears, no spinner. All suites green (Web 106). [change doc](docs/changes/1575-directory-external-lookup-stuck-spinner.md)
