@@ -370,6 +370,29 @@ else if (ObjectDoc is null)
     }
 
     /// <summary>
+    /// True when the IRI is on this instance (S13): remote platforms (e.g. Lemmy) do not expose
+    /// AS collection endpoints, so the collection walks are skipped for non-local objects.
+    /// </summary>
+    private bool IsLocalIri(Iri iri)
+    {
+        if (Session.ActorId is not { } actor)
+        {
+            return true;
+        }
+
+        const string marker = "/ap/v1";
+        var actorValue = actor.Value;
+        var index = actorValue.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return true;
+        }
+
+        var baseOrigin = actorValue[..(index + marker.Length)];
+        return iri.Value.StartsWith(baseOrigin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// The href for the "Reply" button, or null when the object is not a replyable content type
     /// (a Note, or any non-actor content object) or when the post is locked (<c>iris:locked: true</c>,
     /// 138.25 follow-up).
@@ -516,8 +539,14 @@ else if (ObjectDoc is null)
             // S3: derive collection walks from the content object's IRI (the Note), not the raw
             // activity IRI — the server serves /replies, /likes, /shares only for the stored object.
             var contentIri = ContentIri ?? iri;
-            await LoadRepliesAsync(client, contentIri);
-            await LoadEngagementAsync(client, contentIri);
+            // S13: remote platforms (e.g. Lemmy) do not expose AS collection endpoints
+            // (/replies, /likes, /shares). Skip the walks for non-local objects to avoid
+            // 3 × 404 console noise per remote post.
+            if (IsLocalIri(contentIri))
+            {
+                await LoadRepliesAsync(client, contentIri);
+                await LoadEngagementAsync(client, contentIri);
+            }
         }
     }
 
