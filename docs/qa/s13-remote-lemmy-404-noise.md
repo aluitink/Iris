@@ -1,8 +1,8 @@
 # S13 — Remote Lemmy object-detail logs expected proxy 404s (console noise)
 
 - **Class:** UX / bug (console-noise) — **Severity:** S3
-- **Status:** open
-- **Found:** Pass 19 (2026-09-20); data point added Pass 21
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 19 (2026-09-20); data point added Pass 21 — re-confirmed Pass 27
 - **Related:** distinct from [S3](s03-object-detail-create-iri-404.md) (local Create-IRI `/replies` 404)
 
 ## Symptom
@@ -22,3 +22,5 @@ For remote Lemmy posts, don't request `/replies` / `/likes` / `/shares` (derive 
 ## Re-verify
 
 Open a remote Lemmy post's object detail: 0 console 404s; the comment count and the Replies tab agree (both derived from the same Lemmy source, or the count is hidden when replies can't be loaded).
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** `lemmy.luit.ink/post/1` detail → **3 console 404s** (`POST …/proxy/…/post/1/{replies|likes|shares}`), post renders, UI degrades gracefully. STILL OPEN.

@@ -1,8 +1,8 @@
 # S14 — Signed-out remote actor-detail is CSP-blocked (S2's actor-detail facet)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open
-- **Found:** Pass 20 (2026-09-20)
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 20 (2026-09-20) — re-confirmed Pass 27
 - **Related:** [S2](s02-signed-out-proxy-bypass.md) (same root cause, root-page facet)
 
 ## Symptom
@@ -20,3 +20,5 @@ Route the signed-out remote actor-detail read through the same **anonymous proxy
 ## Re-verify
 
 Signed-out `/actor?iri=<remote actor IRI>`: the profile renders (banner, avatar, handle) with 0 console errors.
+
+**Re-verification evidence (Pass 27, 2026-09-20, clean entry):** signed-out `/actor?iri=https://lemmy.luit.ink/u/lemmyadmin` → **CSP-blocked direct fetch** → "Failed to load actor." STILL OPEN.

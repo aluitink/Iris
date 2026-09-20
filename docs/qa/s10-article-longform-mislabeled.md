@@ -1,8 +1,8 @@
 # S10 — Article "(long-form)" is mislabeled
 
 - **Class:** UX / feature-gap — **Severity:** S2
-- **Status:** open
-- **Found:** Pass 17 (2026-09-20)
+- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
+- **Found:** Pass 17 (2026-09-20) — re-confirmed Pass 27
 
 ## Symptom
 
@@ -15,3 +15,5 @@ Either implement real long-form (title field + larger character limit + distinct
 ## Re-verify
 
 Post an Article: if the label stays, the title field + larger limit + distinct detail render all work; if the label is dropped, the selector says "Article" and behavior matches the (plain) implementation.
+
+**Re-verification evidence (Pass 27, 2026-09-20, andrew):** the Pass-17 Article (`…/articles/06GBS2Z3GAJSJTZ2DETZ1XGZNW`) still renders as a **plain paragraph** — no title field, no long-form typography, 0 console errors. STILL OPEN.
