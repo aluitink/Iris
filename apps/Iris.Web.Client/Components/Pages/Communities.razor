@@ -312,7 +312,7 @@ else
                 .ToList();
 
             FollowingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
-            Following = ResolveFollowingCommunities();
+            Following = await ResolveFollowingCommunitiesAsync();
             FollowingKnown = true;
         }
         catch (Exception)
@@ -333,33 +333,57 @@ else
     private async Task FollowToggledAsync()
     {
         FollowingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
-        Following = ResolveFollowingCommunities();
+        Following = await ResolveFollowingCommunitiesAsync();
         FollowingKnown = true;
     }
 
     /// <summary>
     /// Resolves the followed communities: every followed <c>Group</c> IRI that is present in the
-    /// cached local search (the common case — a local community). A followed community that is not
+    /// cached local search (the common case — a local community). A followed community that is NOT
     /// in the local search (a remote community, or one created moments ago before the search cache
-    /// refreshed) is fetched by its IRI so the Following tab is never missing a followed community.
+    /// refreshed) is fetched by its IRI via the shared <see cref="UiContext.GetActorAsync"/> seam
+    /// (which routes a remote actor through the same-origin proxy) and kept when it is a
+    /// <c>Group</c> — so the Following tab is never missing a followed community. S4: this is the
+    /// fetch-by-IRI fallback the method's doc comment always promised but the code never implemented
+    /// (it only matched the local search cache, so a followed REMOTE community was silently dropped).
     /// </summary>
-    private List<Group> ResolveFollowingCommunities()
+    private async Task<List<Group>> ResolveFollowingCommunitiesAsync()
     {
-        if (FollowingIris.Count == 0 || Items is null)
+        if (FollowingIris.Count == 0)
         {
             return [];
         }
 
-        var byIri = Items
+        // The local search cache covers every local community the instance has ever stored.
+        var byIri = Items?
             .Where(g => g.Id is { Length: > 0 })
             .ToDictionary(g => g.Id!, g => g, StringComparer.OrdinalIgnoreCase);
 
         var found = new List<Group>();
         foreach (var iri in FollowingIris)
         {
-            if (byIri.TryGetValue(iri.Value, out var local))
+            if (byIri is { } cache && cache.TryGetValue(iri.Value, out var local))
             {
                 found.Add(local);
+                continue;
+            }
+
+            // Not in the local search — a remote community (or a just-created local one the search
+            // cache has not refreshed to). Fetch it by IRI; keep it only if it is a community (a
+            // followed Person/Service is not a community and is filtered out).
+            IObject? doc;
+            try
+            {
+                doc = await Ui.GetActorAsync(iri);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (doc is Group group)
+            {
+                found.Add(group);
             }
         }
 
