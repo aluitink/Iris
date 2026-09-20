@@ -1,8 +1,8 @@
 # S17 — Profile tabs over-fetch the entire outbox (on load + every tab switch)
 
 - **Class:** perf / request-spam — **Severity:** S2
-- **Status:** open (found Pass 29)
-- **Found:** Pass 29 (2026-09-20)
+- **Status:** open (re-confirmed Pass 35, 2026-09-20, on deployed `bb28dcf`)
+- **Found:** Pass 29 (2026-09-20) — re-confirmed Pass 35
 - **Related:** [s16](s16-poll-votes-not-persisted.md) (polls also missing from "Your posts"), the Profile pagination ("Load more") control
 
 ## Symptom
@@ -36,3 +36,5 @@ Clean entry, `/profile` (a user with a large outbox):
 - "Your posts" fires **one** `outbox` request on load (page 1 only); "Load more" fires exactly one more, and clicking it past the end fires **no** further requests.
 - Switching to **Replies** / **Likes** fires a request scoped to that tab's collection (not the full outbox), once — not the 13-page fan-out.
 - Total `outbox`/collection requests for a visit ≈ (pages actually viewed) + (tabs actually opened), not 3× the full outbox.
+
+**Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** fresh load of `/profile` → "Your posts" fired `outbox` **13 times** (pages 1–13) before rendering; only ~3 items shown. Switched to **Replies** tab → fired the **full 13-page outbox fan-out again** (requests 95–107, identical sequence). Replies tab rendered an empty list. Still 26 outbox requests for 2 tabs viewed. STILL OPEN.

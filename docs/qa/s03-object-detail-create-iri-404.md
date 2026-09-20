@@ -1,8 +1,8 @@
 # S3 — Object-detail 404s a local post's collections (Create-activity IRI)
 
 - **Class:** bug (console-noise) — **Severity:** S3
-- **Status:** open (re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
-- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27
+- **Status:** open (re-confirmed Pass 35, 2026-09-20, on deployed `bb28dcf`)
+- **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27, 35
 - **Related:** distinct from [S13](s13-remote-lemmy-404-noise.md) (remote Lemmy collections)
 
 ## Symptom
@@ -28,3 +28,5 @@ Secondary server-side option: serve a Create activity's object's collections too
 Open a local post's object detail via the `/object?iri=…/creates/{id}` deep-link: 0 console errors, Replies/Likes/Shares tabs load the (empty) collections.
 
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** navigating a Create-activity IRI (`…/creates/06GBSGQTYCMVSXEYC9XCMK6MPM`) still yields **"Object not found"** (404). STILL OPEN.
+
+**Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** two fresh posts' Create-activity IRIs (`…/creates/06GBV4N99HPN3H8STQQ74F5YB0`, `…/creates/06GBV4YCNNZ54BN9Y7W6QMPFQ0`) both → **404** via `curl` and in-browser ("Object not found"). The profile's object-detail link for the first post points to the **Note** IRI (`…/notes/06GBV4YCNNZ54BN9Y7W6QMPFQ4` → 200, 0 console errors, Replies tab loads empty collection correctly). The Reply link also uses the Note IRI. The Create-activity IRI 404 is only reachable if a client constructs `?iri=…/creates/{id}` directly. STILL OPEN (narrower scope than previously thought — the UI now routes through Note IRIs).
