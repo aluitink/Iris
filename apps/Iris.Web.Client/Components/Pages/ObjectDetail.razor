@@ -350,6 +350,26 @@ else if (ObjectDoc is null)
     }
 
     /// <summary>
+    /// The IRI of the content object the page is about. For a Create/Update activity, this is the
+    /// embedded object's IRI (the Note/Article); for a direct object, it is the object's own IRI.
+    /// Collection walks (<c>/replies</c>, <c>/likes</c>, <c>/shares</c>) must use this IRI — the
+    /// server serves those collections only for the stored object, not the activity (S3).
+    /// </summary>
+    private Iri? ContentIri
+    {
+        get
+        {
+            var subjectId = SubjectObject?.Id;
+            if (subjectId is { Length: > 0 } && Iri.TryParse(subjectId, out var subjectIri))
+            {
+                return subjectIri;
+            }
+
+            return ObjectIri;
+        }
+    }
+
+    /// <summary>
     /// The href for the "Reply" button, or null when the object is not a replyable content type
     /// (a Note, or any non-actor content object) or when the post is locked (<c>iris:locked: true</c>,
     /// 138.25 follow-up).
@@ -368,7 +388,7 @@ else if (ObjectDoc is null)
                 return null;
             }
 
-            if (ObjectIri is not { } iri)
+            if (ContentIri is not { } iri)
             {
                 return null;
             }
@@ -398,15 +418,15 @@ else if (ObjectDoc is null)
 
     /// <summary>
     /// The object's <c>/likes</c> collection IRI (the per-object likers surface the Likes tab walks).
-    /// Derived from the object's IRI; null when the object is not yet resolved.
+    /// Derived from the content object's IRI; null when the object is not yet resolved.
     /// </summary>
-    private Iri? LikesCollectionIri => ObjectIri is { } iri ? iri.LikesOf() : null;
+    private Iri? LikesCollectionIri => ContentIri is { } iri ? iri.LikesOf() : null;
 
     /// <summary>
     /// The object's <c>/shares</c> collection IRI (the per-object boosters surface the Shares tab walks).
-    /// Derived from the object's IRI; null when the object is not yet resolved.
+    /// Derived from the content object's IRI; null when the object is not yet resolved.
     /// </summary>
-    private Iri? SharesCollectionIri => ObjectIri is { } iri ? iri.SharesOf() : null;
+    private Iri? SharesCollectionIri => ContentIri is { } iri ? iri.SharesOf() : null;
 
     /// <summary>
     /// Switches the active tab (Replies / Likes / Shares). The Likes / Shares panels lazy-load their
@@ -493,8 +513,11 @@ else if (ObjectDoc is null)
         if (ObjectDoc is not null && ObjectDoc is not Actor && !IsTombstone)
         {
             await LoadParentAsync(client);
-            await LoadRepliesAsync(client, iri);
-            await LoadEngagementAsync(client, iri);
+            // S3: derive collection walks from the content object's IRI (the Note), not the raw
+            // activity IRI — the server serves /replies, /likes, /shares only for the stored object.
+            var contentIri = ContentIri ?? iri;
+            await LoadRepliesAsync(client, contentIri);
+            await LoadEngagementAsync(client, contentIri);
         }
     }
 
