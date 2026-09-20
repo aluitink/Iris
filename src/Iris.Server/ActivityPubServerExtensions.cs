@@ -4365,23 +4365,44 @@ public static class ActivityPubServerExtensions
                 // authoritative "is this on my instance" signal — the same fix GetCrossPostTargetsAsync
                 // applies (the cross-post path hit this exact trap first). A genuinely-local recipient
                 // (on this host) still short-circuits to the local inbox write.
-                if (recipientIri is { } recipient)
-                {
-                    var isLocal = IsOnInstance(recipient, baseUrl);
-                    if (isLocal)
-                    {
-                        if (!(activity is Follow) || isNewFollow)
-                        {
-                            await persistence.Activities
-                                .AddToInboxAsync(recipient, activity, ct)
-                                .ConfigureAwait(false);
-                        }
-                    }
-                    else
-                    {
-                        await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
-                    }
-                }
+                 if (recipientIri is { } recipient)
+                 {
+                     // Lemmy interop (Undo shape): an <c>Undo</c> of a <c>Follow</c> references the original
+                     // follow. Iris records it by a bare IRI link (decision 055: the client references the
+                     // follow by its learned id). But a remote peer's ActivityStreams parser (Lemmy's
+                     // <c>Activity</c> untagged enum) requires the <c>Undo</c>'s object to be an EMBEDDED
+                     // activity — a bare IRI fails to match any variant (Lemmy: "data did not match any
+                     // variant of untagged enum AnnouncableActivities", 400, dead-lettered — the un-follow
+                     // never reaches Lemmy). Embed the original Follow (fetched from the local activity
+                     // store, where it was recorded when the follow was made) so the remote peer can
+                     // resolve the parties. A receiving Iris resolves the embedded follow the same way it
+                     // resolves the stored one (UndoActivityHandler reads the follow's target/follower
+                     // parties), so embedding is backward-compatible. Local recipients are unaffected
+                     // (no cross-instance hop).
+                     Activity outboundActivity = activity;
+                     if (activity is Undo undo)
+                     {
+                         if (await MaterializeUndoObjectForDeliveryAsync(persistence, undo, ct).ConfigureAwait(false) is { } materialized)
+                         {
+                             outboundActivity = materialized;
+                         }
+                     }
+
+                     var isLocal = IsOnInstance(recipient, baseUrl);
+                     if (isLocal)
+                     {
+                         if (!(activity is Follow) || isNewFollow)
+                         {
+                             await persistence.Activities
+                                 .AddToInboxAsync(recipient, outboundActivity, ct)
+                                 .ConfigureAwait(false);
+                         }
+                     }
+                     else
+                     {
+                         await delivery.DeliverToActorAsync(recipient, outboundActivity, actorIri, ct).ConfigureAwait(false);
+                     }
+                 }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -5542,6 +5563,67 @@ public static class ActivityPubServerExtensions
 
         await persistence.Announces.RemoveAnnounceAsync(announcerIri, objectIri.Value, ct).ConfigureAwait(false);
         return await ResolveObjectOwnerForDeliveryAsync(persistence, objectFetch, objectIri.Value, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Lemmy interop (Undo shape): returns a copy of an outbound <see cref="Undo"/> of a
+    /// <see cref="Follow"/> with the original follow EMBEDDED (its <c>object</c> set to the stored
+    /// <c>Follow</c>, not a bare IRI link), so a remote peer whose ActivityStreams parser requires the
+    /// <c>Undo</c>'s object to be an embedded activity (Lemmy's <c>Activity</c> untagged enum) accepts it
+    /// instead of rejecting a bare IRI with a 400 (the un-follow never reaching the remote instance).
+    /// Returns <see langword="null"/> when the <c>Undo</c> is not of a stored <c>Follow</c> (nothing to
+    /// embed) — the caller then delivers the original bare-link activity. Embedding is backward-compatible:
+    /// a receiving Iris resolves the embedded follow the same way it resolves the stored one
+    /// (<see cref="Inbox.UndoActivityHandler"/> reads the follow's target/follower parties from the object,
+    /// whether embedded or fetched by IRI).
+    /// </summary>
+    private static async Task<Undo?> MaterializeUndoObjectForDeliveryAsync(
+        IPersistenceProvider persistence,
+        Undo undo,
+        CancellationToken ct)
+    {
+        var referenced = undo.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!referenced.HasValue
+            || !await persistence.Activities.TryGetActivityAsync(referenced.Value, out var stored, ct).ConfigureAwait(false)
+            || stored is not Follow follow)
+        {
+            return null;
+        }
+
+        return new Undo
+        {
+            Id = undo.Id,
+            Actor = undo.Actor,
+            To = undo.To,
+            Cc = undo.Cc,
+            Published = undo.Published,
+            Object = [follow],
+        };
+    }
+
+    /// <summary>
+    /// Lemmy interop (Undo shape): returns a copy of <paramref name="undo"/> with the original
+    /// <paramref name="follow"/> EMBEDDED (its <c>object</c> set to the stored <c>Follow</c> rather than a
+    /// bare IRI link), so a remote peer whose ActivityStreams parser requires the <c>Undo</c>'s object to
+    /// be an embedded activity accepts it. Returns <paramref name="undo"/> unchanged when
+    /// <paramref name="follow"/> is null (nothing to embed).
+    /// </summary>
+    private static Undo EmbedFollowInUndo(Undo undo, Follow? follow)
+    {
+        if (follow is null)
+        {
+            return undo;
+        }
+
+        return new Undo
+        {
+            Id = undo.Id,
+            Actor = undo.Actor,
+            To = undo.To,
+            Cc = undo.Cc,
+            Published = undo.Published,
+            Object = [follow],
+        };
     }
 
     /// <summary>
@@ -10899,8 +10981,11 @@ public static class ActivityPubServerExtensions
         if (unfollow)
         {
             // Find the community-authored Follow to this target (the most recent in the community's
-            // outbox). The Undo references it by IRI (decision 055 — the server-minted follow id).
+            // outbox). The Undo references it by IRI (decision 055 — the server-minted follow id), and the
+            // follow itself is captured to be EMBEDDED in the outbound Undo (Lemmy interop: a bare IRI link
+            // fails Lemmy's Activity parser, so the original Follow is embedded for the remote peer).
             Iri? followIri = null;
+            Follow? foundFollow = null;
             foreach (var activity in await persistence.Activities.GetOutboxAsync(communityIri, ct).ConfigureAwait(false))
             {
                 if (activity is Follow f
@@ -10909,6 +10994,7 @@ public static class ActivityPubServerExtensions
                     && f.Id is { Length: > 0 } id)
                 {
                     followIri = new Iri(id);
+                    foundFollow = f;
                     break;
                 }
             }
@@ -10936,7 +11022,14 @@ public static class ActivityPubServerExtensions
             if (!await IsLocalCommunityAsync(persistence, target, ct).ConfigureAwait(false)
                 && !await IsLocalActorAsync(persistence, target, ct).ConfigureAwait(false))
             {
-                await delivery.DeliverToActorAsync(target, undo, communityIri, ct).ConfigureAwait(false);
+                // Embed the original Follow in the outbound Undo (Lemmy interop, same as the person outbox
+                // path): a remote peer whose parser requires the Undo's object to be an embedded activity
+                // rejects a bare IRI link with a 400.
+                await delivery.DeliverToActorAsync(
+                    target,
+                    EmbedFollowInUndo(undo, foundFollow),
+                    communityIri,
+                    ct).ConfigureAwait(false);
             }
 
             return Results.NoContent();
