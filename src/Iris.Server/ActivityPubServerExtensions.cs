@@ -2099,23 +2099,32 @@ public static class ActivityPubServerExtensions
                 "Content-Type", context.Request.ContentType ?? ActivityJson.ActivityJsonContentType);
         }
 
-        // The anonymous seam relays the GET UNSIGNED (there is no actor key to sign with — the remote
-        // instance serves public ActivityPub documents to unsigned reads). An authenticated actor's
-        // proxied request is signed as that actor (the X-Iris-Actor override, Resolved Decision #29).
-        if (authenticatedHandle is not null)
+        // The anonymous seam has no requesting actor to sign as, but a remote instance (mastodon.social
+        // in particular) requires a VALID HTTP signature even for a public ActivityPub read — an
+        // UNSIGNED GET is rejected with 401 "Request not signed" (the S2/S14 finding: the signed-out
+        // root page + actor-detail showed the remote avatar/profile as "not found" because the proxy
+        // relayed an unsigned GET that the remote refused). Sign the anonymous read as the LOCAL
+        // INSTANCE ACTOR (options.InstanceActorId — the site actor, whose key is registered and served
+        // at the instance root) instead: the remote verifies the signature against the instance actor's
+        // own public document and serves the public object. An authenticated actor's proxied request is
+        // signed as that actor. The signing actor is conveyed via the X-Iris-Actor override (the
+        // established re-sign mechanism, Resolved Decision 037) so the SigningHandler resolves the key.
+        var signingActor = authenticatedHandle is not null
+            ? actorIri
+            : options.InstanceActorId;
+        if (signingActor is not null)
         {
-            request.Headers.TryAddWithoutValidation("X-Iris-Actor", actorIri.Value);
+            var signingActorValue = signingActor.ToString();
+            request.Headers.TryAddWithoutValidation("X-Iris-Actor", signingActorValue);
         }
 
-        // 5. Sign (when acting as an actor) + forward, relaying the remote response (status + body +
-        // content type). The transport is the Func<HttpMessageHandler> seam (default: a real
-        // HttpClientHandler; a test routes it to a TestServer in-process).
+        // 5. Sign + forward, relaying the remote response (status + body + content type). The
+        // transport is the Func<HttpMessageHandler> seam (default: a real HttpClientHandler; a test
+        // routes it to a TestServer in-process).
         using var client = clientFactory.Create(
             new ActivityPubClientOptions
             {
-                // The anonymous seam has no actor to sign as: the client is built without an ActorId
-                // (no key resolution) and relays the request unsigned.
-                ActorId = authenticatedHandle is not null ? actorIri : null,
+                ActorId = signingActor,
                 EnableRetry = false,
             },
             transportFactory());

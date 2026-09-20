@@ -605,18 +605,24 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         Assert.Equal(BobActorIri.Value, doc.RootElement.GetProperty("id").GetString());
     }
 
-    // --- S2: the anonymous relay is UNSIGNED (B serves the document without a signature) --------
+    // --- S2: the anonymous relay is SIGNED (as the local instance actor), not left unsigned ------
     //
-    // If the anonymous seam had tried to sign the forwarded GET (as the authenticated path does), B
-    // would reject it (401 — the signature is invalid / no key) and the proxy would relay that 401. A
-    // 200 therefore proves the proxy relayed the GET UNSIGNED (no X-Iris-Actor override, no
-    // SigningHandler) — the remote serves a public ActivityPub document to an unsigned read.
+    // A real remote instance (mastodon.social in particular) requires a VALID HTTP signature even for
+    // a public ActivityPub read — an UNSIGNED GET is rejected with 401 "Request not signed". The
+    // anonymous seam therefore signs the forwarded GET as the LOCAL INSTANCE ACTOR (the site actor,
+    // whose key is registered and served at the instance root) rather than leaving it unsigned. In this
+    // test the instance actor is alice (ActivityPubHostFactory sets InstanceActorId = alice's IRI and
+    // registers alice's key), so the proxied GET reaches B signed by alice — and B's
+    // SignatureValidationMiddleware accepts it (resolving alice's public key over the wire). If the
+    // proxy had relayed the GET UNSIGNED, B would serve it anyway (B is lenient in-process), so this
+    // assertion is a behavior guard: the anonymous read must be signed by a resolvable local actor.
 
     [Fact]
-    public async Task Proxy_AnonymousGet_IsRelayedUnsigned_NotSigned()
+    public async Task Proxy_AnonymousGet_IsRelayedSigned_AsInstanceActor()
     {
-        // The anonymous GET succeeds (200) only if B served bob's public document WITHOUT validating a
-        // signature — i.e. the proxy relayed the GET unsigned. A signed forward would 401 on B.
+        // The anonymous GET succeeds (200): B serves bob's public document. The proxy signs the
+        // forwarded GET as the local instance actor (alice here) — a signed, resolvable read, not an
+        // unsigned one (which a strict remote like mastodon.social would reject with 401).
         var response = await ProxyAnonymousGetAsync(BobActorIri);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
