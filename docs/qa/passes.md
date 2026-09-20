@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 53 (2026-09-20) — S3 Create persistence re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S3: Created fresh post "QA Pass 53: S3 Create persistence test post" (Note IRI: `…/notes/06GBWMFJ8KJ33DWJ85NVTSDXH8`, Create IRI: `…/creates/06GBWMFJ8KJ33DWJ85NVTSDXH4`). POST `/ap/v1/u/andrew/outbox` → **202 Accepted** (UI: "Posted (HTTP 202)"). DB query: Create IRI → **0 rows** in `Objects`. `SELECT * FROM "Objects" WHERE "Document"->>'type' = 'Create' AND "Document"->>'actor' = '…/u/andrew'` → **0 rows**. Note IRI → **200** (content verified). Create IRI → **HTTP 404** + "Object not found." alert + 1 console 404 error.
+- **Result:** 0 new; **S3 re-confirmed OPEN** (Create activities not persisted to DB — 5th consecutive pass; root cause: server generates Create IRI in 202 response but never stores the Create activity as an Object).
+- **Checkpoint:** next pass targets S2/S14 (blocked), S4 (remote interop missing from Following), S20 (Communities tab 403).
+
+---
+
 ## Pass 52 (2026-09-20) — S21/S19 re-verify + Edit community silent no-op on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
