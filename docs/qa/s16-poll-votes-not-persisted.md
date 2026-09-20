@@ -1,8 +1,8 @@
 # S16 — Poll votes are not persisted (data-integrity)
 
 - **Class:** bug / data-integrity — **Severity:** S3
-- **Status:** fixed (2026-09-20, verified Pass 27 against the 2026-09-20 03:31 UTC rebuild; deployed-commit label in PLAN.md was stale, see Pass 27 note)
-- **Found:** Pass 25 (2026-09-20); re-verified Pass 27 (2026-09-20)
+- **Status:** fixed (2026-09-20, verified Pass 37 against deployed `bb28dcf`; re-confirmed Pass 27)
+- **Found:** Pass 25 (2026-09-20); re-verified Passes 27, 37
 
 ## Symptom
 
@@ -21,3 +21,5 @@ Persist the vote: deliver a `Vote`/`Add` activity to the poll and reflect it in 
 Vote on a poll's object-detail page, then hard-refresh: the count and "You voted" badge persist; the DB shows the vote recorded (Vote/Add activity or stored choice) and it is reflected in the poll's `votes`.
 
 **Re-verification evidence (Pass 27, 2026-09-20, clean entry, andrew):** the Pass-25 poll (`…/objects/06GBSGQTYCMVSXEYC9XCMK6MPR`) now shows **Option A: 1 / Option B: 0 / "1 votes"** on a fresh load — the earlier vote survived the container rebuild. DB confirms server-side persistence: `poll.voters = [https://iris.luit.ink/ap/v1/u/QAUser1]`, `options[0].votesCount = 1`, `totalVotes = 1`. FIXED.
+
+**Re-verification evidence (Pass 37, 2026-09-20, andrew, deployed `bb28dcf`):** fresh poll `06GBVCXGF7HRK17GJTH9N2ZXS0` — (1) `andrew` voted Option A: count 0→1, "You voted" badge, DB confirms `poll.voters = [andrew]`; hard-refresh reverts to "1" (vote persisted server-side, but "You voted" badge does NOT re-hydrate on refresh — cosmetic gap). (2) New user `qa37test` voted Option B: first click → 502 error (`/local/v1/u/qa37test/votes/…`), second click → count 1→2, "You voted" badge, DB confirms `poll.voters = [andrew, qa37test]`; hard-refresh shows "2" (vote persisted). **Votes ARE persisted server-side** (DB confirms both voters). **BUT:** (a) "You voted" badge does NOT re-hydrate on hard-refresh for either voter; (b) first vote from a new user can 502 (race condition?). Core data-integrity fix is confirmed, but UX polish (badge re-hydration + 502 on first vote) remains.

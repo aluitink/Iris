@@ -157,9 +157,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **15 open. No blockers (all S2/S3-sev).** (Pass 36: S11, S19, S18, S2 re-confirmed open on `bb28dcf`; S18 new facet — follow state lost on hard-refresh.)
-- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
-- **Last pass:** 36 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S4 (communities following remote), S8 (all-on-instance list), S13 (remote Lemmy 404 noise), S15 (visibility hint), S16 (poll votes).
+- **15 open. No blockers (all S2/S3-sev).** (Pass 37: S4 remote re-confirmed open; S8 confirmed FIXED; S13, S15 re-confirmed open; S16 core data-integrity FIXED but UX gaps remain — badge re-hydration + 502 on first vote.)
+- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S9, S11, S12, S17; S3-sev S3, S10, S13, S15. S4 (remote communities missing from Following tab) is S2-sev and blocks remote community discovery.
+- **Last pass:** 37 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — all 5 target findings from Pass 36 checkpoint now have Pass 37 evidence. Remaining open: S4 (remote), S9, S10, S11a/b, S12a, S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
 
 ## Paused Questions
 
