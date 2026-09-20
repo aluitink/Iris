@@ -1,8 +1,9 @@
 # S22 — Follow notification not created for local follows
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (found Pass 91, 2026-09-20, on deployed `a661cdd`)
+- **Status:** fixed (2026-09-20, deployed `ee47565`) — re-verify pending
 - **Found:** Pass 91 (2026-09-20)
+- **Fixed:** Pass 94 (2026-09-20) — notification follow-filter fix deployed
 - **Related:** [S19](s19-community-requests-tab-fails.md) (facet 2: Accept/Decline buttons — blocked by this bug), [S18](s18-local-follow-timeline-empty.md) (local follow timeline empty)
 
 ## Symptom
@@ -57,3 +58,5 @@ However, `GET /local/v1/notifications?type=Follow` returns `{"items":[],"totalIt
 **Suspected root cause:** The notification query for `type=Follow` does not resolve local Follow activities from the inbox. It may only be looking at remote follows (via the shared inbox) or using a different join path that doesn't include local follows. The local Follow activities are stored in `Activities` with `ObjectIri = andrew` and are in `andrew`'s `BoxItems` inbox, but the API's Follow-type filter doesn't pick them up.
 
 **Fix:** Ensure the `/local/v1/notifications?type=Follow` query includes local Follow activities from the `Activities` table where `ObjectIri` matches the current user's IRI, joined with `BoxItems` (Direction=1) for inbox verification.
+
+**Fix applied (2026-09-20, commit `ee47565`):** The actual root cause was different from the suspected cause. The Follow activities WERE being stored in the inbox correctly, but the notification endpoint's follow-filter logic was incorrectly filtering them out. The filter was removing ALL Follow notifications that were not in the pending follow-request queue, but auto-accepted follows (from users without `manuallyApprovesFollowers`) are never in the queue. The fix adds a check: only filter out Follow notifications when the account has `manuallyApprovesFollowers` set. For auto-accepting accounts, Follow notifications remain visible. See [change doc 1595](../changes/1595-notification-follow-filter-fix.md).
