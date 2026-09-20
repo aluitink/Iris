@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 79 (2026-09-20) — S19 re-verify (Edit community no-op, container 12:15:50)
+
+- **Build/Live:** Container restarted 12:15:50. Healthy.
+- **Explored:** S19: `qa-pass46-test` Edit community — checkbox checked (UI state), Description changed → Save → POST outbox 202, body has new description but NO requireApproval. DB: summary NULL, requireApproval NULL, CreatedAt unchanged.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (Update 202 but not persisted; requireApproval not in Update activity; DB unchanged).
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S17 (profile over-fetch).
+
+---
+
 ## Pass 78 (2026-09-20) — S4/S21 re-verify (container restarted 12:15:50)
 
 - **Build/Live:** Container restarted 12:15:50. Healthy.
