@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 91 (2026-09-20) — S19 facet 3 FIXED; NEW BUG: follow notifications not created (container 13:19:52)
+- **Build/Live:** container `irisweb-iris-web-1` started 13:19:52 (5th restart today; dev deployed `a661cdd`).
+- **Explored:** `/home`, `/register` (new account qa91test), actor page (follow andrew), `/notifications` (Follows tab), community detail (Edit Save), `/communities` (Following tab), `/profile` (3 tabs + Communities tab), object detail (poll).
+- **Result:** **S19 facet 3 FIXED** (Edit Save persists — API returns updated description); **S19 facet 2 CANNOT RE-VERIFY — NEW BUG** (follow from qa91test → andrew: edge exists in DB but NO notification created; API returns 0 items); **S4 re-confirmed OPEN** (17th pass — remote interop missing from Following + Profile Communities tabs); **S17 re-confirmed OPEN** (39 outbox requests for 3 tabs, identical to Pass 90); **S16-UX re-confirmed OPEN** (1 votes, NO badge). 2 console errors (ERR_NETWORK_CHANGED — environmental).
+- **Checkpoint:** next pass — investigate NEW BUG (follow notifications not created), S4, S17, or S16-UX.
+
 ## Pass 90 (2026-09-20) — S20/S21/S19 facet 1 FIXED; S4/S17/S16-UX re-confirmed (container 12:53:13)
 - **Build/Live:** container `irisweb-iris-web-1` started 12:53:13 (4th restart today).
 - **Explored:** `/home` (Posts/Communities tabs), `/c/{handle}` redirect, `/communities` (Following tab), community detail (Requests tab + Edit Save), object detail (poll badge), `/profile` (3 tabs).
