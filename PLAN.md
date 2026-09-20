@@ -152,9 +152,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **13 open. No blockers (all S2/S3-sev).** (Pass 38: S9 + S11a/b confirmed FIXED on rebuilt container post-`d729c66`; S4 remote + S18 re-confirmed open.)
-- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S12, S17; S3-sev S3, S10, S13, S15, S16-UX. S4 (remote communities missing from Following tab) is S2-sev and blocks remote community discovery.
-- **Last pass:** 38 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S9 + S11 now fixed. Remaining open: S4 (remote), S10, S12a, S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
+- **11 open. No blockers (all S2/S3-sev).** (Pass 38: S9 + S11a/b + S12a + S10 confirmed FIXED on rebuilt container post-`bdc0e66`; S4 remote + S18 re-confirmed open.)
+- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S17; S3-sev S3, S13, S15, S16-UX. S4 (remote communities missing from Following tab) is S2-sev and blocks remote community discovery.
+- **Last pass:** 38 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S9, S11, S12a, S10 now fixed. Remaining open: S4 (remote), S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
 
 ## Paused Questions
 
