@@ -1,7 +1,7 @@
 # S3 — Object-detail 404s a local post's collections (Create-activity IRI)
 
 - **Class:** bug (console-noise) — **Severity:** S3
-- **Status:** open (re-confirmed Pass 35, 2026-09-20, on deployed `bb28dcf`)
+- **Status:** open (re-confirmed Pass 39, 2026-09-20, on deployed `4f5dd5c`)
 - **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 18, 19, 27, 35
 - **Related:** distinct from [S13](s13-remote-lemmy-404-noise.md) (remote Lemmy collections)
 
@@ -32,3 +32,5 @@ Open a local post's object detail via the `/object?iri=…/creates/{id}` deep-li
 **Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** two fresh posts' Create-activity IRIs (`…/creates/06GBV4N99HPN3H8STQQ74F5YB0`, `…/creates/06GBV4YCNNZ54BN9Y7W6QMPFQ0`) both → **404** via `curl` and in-browser ("Object not found"). The profile's object-detail link for the first post points to the **Note** IRI (`…/notes/06GBV4YCNNZ54BN9Y7W6QMPFQ4` → 200, 0 console errors, Replies tab loads empty collection correctly). The Reply link also uses the Note IRI. The Create-activity IRI 404 is only reachable if a client constructs `?iri=…/creates/{id}` directly. STILL OPEN (narrower scope than previously thought — the UI now routes through Note IRIs).
 
 **Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** Create-activity IRI `…/creates/06GBV4N99HPN3H8STQQ74F5YB0` → in-browser: **"Object not found"** + 1 console 404. `curl` confirms: `…/creates/…/replies` = **404**; `…/notes/06GBV4YCNNZ54BN9Y7W6QMPFQ4/replies` = **200**. Profile "Open post" links now use **Note** and **Object** IRIs (no Create-activity IRIs in the UI). STILL OPEN (narrow scope — only reachable via direct `?iri=…/creates/{id}` deep-link).
+
+**Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** created fresh post "QA Pass 39 S3 re-verify post" (Note IRI: `…/notes/06GBVQB2920X0D9R9611ANV1MG`, Create IRI: `…/creates/06GBVQB28WTGQCAYWQM58KD4JC`). Navigating to the Create-IRI → **"Object not found"** + 1 console 404. Note IRI → 200, 0 console errors, clean render. STILL OPEN (narrow scope — only reachable via direct `?iri=…/creates/{id}` deep-link).

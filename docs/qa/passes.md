@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 39 (2026-09-20) — S13/S3/S15/S18/S19 re-verify on `4f5dd5c`
+
+- **Build/Live:** deployed `4f5dd5c` (includes S13 fix, S3 fix, S15 fix, S10 fix, S12a fix, S11 fix, S9 fix).
+- **Explored:** S13: remote Lemmy post `lemmy.luit.ink/post/1` → **0 console errors** (was 3 in Pass 38). S3: created fresh post, navigated to Create-IRI `…/creates/06GBVQB28WTGQCAYWQM58KD4JC` → "Object not found" + 1 console 404 (still broken); Note IRI → 200 clean. S15: all 6 visibility/type combos now correct — Public "addressed to the public", Followers "visible to followers only", Direct "sent as a direct message" (grammar fixed). S18: registered `qa39test`, followed andrew → Unfollow button, Home timeline populated with posts; hard-refresh shows Unfollow (state persisted); andrew's Followers tab shows count 4 (not 5); andrew's notifications show "qa39test sent you a follow request" with NO Accept/Decline buttons (S19). S19: `/requests` route → 404 "Not found"; notifications page shows follow requests but no action buttons.
+- **Result:** 0 new; **2 confirmed FIXED** (S13, S15); **1 re-confirmed OPEN** (S3 — Create-IRI still 404s); **1 partially fixed** (S18 — state persists now, but follow request not auto-approved); **1 re-confirmed OPEN** (S19 — no Accept/Decline UI, /requests 404).
+- **Checkpoint:** next pass targets S3 (Create-IRI 404), S19 (follow request acceptance), S4 (remote communities), S17 (profile over-fetch), S16-UX (poll badge).
+
+---
+
 ## Pass 38 (2026-09-20) — S9/S11/S12a/S10/S15/S16/S17/S3/S13/S19/S4/S18 re-verify on rebuilt container
 
 - **Build/Live:** rebuilt container post-`bdc0e66` (S10) + `b6987d4` (S12a) + `d729c66` (S11) + `c1da416` (S9). Container `irisweb-iris-web-1` healthy.
