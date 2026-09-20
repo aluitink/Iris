@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 41 (2026-09-20) — S16/S3/S4/S19/S17/S7 re-verify on `59ff4ec`
+
+- **Build/Live:** deployed `59ff4ec` (== HEAD? y).
+- **Explored:** S16: Created poll `06GBVZDNA8JPCCFC8WW2JGAFZR` ("QA Pass 41 poll re-verify", A/B). Profile page shows "You voted" badge + A:1/B:0/1 votes. Object page (`/object?iri=...`) shows A:1/B:0/1 votes but **no "You voted" badge** on fresh load. S3: Create-IRI `/ap/v1/u/andrew/creates/06GBVQB28WTGQCAYWQM58KD4JC` → HTTP 404 (net::ERR_HTTP_RESPONSE_CODE_FAILURE). Note-IRI `/ap/v1/u/andrew/notes/06GBVQB2920X0D9R9611ANV1MG` → 200. S4: Communities → Following shows only "technology" (local), remote "interop" still missing. S19: Technology Requests tab → "We couldn't load the join requests. Please try again." alert, no request fires (only `/members` request). S17: Profile "Your posts" fired 6 outbox pages (1–6) + 2 duplicates; Replies tab fired 13-page fan-out (1–13) with 3 ERR_ABORTED. Total 19+ requests for 2 tabs. S7: Directory lookup `lemmyadmin@lemmy.luit.ink` → actor card appears, 0 console errors. Home feed: Posts tab fires 3 feed pages (1–3); Communities tab fires 0 new requests (content unchanged — tab switch not wired to different feed source).
+- **Result:** 0 new; **5 re-confirmed OPEN** (S16-UX badge on object page, S3, S4 remote, S17, S19); **1 re-confirmed FIXED** (S7). Home feed Communities tab appears non-functional (same content as Posts tab, no new API call).
+- **Checkpoint:** next pass targets S3 (Create-IRI 404), S19 (follow request acceptance UI), S2/S14 (blocked on dev). Home feed Communities tab may need new finding.
+
+---
+
 ## Pass 40 (2026-09-20) — S17/S4/S16/S19/S7 authless re-verify on `4f5dd5c`
 
 - **Build/Live:** deployed `4f5dd5c` (== HEAD? y).
