@@ -116,8 +116,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `b2e4f6c` (Lemmy Undo 400 fix — outbound Undo embeds the original Follow; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy; includes the shared-inbox route `ecfccb6` + ⑤ Lemmy interop fixes). **Pending deploy:** ⑤ un-follow feed-cache invalidation (code + test + change doc 14815 committed; `iris-web` rebuilt + redeployed 2026-09-20, container healthy).
-- **Container:** `irisweb-iris-web-1` — current (rebuilt with ⑤ un-follow feed-cache invalidation, 2026-09-20)
+- **Deployed commit:** `cffe397` (⑤ un-follow feed-cache invalidation — per-actor feed cache dropped on follow/unfollow; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy; built on `b2e4f6c` Lemmy Undo 400 fix + shared-inbox route `ecfccb6` + ⑤ Lemmy interop fixes).
+- **Container:** `irisweb-iris-web-1` — current
 - **Note:** ⑤ Lemmy interop **fully unblocked + live-verified (2026-09-20)**: (1) actor documents carry `published`; (2) a person's Follow to a *cached* remote community delivers over the wire; (3) the **Undo (unfollow) 400 is fixed** — the outbound Undo now embeds the original Follow (Lemmy's untagged-enum parser rejected a bare IRI link → 400 → dead-letter). **Live-verified end-to-end:** s7test Follow → Lemmy `c/interop` (count 1→2), then Undo → **200, count 2→1, no 400, no dead-letter**. The shared-inbox route (`POST /ap/v1/shared-inbox`) is implemented — [change doc 1598](docs/changes/1598-shared-inbox-route.md). **⑤ Mastodon un-follow fan-out fixed (2026-09-20):** the per-actor feed cache is now invalidated on an un-follow (and a new follow), so the un-follower's home feed drops the unfollowed user's posts immediately instead of serving the stale 30 s-TTL cache — [change doc 14815](docs/changes/14815-unfollow-feed-cache-invalidation.md). S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
