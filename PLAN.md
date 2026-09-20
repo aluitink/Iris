@@ -122,7 +122,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Active Slice
 
-- **S13 — Remote Lemmy object-detail 404 noise (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** Collection walks skipped for non-local objects (no AS collections on Lemmy). [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
+- **③④ Unified home feed — Phase 2: server `?source=` filter (dev, 2026-09-20).** Add `?source=people|communities` to `GET /u/{handle}/feed` in `FeedService`. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 
 ## Dev Queue
 
