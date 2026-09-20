@@ -60,6 +60,7 @@ else
     <div class="directory-toolbar">
         <div class="tab-bar" role="tablist" aria-label="Community sections">
             <a href="#following" id="tab-community-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-community-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
+            <a href="#mine" id="tab-community-mine" role="tab" aria-selected="@(ActiveTab == "mine")" aria-controls="panel-community-mine" class="tab @(ActiveTab == "mine" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("mine")'>My communities</a>
             <a href="#all" id="tab-community-all" role="tab" aria-selected="@(ActiveTab == "all")" aria-controls="panel-community-all" class="tab @(ActiveTab == "all" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("all")'>All on this instance</a>
         </div>
     </div>
@@ -84,7 +85,12 @@ else
     }
     else if (Items is not null)
     {
-        var shown = ActiveTab == "following" ? (Following ?? LocalFollowing) : All;
+        var shown = ActiveTab switch
+        {
+            "following" => (Following ?? LocalFollowing),
+            "mine" => OwnedCommunities,
+            _ => All
+        };
         @if (shown.Count == 0)
         {
             <div class="card">
@@ -99,6 +105,11 @@ else
                     {
                         <p>No communities followed yet.</p>
                         <p>Follow one from <a href="#all" @onclick:preventDefault @onclick='() => SwitchTab("all")'>all communities on this instance</a>, or create one above to get started.</p>
+                    }
+                    else if (ActiveTab == "mine")
+                    {
+                        <p>You don't own any communities yet.</p>
+                        <p>Create one above to get started.</p>
                     }
                     else
                     {
@@ -185,6 +196,19 @@ else
     private List<Group> LocalFollowing =>
         Items?.Where(g => g.Id is { } id && FollowingIris.Any(f => string.Equals(f.Value, id, StringComparison.OrdinalIgnoreCase))).ToList()
         ?? [];
+
+    /// <summary>
+    /// The communities the signed-in actor owns (the <c>Group</c> documents among the local search
+    /// whose <c>attributedTo</c> includes the actor). Shown in the "My communities" tab.
+    /// </summary>
+    private List<Group> OwnedCommunities =>
+        Items is null || Session.ActorId is not { } me
+            ? []
+            : Items
+                .Where(g => g.AttributedTo is { } attr &&
+                    attr.Any(a => (a is IObjectOrLink obj && obj.ResolveObjectIri() is { } oi && string.Equals(oi.Value, me.Value, StringComparison.OrdinalIgnoreCase)) ||
+                                  (a is IObject o && o.Id is { Length: > 0 } oid && string.Equals(oid, me.Value, StringComparison.OrdinalIgnoreCase))))
+                .ToList();
 
     private Iri? InstanceBase
     {
