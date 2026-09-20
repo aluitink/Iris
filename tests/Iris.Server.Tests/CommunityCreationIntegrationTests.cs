@@ -102,6 +102,23 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
         Assert.Empty(await _persistence.Communities.GetFollowersAsync(communityIri));
     }
 
+    // --- S21: the creator is auto-followed on community creation ------------------------------
+
+    [Fact]
+    public async Task CreateCommunityAsync_AutoFollowsCreator()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(result.IsSuccess, $"the person-authored Create of a Group must be accepted (got {result.StatusCode})");
+
+        // S21: the creator (alice) is auto-followed (a follow edge alice → community) so the
+        // community appears in alice's Following tab immediately after creation.
+        var isFollowing = await _persistence.Follows.IsFollowingAsync(_aliceIri, communityIri);
+        Assert.True(isFollowing,
+            "S21: the creator must be auto-followed on community creation (follow edge creator → community)");
+    }
+
     // --- Re-creating the same community is idempotent (key is reused, not re-minted) ----------
 
     [Fact]

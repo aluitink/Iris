@@ -1,0 +1,29 @@
+@page "/c/{handle}"
+@inject IActorSessionAccessor Session
+@inject NavigationManager Nav
+
+@if (_error is not null)
+{
+    <div class="card"><div class="error" role="alert">@_error</div></div>
+}
+
+@code {
+    [Parameter]
+    public string handle { get; set; } = string.Empty;
+
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        if (string.IsNullOrWhiteSpace(handle))
+        {
+            _error = "No community handle specified.";
+            return;
+        }
+
+        var baseUri = Nav.BaseUri;
+        var communityIri = $"{baseUri.TrimEnd('/')}/ap/v1/c/{Uri.EscapeDataString(handle)}";
+
+        Nav.NavigateTo($"/community?iri={Uri.EscapeDataString(communityIri)}", forceLoad: false);
+    }
+}

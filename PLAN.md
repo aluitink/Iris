@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `047ae90` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `983e124` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** Unified home feed workstream complete (Phases 1-7). Feed-load-feel complete (server-side cache). S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** Unified home feed workstream complete (Phases 1-7). Feed-load-feel complete (server-side cache). S21 fixed (auto-follow + /c/{handle}). S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **S21 — No auto-follow on community creation + `/c/{handle}` route 404 (dev, 2026-09-20).** When a local actor creates a community, the creator should be auto-followed (the community appears in their Following tab). Additionally, `GET /c/{handle}` returns 404 — the community's public URL route is missing. See [QA finding](docs/qa/).
+- **S3 — Object-detail 404s local post collections (dev, 2026-09-20).** Create activities not persisted to DB — 6th consecutive QA pass. See [QA finding](docs/qa/s03-object-detail-create-iri-404.md).
 
 ## Dev Queue
 
@@ -163,6 +163,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S21 — Community creation auto-follow + `/c/{handle}` route (2026-09-20):** Auto-follow edge on community creation; `/c/{handle}` redirect page. 1391 passed. [change doc](docs/changes/1589-s21-community-creation-autofollow-and-handle-route.md)
 - **① Feed load feel — server-side follow-feed caching (2026-09-20):** Per-actor 30s TTL cache in `FeedService`; `?refresh=true` bypass; 5 new unit tests + 4 integration test fixes. 1390 passed. [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
 - **③ Phase 7 — E2E verification (2026-09-20):** Full live pass: feed tabs, FeedBar, create/delete community, Profile Communities. 0 console errors. [change doc](docs/changes/1587-e2e-verification.md)
 - **③ Phase 6 — Profile Communities tab (2026-09-20):** `/profile` Communities tab: followed communities with Join/Leave. [change doc](docs/changes/1586-profile-communities-tab.md)

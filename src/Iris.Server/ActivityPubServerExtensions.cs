@@ -5573,9 +5573,12 @@ public static class ActivityPubServerExtensions
             // Group whose IRI is this instance's /ap/v1/c/{name}) materializes the community in the
             // community store (document endpoint, members, feed, collections). A Group with any other
             // IRI (a remote group, a non-community group) is left as an object-store entry only.
+            // S21: the creator is auto-followed (a follow edge from the creator to the new community)
+            // so the community appears in the creator's Following tab immediately after creation.
             if (embedded is Group group && TryParseLocalCommunityIri(baseUrl, group.Id, out var communityIri))
             {
                 await StoreCreatedCommunityAsync(persistence, group, communityIri, ct).ConfigureAwait(false);
+                await persistence.Follows.RecordFollowAsync(authorIri, communityIri, ct).ConfigureAwait(false);
             }
         }
 
