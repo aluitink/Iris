@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `4f5dd5c` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `c6c53e8` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **③④ Unified home feed — Phase 2: server `?source=` filter (dev, 2026-09-20).** Add `?source=people|communities` to `GET /u/{handle}/feed` in `FeedService`. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
+- **③④ Unified home feed — Phase 3: bottom control strip `FeedBar.razor` (dev, 2026-09-20).** New bottom strip: left tab pills (`/home` only) + right `🔔`+badge. No compose button. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 
 ## Dev Queue
 
@@ -163,6 +163,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **③ Phase 2 — Server `?source=` filter (2026-09-20):** `GET /u/{handle}/feed?source=people|communities` filters by attributedTo Group. `IsFromCommunity` + `AttributedToIncludesGroup` helpers. All suites green (Server 1380, Web 106).
 - **S13 — Remote Lemmy object-detail 404 noise (2026-09-20):** Collection walks skipped for non-local objects (`IsLocalIri` helper). Live-verified: `lemmy.luit.ink/post/1` → 0 console errors. All suites green (Web 106, Client 190). [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
 - **S3 — Object-detail 404s local post collections (2026-09-20):** `ContentIri` property resolves to the Note IRI for Create/Update activities; all collection walks (replies, likes, shares, reply href) use it. Live-verified: `/object?iri=…/creates/{id}` → 0 console errors. All suites green (Web 106). [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
 - **S15 — Compose visibility hint misleading (2026-09-20):** Hint extracted into `ComposeHint` computed property; visibility-aware (Public/Followers/Direct) + type-aware (Note/Article/Poll). All 6 cases live-verified. All suites green (Web 106). [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
