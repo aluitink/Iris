@@ -7195,8 +7195,10 @@ public static class ActivityPubServerExtensions
         // content from the public feed and global search on the receiving instance now also applies
         // to the object-document endpoint). A 404 (not 403) hides the object's existence — the
         // standard ActivityPub privacy convention (Mastodon, Pleroma). Tombstones carry no audience
-        // information and are always served.
-        if (obj is IObject visObj && visObj is not Tombstone
+        // information and are always served. Activities (Create, Announce, …) are metadata wrappers,
+        // not content — the visibility gate applies to the embedded content object, not the activity
+        // itself (a Create's `to`/`cc` is its distribution list, not a privacy gate).
+        if (obj is IObject visObj && visObj is not Tombstone && visObj is not Activity
             && !VisibilityFilter.IsVisibleTo(visObj, requesterIri))
         {
             return Results.NotFound();

@@ -223,6 +223,40 @@ public sealed class ObjectEndpointIntegrationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // --- S3: a stored Create activity is served by the object-document endpoint (200, not 404) ---
+
+    [Fact]
+    public async Task StoredCreateActivity_ServedByObjectDocumentEndpoint()
+    {
+        // S3: a Create activity stored in the Activities store (via PutActivityAsync on outbox publish)
+        // must be served by the object-document endpoint. Before the fix, the visibility gate applied
+        // to the Create activity itself (whose `to`/`cc` is a named follower list with no public
+        // sentinel), so an anonymous GET 404'd. Activities are metadata wrappers, not content — the
+        // visibility gate must not apply to them.
+        var noteIri = new Iri($"{ActorIri.Value}/notes/s3-test");
+        await _persistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri.Value,
+            Content = ["s3 test note"],
+            To = [new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
+        });
+
+        var createIri = new Iri($"{ActorIri.Value}/creates/{Guid.NewGuid():N}");
+        var create = new Create
+        {
+            Id = createIri.Value,
+            Actor = [new Link { Href = _actor }],
+            Object = [new Link { Href = noteIri.Uri }],
+            To = [new Link { Href = _actor }],
+        };
+        await _persistence.Activities.PutActivityAsync(create);
+
+        var response = await _http.GetAsync(ObjectPath(createIri));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Create", doc.RootElement.GetProperty("type").GetString());
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     /// <summary>
