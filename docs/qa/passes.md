@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 68 (2026-09-20) — S3 re-verify (Dev fix `c205d47` deployed)
+
+- **Build/Live:** Dev fix `c205d47` ("S3: skip visibility gate for Activities in ObjectDocumentHandler") deployed.
+- **Explored:** S3: Created fresh post "QA Pass 68: S3 Create persistence test post" (Note IRI: `…/notes/06GBX58AD4HAFES1WMBJ464HP0`, Create IRI: `…/creates/06GBX58AD4HAFES1WMBJ464HNW`). POST → 202. DB: Create IRI → 0 rows (not persisted). Note IRI → 200. **Create IRI → 200** (was 404 before). UI: `/object?iri=…/creates/…` → renders the Note content correctly. 0 console errors.
+- **Result:** 0 new; **S3 FIXED (UI-facing)** — Create IRI no longer 404s; object detail page renders correctly. The visibility gate fix makes the Create IRI resolvable.
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S21 (/c/{handle} redirect), S2/S14 (proxy 401).
+
+---
+
 ## Pass 67 (2026-09-20) — S20 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed (container restarted 11:21:16).
