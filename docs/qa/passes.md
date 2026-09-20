@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 75 (2026-09-20) — S4/S21 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed. Container healthy.
+- **Explored:** S4: Communities → Following tab: 3 local communities (technology, qa-pass46-test, qa-pass65-test) — remote `lemmy.luit.ink/c/interop` still missing. `interop` actor page shows "Unfollow" button (follow edge exists). S21: `/c/technology` → "Sorry, there's nothing at this address." (redirect not active).
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote interop missing — 12th pass). **S21 /c/{handle} re-confirmed OPEN** (redirect not active — 9th pass).
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S19 (notifications Accept/Decline), S16-UX (poll badge).
+
+---
+
 ## Pass 74 (2026-09-20) — S19 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed. Container healthy.
