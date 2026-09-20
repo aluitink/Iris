@@ -1,8 +1,8 @@
 # S11 — Poll broken (two parts)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (both parts re-confirmed Pass 27, 2026-09-20, on the rebuilt container)
-- **Found:** Pass 17 (2026-09-20)
+- **Status:** open (both parts re-confirmed Pass 34, 2026-09-20)
+- **Found:** Pass 17 (2026-09-20) — re-confirmed Passes 27, 34
 
 ## S11a — Poll without a body is a silent no-op
 
@@ -26,3 +26,5 @@
 2. The poll appears on the author's Profile "Your posts" and the object detail page renders with options.
 
 **Re-verification evidence (Pass 27, 2026-09-20, clean entry, andrew):** (a) a body-less poll (question + 2 options, no Content) → Post → **no confirmation, 0 console errors, no new `Question` object in the DB** — S11a still open. (b) the Pass-25 poll's `Create` activity (`…/creates/06GBSGQTYCMVSXEYC9XCMK6MPM`) **is present** in `GET /ap/v1/u/QAUser1/outbox` (20 items), yet the actor "Posts (8)" list still omits the poll — S11b still open (the UI's content-item filter still excludes `Question`).
+
+**Re-verification evidence (Pass 34, 2026-09-20, andrew, deployed `456b0d9`):** (a) body-less poll (question "QA Pass 34 poll test" + 2 options, no Content) → Post → **no confirmation, 0 console errors** — S11a still open. (b) poll WITH body ("Poll test with body") → 202, object at `…/creates/06GBV3RTQ8T7RAEBA7V3TP7EZ4`, `type=["Question","Object"]` in outbox (first item), but **NOT visible** in Profile "Your posts" — S11b still open.

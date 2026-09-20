@@ -156,9 +156,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **15 open. No blockers (all S2/S3-sev).** (Pass 33: **S7 fixed + live-verified** on `456b0d9`; S2/S14 re-confirmed open — the anonymous-proxy seam is deployed but the unsigned GET 401s; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
+- **15 open. No blockers (all S2/S3-sev).** (Pass 34: S18, S19, S11 re-confirmed open on `456b0d9`; S2/S14 re-confirmed open — anonymous-proxy 401s; S4's *remote* community display caveat remains — [s04](docs/qa/s04-communities-following-remote.md).)
 - **Top priority:** S18 (local follow → empty Home timeline; data-integrity, breaks the core follow loop), S19 (community Requests tab dead-end — moderation entry point broken), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), then the S2-sev bugs S9, S11, S12, S17; S3-sev S3, S10, S13, S15.
-- **Last pass:** 33 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S18 (local follow → empty Home timeline) re-verify, S19 (community Requests tab), S11 (Poll compose), and Settings → Danger tab.
+- **Last pass:** 34 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — next pass explores S12 (mention linkify/autocomplete), S9 (report/flag), S17 (profile tab over-fetch), S3 (object-detail Create IRI 404), S10 (Article mislabel).
 
 ## Paused Questions
 
