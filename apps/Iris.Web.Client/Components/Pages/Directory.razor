@@ -4,6 +4,7 @@
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Components
+@using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
@@ -124,6 +125,9 @@ else
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
 
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
     private IActivityPubClient? Client => Session.Client;
 
     private string ActiveTab { get; set; } = "people";
@@ -152,11 +156,11 @@ else
         _externalError = null;
     }
 
-    private void OnExternalKeydown(KeyboardEventArgs e)
+    private async Task OnExternalKeydown(KeyboardEventArgs e)
     {
         if (e.Key == "Enter" && _externalQuery.Length > 0 && !_externalBusy)
         {
-            _ = LookupExternalAsync();
+            await LookupExternalAsync();
         }
     }
 
@@ -211,21 +215,18 @@ else
 
             var resolvedIri = new Iri(actorIri.ToString()!);
 
-            // 2. Fetch the actor document (through the client, which handles proxy fallback).
-            if (Client is { } client)
+            // 2. Fetch the actor document. S7: this MUST go through Ui.GetActorAsync — the shared
+            // fetch path that routes a REMOTE actor through the same-origin proxy seam (a direct
+            // cross-origin GET is CORS-/CSP-blocked in the browser, which is exactly the S7 fault:
+            // the WebFinger + actor-doc proxy fetches both 200, yet the direct client read returns
+            // nothing and the card never appears).
+            var fetched = await Ui.GetActorAsync(resolvedIri);
+            if (fetched is not Actor actorDoc)
             {
-                var obj = await client.GetObjectAsync(resolvedIri);
-                if (obj is not Actor fetchedActor)
-                {
-                    _externalError = "Found the account but could not load their profile.";
-                    return;
-                }
-                _externalResult = fetchedActor;
+                _externalError = "Found the account but could not load their profile.";
+                return;
             }
-            else
-            {
-                _externalError = "Not signed in.";
-            }
+            _externalResult = actorDoc;
         }
         catch
         {
@@ -234,6 +235,10 @@ else
         finally
         {
             _externalBusy = false;
+            // S7: the keydown handler awaits this method (async event handler), so Blazor re-renders
+            // automatically once it returns. A fire-and-forget StateHasChanged() is a belt-and-braces
+            // re-render (it is NOT awaited, so it cannot deadlock on the UI sync context).
+            StateHasChanged();
         }
     }
 

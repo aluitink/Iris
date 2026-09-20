@@ -122,7 +122,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Active Slice
 
-- **S5 — drop the stale orphaned `localhost` actor from Search (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** `GlobalSearchService.IsSameInstanceActor` now drops a local actor (carries a `preferredUsername`) whose IRI is not under the instance base IRI — the stale `localhost:8088` ghost is gone from the mixed (Search) path, the canonical public-base row remains, and remote actors are unaffected. [change doc](docs/changes/1574-search-drop-stale-local-actor-foreign-base.md)
+- **S7 — Directory external lookup stuck on spinner (dev, 2026-09-20).** Implemented + live-verified; **awaiting commit.** `LookupExternalAsync` now routes the actor fetch through `Ui.GetActorAsync` (the shared proxy path) instead of a direct cross-origin `client.GetObjectAsync`, and the keydown handler is `async Task` (awaited by Blazor, auto re-render). [change doc](docs/changes/1575-directory-external-lookup-stuck-spinner.md)
 
 ## Dev Queue
 
@@ -138,7 +138,6 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S7** (S2) — Directory external lookup stuck on spinner: [s07](docs/qa/s07-directory-external-lookup-stuck.md)
 - **S9** (S2) — Report/flag silent no-op: [s09](docs/qa/s09-report-silent-noop.md)
 - **S11** (S2) — Poll silent no-op + invisible in "Your posts": [s11](docs/qa/s11-poll-silent-noop-and-outbox.md)
 - **S12** (S2) — @mention case + autocomplete mismatch: [s12](docs/qa/s12-mention-case-and-autocomplete.md)
@@ -169,6 +168,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **S7 — Directory external lookup stuck on spinner (2026-09-20):** `LookupExternalAsync` now routes the actor fetch through `Ui.GetActorAsync` (the shared proxy path) instead of a direct cross-origin `client.GetObjectAsync` (CORS/CSP-blocked), and the keydown handler is `async Task` (awaited by Blazor → auto re-render). Live-verified: Directory → type `lemmyadmin@lemmy.luit.ink` + Enter → actor card appears, no spinner. All suites green (Web 106). [change doc](docs/changes/1575-directory-external-lookup-stuck-spinner.md)
 - **S5 — drop the stale orphaned `localhost` actor from Search (2026-09-20):** `GlobalSearchService` mixed (Search, `localOnly=false`) path now drops a **local** actor (carries a `preferredUsername`) whose IRI is not under the instance base IRI — the stale `http://localhost:8088/ap/v1/u/alice` ghost (persisted under the dev base when `Iris:AdvertiseBase` was unset) is gone; the canonical public-base row and genuine remote actors remain. Closes S5 (the ghost surfaced in Search but not Directory, and 502'd on click). Live-verified: Search "alice" → exactly one local alice (canonical IRI); clicking it renders the profile + Posts (17) tab, no 502. All suites green (Server 1380, Client 190, Web 106). [change doc](docs/changes/1574-search-drop-stale-local-actor-foreign-base.md)
 - **S2/S14 — signed-out remote reads via the same-origin anonymous proxy seam (2026-09-20):** a cookie-less `GET /ap/v1/proxy/{target}` now relays an **unsigned** public read (no actor to sign with), allowlist-checked + per-client-IP rate-limited; disabled via `ProxySettings.AllowAnonymousReads=false`. `ActivityPubClientFactory` builds an unsigned client for a null `ActorId`. The client (`UiContext.FetchActorAsync`, `PagedCollection` anonymous read) routes **every** signed-out remote actor + collection read through the same-origin proxy instead of a direct cross-origin fetch (CORS/CSP-blocked). Closes S2 (signed-out `/` blank avatars + CORS noise) and S14 (signed-out remote actor-detail, incl. the Posts-tab outbox CSP facet). Live-verified: signed-out `/` → 0 console errors, all remote actors via proxy 200; `/actor?iri={remote}` → profile + Posts tab render, 0 console errors. All suites green (Server 1377, Client 190, Web 106). [change doc](docs/changes/1573-signed-out-remote-reads-via-anonymous-proxy-seam.md)
 - **Inbox ③ Phase 1 — home-feed `Page` drop fix (2026-09-20):** added `Page` to `IsContentItem` in `HomeTimeline.razor` (`/home`) + `Home.razor` (`/`) so Lemmy community posts (`Page` type) are no longer silently dropped from the home and public feeds. Live-verified via Playwright (the "Page type" fixture post renders in `/home`). Web build green, 106 web tests pass. [change doc](docs/changes/1002-inbox-3-phase1-page-drop-fix.md)
