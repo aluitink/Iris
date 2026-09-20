@@ -1114,6 +1114,17 @@ public static class ActivityPubServerExtensions
         // rejected with 401.
         group.MapPost("/u/{handle}/inbox", InboxHandler);
 
+        // Shared inbox: POST /ap/v1/shared-inbox — the instance-wide catch-all inbox advertised in each
+        // actor document's endpoints.sharedInbox (ActivityPubServerConstants.SharedInboxSegment). A remote
+        // sender (e.g. Mastodon) coalesces delivery targets by preferred_inbox_url and, when it prefers the
+        // shared inbox, delivers every activity to this single route. The handler resolves the intended
+        // recipient from the activity (its object for Follow/Accept/Undo, the object's author for
+        // Create/Announce) and routes it through the same pipeline as a per-actor inbox POST. Before this
+        // route existed, the advertised sharedInbox fell through to the catch-all, which returned 200 and
+        // silently dropped the body — so a local follower of a shared-inbox-preferring sender never
+        // received that sender's posts.
+        group.MapPost("/shared-inbox", SharedInboxHandler);
+
         // Outbox publish: POST /ap/v1/u/{handle}/outbox — the WRITE SURFACE for the activities the local
         // actor AUTHORS (a Follow, a Create/note, a Like, a Block, a Flag, an Undo, ...). Per the delivery
         // model, a client never addresses a recipient's inbox for an activity it authors; it publishes the
@@ -3784,6 +3795,164 @@ public static class ActivityPubServerExtensions
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
         return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Shared inbox: handles <c>POST /ap/v1/shared-inbox</c> — the instance-wide catch-all inbox
+    /// advertised in every actor document's <c>endpoints.sharedInbox</c>. A remote sender that prefers
+    /// the shared inbox (e.g. Mastodon, which coalesces delivery targets by <c>preferred_inbox_url</c>)
+    /// delivers every activity here instead of to a per-actor inbox. The handler verifies the signature
+    /// (or Bearer token), buffers + parses the body to learn the intended recipient, resolves that
+    /// recipient (the activity's <c>object</c> for a Follow/Accept/Undo, the embedded object's author for
+    /// a Create/Announce), and routes the delivery through the same pipeline as a per-actor inbox POST.
+    /// Before this route existed, the advertised <c>sharedInbox</c> fell through to the catch-all, which
+    /// returned 200 and silently dropped the body — so a local follower of a shared-inbox-preferring
+    /// sender never received that sender's posts.
+    /// </summary>
+    /// <remarks>
+    /// The body is parsed here (before the route is known) because the recipient is not in the URL — it
+    /// must be read from the activity. The body is then handed back to
+    /// <see cref="HandleInboxPostAsync"/>, which re-buffers (idempotent) and processes the delivery for
+    /// the resolved recipient, reusing the per-actor rate limit, the activity handlers, and the 202
+    /// contract. A delivery whose recipient cannot be resolved (or is not a local actor) is answered 202
+    /// and dropped (the activity is not this instance's concern) rather than 4xx — a 4xx would make the
+    /// sender retry a delivery this instance can never process.
+    /// </remarks>
+    private static async Task<IResult> SharedInboxHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IInboxProcessor inboxProcessor,
+        IInboundRateLimiter rateLimiter,
+        IOAuthTokenStore tokenStore,
+        ILocalActorResolver localActors,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        // Degraded (read-only) mode (Phase 83.4): a shared-inbox write is refused with 503 (not 4xx) when
+        // the durable store is unreachable — the peer should retry later, not treat it as a permanent
+        // rejection (mirrors the per-actor inbox).
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Iris.Server.Inbox");
+        var trace = context.RequestServices.GetService<Observability.IFederationTraceCollector>();
+        var sharedIri = new Iri($"{context.Request.Scheme}://{context.Request.Host}/ap/v1/shared-inbox");
+
+        var outcome = SignatureValidationMiddleware.GetResult(context);
+        if (!outcome.IsValid)
+        {
+            var bearerActorIri = await TryResolveBearerActorAsync(context, tokenStore, ct).ConfigureAwait(false);
+            if (bearerActorIri is { } bearer)
+            {
+                outcome = new SignatureValidationResult(IsValid: true, KeyId: bearer, ActorIri: bearer);
+            }
+            else
+            {
+                RecordInboundTrace(trace, context, sharedIri, 401, null, null);
+                return Results.Unauthorized();
+            }
+        }
+
+        // Buffer + read the body (the signed path already buffered it; EnableBuffering is idempotent).
+        context.Request.EnableBuffering();
+        var json = await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            RecordInboundTrace(trace, context, sharedIri, 400, outcome.ActorIri?.Value, null);
+            return Results.BadRequest();
+        }
+
+        // Parse the activity to learn its intended recipient(s). The recipient is not in the URL, so it
+        // must be read from the payload. A content activity (Create, Announce) is addressed to the
+        // author's local followers (the local actors who follow the remote author — the shared-inbox
+        // equivalent of the per-actor inbox fan-out); any other activity (Follow, Accept, Reject, Undo,
+        // Tombstone, ...) is addressed to its object.
+        var parsed = ActivityJson.Deserialize<IObjectOrLink>(json);
+        List<Iri> recipients = [];
+        Iri? fanOutAuthor = null;
+        if (parsed is Activity { Id: not null } typedActivity)
+        {
+            if (typedActivity is Create or Announce)
+            {
+                // Content: fan out to the local followers of the author (the activity's actor).
+                fanOutAuthor = FirstIriFromCollection(typedActivity.Actor) is { } author
+                    ? new Iri(author)
+                    : null;
+            }
+            else
+            {
+                // Object-addressed: route to the object (e.g. a Follow to a local actor).
+                if (FirstIriFromCollection(typedActivity.Object) is { } target)
+                {
+                    recipients.Add(new Iri(target));
+                }
+            }
+        }
+        else if (parsed is KristofferStrube.ActivityStreams.Object { Id: not null } obj
+                 && obj.AttributedTo is { } attributed
+                 && attributed.FirstOrDefault() is IObject { Id: { } authorId })
+        {
+            // A standalone object (not wrapped in a Create) addressed to its author's local followers.
+            fanOutAuthor = new Iri(authorId);
+        }
+
+        if (fanOutAuthor is not null)
+        {
+            // Fan out: process the delivery for each local follower of the author (the local actors who
+            // follow the remote author). A follower who has blocked the author is suppressed (F-07), and
+            // the activity's idempotency guard (InboxProcessor's add-if-absent) makes re-processing a
+            // re-delivery a no-op.
+            foreach (var follower in await persistence.Follows.GetFollowersAsync(fanOutAuthor.Value, ct).ConfigureAwait(false))
+            {
+                if (!await localActors.IsLocalActorAsync(follower, ct).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                if (await persistence.Moderation.IsBlockedAsync(follower, fanOutAuthor.Value, ct).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                recipients.Add(follower);
+            }
+        }
+
+        if (recipients.Count == 0)
+        {
+            // No local recipient (the author has no local followers, or the object is not local). Accept
+            // (202) and drop — a 4xx would make the sender retry a delivery this instance cannot process.
+            logger.LogInformation(
+                "Shared inbox: no local recipient; accepting and dropping. Peer: {Peer}",
+                outcome.KeyId.Value);
+            RecordInboundTrace(trace, context, sharedIri, 202, outcome.ActorIri?.Value, null);
+            return Results.Accepted();
+        }
+
+        // Process the delivery for each local recipient (the per-actor pipeline stores the activity
+        // idempotently by IRI and dispatches to the activity handlers, recording the delivery in the
+        // recipient's inbox/outbox). For an object-addressed activity there is a single recipient; for a
+        // content fan-out there is one per local follower. The idempotency guard makes a re-delivered
+        // activity a no-op on the second-and-later recipient.
+        foreach (var recipient in recipients)
+        {
+            var exists = await persistence.Actors.TryGetActorAsync(recipient, out _, ct).ConfigureAwait(false);
+            await HandleInboxPostAsync(context, recipient, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
+        }
+
+        return Results.Accepted();
     }
 
     /// <summary>

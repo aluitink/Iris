@@ -118,11 +118,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **Deployed commit:** `e5fe8d1` (⑤ Lemmy interop: actor `published` field + follow delivery for cached remote communities — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** ⑤ Lemmy interop unblocked: (1) actor documents now carry `published` (Lemmy `objects::instance` requires it — was 400 "missing field `published`"); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split — was silently skipped). S3/S19/co-owner Leave all fixed + deployed. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** ⑤ Lemmy interop unblocked: (1) actor documents now carry `published` (Lemmy `objects::instance` requires it — was 400 "missing field `published`"); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split — was silently skipped). **⑤ live re-verify (2026-09-20): a person's Follow to Lemmy `c/interop` reached Lemmy end-to-end** (Lemmy `community_follower` gained a row, `pending=f`). The shared-inbox route (`POST /ap/v1/shared-inbox`) is now implemented (was advertised but unhandled — Mastodon dropped its deliveries) — [change doc 1598](docs/changes/1598-shared-inbox-route.md). **Open:** Lemmy Undo (unfollow) returns 400 (dead-lettered). S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- *(none — ⑤ Lemmy interop unblocked; ⑤ live re-verify + Mastodon unfollow-fanout next from Dev Queue)*
+- *(none — shared-inbox route complete; ⑤ live Lemmy re-verify + Mastodon unfollow-fanout next from Dev Queue)*
 
 ## Dev Queue
 
@@ -130,7 +130,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Inbox (user/loop injections — action oldest first):**
 
-- *(empty)*
+- **Lemmy Undo (unfollow) returns 400 (dead-lettered).** A person's Follow to Lemmy's `c/interop` is accepted (Lemmy `community_follower` gains a row), but the Undo (unfollow) delivery to Lemmy's shared inbox returns **400** and is dead-lettered (Iris delivery metrics: `Undo` delivered=1 / attempt_failed=1 / dead_lettered=1; Lemmy row lingers). The Follow succeeds (proving the actor doc + `published` fix), so the Undo 400 is a distinct Lemmy shared-inbox Undo-path issue (likely needs the original Follow's `id`, or a different Lemmy inbox shape). Investigate: capture Lemmy's 400 response body + the exact Undo payload Iris sends. (Companion to the shared-inbox route — [change doc 1598](docs/changes/1598-shared-inbox-route.md).)
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
@@ -145,7 +145,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Feature scope:**
 
-- **⑤ Live Lemmy interop re-verify (NEXT).** Both interop blockers are fixed + deployed (actor `published` field + follow delivery for cached remote communities — [change doc 1597](docs/changes/1597-lemmy-follow-delivery-and-actor-published.md)). Remaining: live-verify a person's Follow reaches Lemmy's `c/interop` (Lemmy `community_follower` gains a row) end-to-end. Gated by `IRIS_LIVE_INTEROP` (local Lemmy at `lemmy.luit.ink` is up). **Mastodon unfollow-fanout** observation: user still sees messages from an unfollowed user — investigate whether the Undo-fanout to followers' feeds is dropped.
+- **⑤ Live Lemmy interop re-verify — Follow COMPLETE (2026-09-20).** Both interop blockers fixed + deployed (actor `published` field + follow delivery for cached remote communities — [change doc 1597](docs/changes/1597-lemmy-follow-delivery-and-actor-published.md)). **Live-verified:** a person's Follow to Lemmy `c/interop` reached Lemmy end-to-end (Lemmy `community_follower` gained a row, `pending=f`; Iris delivery metrics `Follow` delivered=1/failed=0). **Remaining:** (a) Lemmy Undo (unfollow) returns 400 (dead-lettered) — see Inbox; (b) **Mastodon unfollow-fanout** observation: user still sees messages from an unfollowed user — investigate whether the Undo-fanout to followers' feeds is dropped (now partly addressed by the shared-inbox route, [change doc 1598](docs/changes/1598-shared-inbox-route.md)).
 - **②④⑤ Community simplification — unify members with followers (Lemmy-shape). ② Phases 1-6 DONE; ④ control surfaces DONE (incl. co-owner Leave); ⑤ live-interop unblocked (see above).** Members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, single **Follow** button (labeled **Join**/**Leave** for communities), dead `ICommunityStore` member methods retired (kept `EdgeKind.CommunityMember` for the startup migration). **Peering** is the single owner-only extra. See [docs/plans/community-simplification.md](docs/plans/community-simplification.md) + [change doc](docs/changes/1593-community-management-my-communities-tab.md).
 - **③④ Unified home feed — COMPLETE (Phases 1-7, 2026-09-20).** Two feed tabs + bottom strip + community IA rework. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 - **① Minor UI fixes — feed load feel — COMPLETE (2026-09-20).** (1)(2)(3) Done. (4) Server-side per-actor follow-feed cache (30s TTL + `?refresh=true` bypass). [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
@@ -166,6 +166,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **Shared-inbox route (2026-09-20):** `POST /ap/v1/shared-inbox` is now implemented (was advertised in every actor doc but unhandled — a shared-inbox-preferring sender like Mastodon had its deliveries silently dropped). Fans content activities (Create/Announce) out to the author's local followers; routes object-addressed activities (Follow/Accept/Undo) to the object; accepts + drops when no local recipient. 4 new integration tests. Full fast suite green: 1891 passed, 0 failed. [change doc](docs/changes/1598-shared-inbox-route.md)
 - **⑤ Lemmy interop unblock (2026-09-20):** (1) actor documents carry `published` (Lemmy `objects::instance` requires it); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split). New regression test fails on old code, passes on fix. Full suite green. [change doc](docs/changes/1597-lemmy-follow-delivery-and-actor-published.md)
 - **④ Community co-owner Leave flow (2026-09-20):** Co-owners can leave communities (demoted from owner); last owner protected. 1559 passed. [change doc](docs/changes/1596-community-co-owner-leave-flow.md)
 - **Notification follow-filter fix (2026-09-20):** Auto-accepted follows now visible in notifications (was incorrectly filtered out). 1559 passed. [change doc](docs/changes/1595-notification-follow-filter-fix.md)
