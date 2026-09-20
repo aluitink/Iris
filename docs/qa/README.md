@@ -55,8 +55,9 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S18 | Following a local account: follow "succeeds" but follower's Home timeline stays empty | bug / data-integrity | S2 | partially fixed (Pass 39 — state persists, timeline populates; follow request not auto-approved) | [s18](s18-local-follow-timeline-empty.md) |
 | S19 | Community page 404s; actor page has no Requests tab; notifications lack Accept/Decline | bug | S2 | open (Pass 43 — scope changed: /c/{name} 404s, actor page has no Requests/Members tabs) | [s19](s19-community-requests-tab-fails.md) |
 | S20 | Home feed "Communities" tab is non-functional (no API call, same content as Posts) | bug / feature-gap | S2 | open (found Pass 42) | [s20](s20-home-feed-communities-tab-nonfunctional.md) |
+| S21 | Newly created community missing from Following tab; /c/{handle} 404s | bug / data-integrity | S2 | open (found Pass 46) | [s21](s21-new-community-missing-following-tab.md) |
 
-**7 open, 1 fix-committed-not-live (S6), 9 fixed (S5, S7, S8, S9, S10, S11, S12, S13, S15), 1 partially-fixed (S18), 1 core-fixed-UX-gap (S16). No S1/blockers.**
+**8 open, 1 fix-committed-not-live (S6), 9 fixed (S5, S7, S8, S9, S10, S11, S12, S13, S15), 1 partially-fixed (S18), 1 core-fixed-UX-gap (S16). No S1/blockers.**
 
 > Note: S1 was the Pass-10 defect set (signed-out 401 spam, proxy 500, Lemmy misclassification) — all fixed and verified Pass 11; it is recorded in [docs/changes/997-ui-ux-review.md](../changes/997-ui-ux-review.md), not here.
 

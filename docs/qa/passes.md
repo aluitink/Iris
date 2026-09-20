@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 46 (2026-09-20) — S3 re-verify + community creation flow on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S3: Created post "QA Pass 46 S3 re-verify post" (Note IRI: `…/notes/06GBW8XSFP3WKCNJSTXEB8HWFW`). POST outbox → 202. DB confirms **zero Create activities for andrew** (count = 0). Note IRI → 200, clean render, 0 console errors. Community creation: Created "qa-pass46-test" via /communities → POST outbox 202 → Group in DB. **New community missing from Following tab** (only "technology" listed). **New community appears in "All on this instance" tab.** `/c/qa-pass46-test` → 404.
+- **Result:** **1 NEW** (S21 — newly created community missing from Following tab + /c/{handle} 404s → [s21](s21-new-community-missing-following-tab.md)); **S3 re-confirmed OPEN** (Create activities still not persisted to DB).
+- **Checkpoint:** next pass targets S21 (community creation follow edge + /c/{handle} route), S19 (community page 404), S3 (Create persistence), S20 (Home Communities tab), S2/S14 (blocked).
+
+---
+
 ## Pass 45 (2026-09-20) — S16 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
