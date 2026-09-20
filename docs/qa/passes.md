@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 72 (2026-09-20) — S16-UX re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed.
+- **Explored:** S16-UX: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — (1) Object detail: A:1/B:0/**1 votes**, NO "You voted" badge. (2) Profile listing (after 2× Load more): A:0/B:0/**0 votes**, NO badge. **REGRESSION:** vote count now inconsistent (profile 0, object 1).
+- **Result:** 0 new; **S16-UX re-confirmed OPEN** (vote count inconsistent: profile shows 0, object shows 1; badge missing from both). Regression from Pass 56.
+- **Checkpoint:** next pass targets S2/S14 (proxy 401), S20 (Communities tab), S17 (profile over-fetch).
+
+---
+
 ## Pass 71 (2026-09-20) — S4/S21 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed.
