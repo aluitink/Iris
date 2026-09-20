@@ -118,11 +118,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **Deployed commit:** `ce70787` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** Phase 6 Profile Communities tab is live. S5 + S7 verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** Unified home feed workstream complete (Phases 1-7). S5 + S7 verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **③④ Unified home feed — Phase 7: end-to-end verification (dev, 2026-09-20).** Full pass: follow local + Lemmy community + person; verify `/home` tabs, `/communities` manage, `/profile` Communities. Console: no 401/500 spam. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
+- **① Minor UI fixes — feed load feel: server-side follow-feed caching (dev, 2026-09-20).** Significant server change: cache the merged follow feed per-actor with a short TTL so repeated `/u/{handle}/feed` requests don't re-walk every outbox. See [change doc](docs/changes/1000-inbox-1-card-header-polish.md).
 
 ## Dev Queue
 
@@ -144,8 +144,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 **Feature scope:**
 
 - **②④⑤ Community simplification — unify members with followers (Lemmy-shape). ② Phases 1-6 DONE; ④ control surfaces + ⑤ live-interop re-verify remain.** Members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, single **Follow** button (labeled **Join**/**Leave** for communities), dead `ICommunityStore` member methods retired (kept `EdgeKind.CommunityMember` for the startup migration). **Peering** is the single owner-only extra. Remaining: **④** the `/communities` **management** page + Profile **Communities** tab (with unified-home-feed P5/P6); **⑤** live Lemmy interop re-verify (gated by `IRIS_LIVE_INTEROP`). See [docs/plans/community-simplification.md](docs/plans/community-simplification.md) + [change doc](docs/changes/1001-inbox-2-community-simplification.md).
-- **③④ Unified home feed — two tabs + bottom strip + community IA rework. Phase 1 DONE (Page drop fix, 2026-09-20); Phases 2-7 remain.** (1) `/home` gets two feed tabs (**Posts**/**Communities**) via a server-side `?source=people|communities` filter. ~~also fixes the `Page` drop in `IsContentItem`~~ **Done** — `Page` added to `IsContentItem` in `HomeTimeline.razor` + `Home.razor`; live-verified (Lemmy `Page` post renders in `/home`). (2) A **bottom control strip** (feed tabs left on `/home`, notifications badge right, global) — no compose button. (3) **Community IA rework:** `/communities` becomes a **management** page (owned communities: create / delete-when-last-owner / leave-when-co-owner / manage + a **Peers** section — needs a new last-owner-only `DELETE /local/v1/c/{name}`); **Profile** gains a **Communities** tab. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md) + [change doc](docs/changes/1002-inbox-3-phase1-page-drop-fix.md). **Depends on** community-simplification Phases 1-4.
-- **① Minor UI fixes — feed load feel.** (1)(2)(3) Done (moderation icons off feed cards, full-width header strip, boost hint dropped). (4) **Remaining:** server-side follow-feed caching/streaming (a significant server change, deferred to a dedicated slice). See [change doc](docs/changes/1000-inbox-1-card-header-polish.md).
+- **③④ Unified home feed — COMPLETE (Phases 1-7, 2026-09-20).** Two feed tabs + bottom strip + community IA rework. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
+- **① Minor UI fixes — feed load feel.** (1)(2)(3) Done. (4) **Remaining:** server-side follow-feed caching/streaming (now Active Slice). See [change doc](docs/changes/1000-inbox-1-card-header-polish.md).
 
 ## QA Queue
 
@@ -163,11 +163,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
-- **③ Phase 6 — Profile Communities tab (2026-09-20):** `/profile` Communities tab: followed communities with Join/Leave + "Manage communities →" link. [change doc](docs/changes/1586-profile-communities-tab.md)
-- **③ Phase 5 — Community management: delete (2026-09-20):** `DELETE /local/v1/c/{name}` (owner-only) + `DeleteCommunityAsync` across all 3 stores. [change doc](docs/changes/1585-community-management-delete.md)
+- **③ Phase 7 — E2E verification (2026-09-20):** Full live pass: feed tabs, FeedBar, create/delete community, Profile Communities. 0 console errors. [change doc](docs/changes/1587-e2e-verification.md)
+- **③ Phase 6 — Profile Communities tab (2026-09-20):** `/profile` Communities tab: followed communities with Join/Leave. [change doc](docs/changes/1586-profile-communities-tab.md)
+- **③ Phase 5 — Community management: delete (2026-09-20):** `DELETE /local/v1/c/{name}` (owner-only). [change doc](docs/changes/1585-community-management-delete.md)
 - **③ Phase 4 — Wire home-feed tabs to `?source=` filter (2026-09-20):** `HomeTabState` scoped service. [change doc](docs/changes/1584-home-feed-tab-source-wiring.md)
 - **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
-- **③ Phase 2 — Server `?source=` filter (2026-09-20):** `GET /u/{handle}/feed?source=people|communities`.
 
 
 

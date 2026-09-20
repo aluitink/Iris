@@ -411,3 +411,4 @@
 - **S2/S14 — Signed-out remote reads via anonymous proxy seam (COMPLETE):** Cookie-less proxy relay + client routes through proxy. [changes/1573](changes/1573-signed-out-remote-reads-via-anonymous-proxy-seam.md)
 - **③ Phase 1 — Home-feed Page drop fix (COMPLETE):** `Page` added to `IsContentItem`. [changes/1002](changes/1002-inbox-3-phase1-page-drop-fix.md)
 - **② Community simplification — unify members with followers (COMPLETE):** Members = followers; Join/Leave → Follow/Undo. [changes/1001](changes/1001-inbox-2-community-simplification.md)
+- **③④ Unified home feed — Phases 1-7 (COMPLETE):** Two feed tabs + FeedBar bottom strip + community IA rework (management page + Profile Communities tab). [changes/1587](changes/1587-e2e-verification.md)
