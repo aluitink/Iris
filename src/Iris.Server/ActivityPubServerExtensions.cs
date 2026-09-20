@@ -8637,7 +8637,14 @@ public static class ActivityPubServerExtensions
             // Fallback: the handle may be a community (Group) rather than a person. Communities live
             // in the community store (not the actor store), so a community handle like
             // @iris@host resolves to {base}/ap/v1/c/iris (19.5.1 discovery).
-            var communityIri = BuildCommunityIri(baseUrl, handle);
+            //
+            // S29: remote instances (Lemmy/Mastodon) address a community as acct:!{handle}@{host} —
+            // the leading '!' marks the group namespace. The handle extracted above still carries
+            // that '!', so BuildCommunityIri(baseUrl, "!devs") would build {base}/ap/v1/c/!devs and
+            // miss the stored community. Strip the leading '!' so acct:!devs@host resolves to
+            // {base}/ap/v1/c/devs (the bare acct:devs@host form, already covered, is unaffected).
+            var communityName = handle.TrimStart('!');
+            var communityIri = BuildCommunityIri(baseUrl, communityName);
             if (await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
             {
                 resolvedIri = communityIri;

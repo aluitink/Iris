@@ -416,6 +416,32 @@ public class ServerEndpointIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task WebFinger_ResolvesBangPrefixedCommunityHandleToGroupIri()
+    {
+        // S29: remote instances (Lemmy/Mastodon) address a community as acct:!{handle}@{host} — the
+        // leading '!' marks the group namespace. The handler must strip the '!' so the query resolves
+        // to the /ap/v1/c/{name} Group IRI (previously the '!' leaked into the IRI segment → 404).
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:!devs@{Host}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal($"https://{Host}/ap/v1/c/devs", doc.RootElement.GetProperty("links")[0].GetProperty("href").GetString());
+    }
+
+    [Fact]
+    public async Task WebFinger_UnknownBangPrefixedCommunityHandle_Returns404()
+    {
+        // S29: a '!'-prefixed community handle that does not exist on this instance is still a 404 —
+        // the '!' is stripped before the community-store lookup, and an unknown name misses (no
+        // spurious match on the bare form).
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:!nobody@{Host}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task CommunityDocument_ServesGroupWithPublicKey()
     {
         // Phase 136.2: dereferencing a community. The WebFinger self href points at the Group document;
