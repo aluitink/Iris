@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 90 (2026-09-20) — S20/S21/S19 facet 1 FIXED; S4/S17/S16-UX re-confirmed (container 12:53:13)
+- **Build/Live:** container `irisweb-iris-web-1` started 12:53:13 (4th restart today).
+- **Explored:** `/home` (Posts/Communities tabs), `/c/{handle}` redirect, `/communities` (Following tab), community detail (Requests tab + Edit Save), object detail (poll badge), `/profile` (3 tabs).
+- **Result:** **S20 FIXED** (Communities tab fires `?source=communities` → 200; Posts tab fires `?source=people` → 200); **S21 FIXED** (`/c/technology` + `/c/qa-pass46-test` redirect to `/community?iri=…`); **S19 facet 1 FIXED** (Requests tab → `GET /local/v1/c/qa-pass46-test/requests` → 200, shows "No pending join requests"); **S19 facet 2 CANNOT RE-VERIFY** (follow requests gone from DB — accounts removed during restart); **S19 facet 3 STILL OPEN** (Edit Save → 202 but DB summary NULL); **S4 re-confirmed OPEN** (16th pass — remote interop missing); **S17 re-confirmed OPEN** (39 outbox requests for 3 tabs, increased from 35); **S16-UX re-confirmed OPEN** (1 votes, NO badge).
+- **Checkpoint:** next pass — S17, S16-UX, or S19 facet 2 (need new test accounts for follow requests).
+
 ## Pass 89 (2026-09-20) — S17 re-verify (profile over-fetch, container 12:43:01)
 
 - **Build/Live:** Container 12:43:01. Healthy.

@@ -1,7 +1,7 @@
 # S20 — Home feed "Communities" tab is non-functional (no API call, same content as Posts)
 
 - **Class:** bug / feature-gap — **Severity:** S2
-- **Status:** open (found Pass 42, 2026-09-20, on deployed `65ccfa0`)
+- **Status:** fixed (Pass 90, 2026-09-20, container 12:53:13)
 - **Found:** Pass 42 (2026-09-20)
 - **Related:** Phase 4 of unified home feed (docs/plans/unified-home-feed.md) — "wire the tabs to the feed"
 
@@ -61,3 +61,5 @@ Clean entry, logged in:
 **Re-verification evidence (Pass 82, 2026-09-20, andrew, container 12:15:50):** `/home` → Posts tab loads feed (8 boosted posts visible). Click **Communities** tab → **0 new API requests** (no `source=` parameter in any request). Feed content **identical to Posts tab** (same 8 posts). 0 console errors. STILL OPEN (8th consecutive pass confirming visual-only toggle).
 
 **Re-verification evidence (Pass 87, 2026-09-20, andrew, container 12:43:01):** `/home` → Posts tab loads feed (`GET /ap/v1/u/andrew/feed` → 200, `?page=2` → 200; 8 boosted posts visible). Click **Communities** tab → **0 new API requests** (no `source=` parameter, no community-specific call). Feed content **identical to Posts tab** (same 8 posts: morituri, donni, WeirdWriter, AlSweigart, eniatitova, nnschneider, mcnado, jef). 0 console errors. STILL OPEN (9th consecutive pass confirming visual-only toggle).
+
+**Re-verification evidence (Pass 90, 2026-09-20, andrew, container 12:53:13):** `/home` → Posts tab loads feed. Click **Communities** tab → `GET /ap/v1/u/andrew/feed?source=communities` → **200**. Click back to **Posts** tab → `GET /ap/v1/u/andrew/feed?source=people` → **200**. Both tabs now fire distinct API requests with different `source` parameters. 0 console errors. **FIXED** — the Communities tab now fires `?source=communities` and the Posts tab fires `?source=people`.
