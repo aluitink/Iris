@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 70 (2026-09-20) — S19 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed.
+- **Explored:** S19: (1) `qa-pass46-test` → Edit community → checkbox "Require approval for join requests" is **checked** → Save. Reopened form → checkbox still checked (UI state). DB: `requireApproval` → **NULL**. 0 Update activities in DB. (2) Notifications → All: 3 follow requests (qa39test, qa36test, qa34test) — **NO Accept/Decline buttons**.
+- **Result:** 0 new; **S19 re-confirmed OPEN** (Edit community Save is a silent no-op — checkbox state not persisted; notification action buttons still missing).
+- **Checkpoint:** next pass targets S21 (/c/{handle} redirect), S2/S14 (proxy 401), S4 (remote interop missing).
+
+---
+
 ## Pass 69 (2026-09-20) — S17 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed.
