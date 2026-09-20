@@ -146,6 +146,10 @@ else
                                 {
                                     <button type="button" class="button button--danger" @onclick="() => DeleteTargetIri = community.Id">Delete</button>
                                 }
+                                @if (ActiveTab == "mine" && community.Id is { Length: > 0 } cid)
+                                {
+                                    <a href="@($"/community?iri={Uri.EscapeDataString(cid)}#peers")" class="muted manage-peers-link">Manage peers →</a>
+                                }
                             }
                         </ActorCard>
                     </div>

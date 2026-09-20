@@ -29,8 +29,29 @@ this instance" (the directory). There was no way to quickly see and manage the c
      with Leave + Delete buttons.
   3. 0 console errors.
 
+- **`apps/Iris.Web.Client/Components/Pages/Communities.razor`** (continued) — Each owned community
+  card in the "My communities" tab now shows a "Manage peers →" link that navigates to the community
+  detail page's Peers tab (`/community?iri=…#peers`), where the full add/remove peer UI lives. This
+  gives the owner a one-click path from the management overview to the per-community peering surface
+  (per the plan's resolved question: "keep both the management-page Peers section and the detail-page
+  Peers tab" — the management page is the overview, the detail tab is the deep surface).
+
+- **`apps/Iris.Web.Client/wwwroot/css/app.css`** + **`apps/Iris.Web/wwwroot/css/app.css`** — Added
+  `.manage-peers-link` style (inline-block, small font, top margin).
+
+## Verification
+
+- 1392 server tests passed (0 failed)
+- Build clean (0 warnings, 0 errors)
+- Live-verified (s7test, fresh browser):
+  1. `/communities` → "My communities" tab → two owned communities shown.
+  2. Each card has Leave + Delete + **"Manage peers →"** link.
+  3. Clicked "Manage peers →" on `s21-second` → navigated to
+     `/community?iri=…#peers` → Peers tab visible with add-peer form + "This community follows no one yet."
+  4. 0 console errors.
+
 ## Remaining (next slice)
 
-- Peers section per owned community (view/add/remove community-follows) — either inline on this page
-  or as a link to the existing Peers tab on `CommunityDetail.razor`.
-- "Leave (co-owner)" flow for non-last owners (currently only Delete is shown).
+- "Leave (co-owner)" flow for non-last owners (currently only Delete is shown; the Follow/Leave
+  button already handles the follow edge, but a co-owner who is not the last owner needs an explicit
+  "Remove myself as owner" action).
