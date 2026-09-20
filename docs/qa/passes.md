@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 44 (2026-09-20) — S17/S20/S4 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S17: `/profile` → "Your posts" fired 11 outbox requests (pages 1–11, all 200, no aborts). Replies tab fired 13-page fan-out (pages 1–13). Total 24 outbox requests for 2 tabs. S20: `/home` → Communities tab → 0 new API requests, same content as Posts tab (skinnylatte dolphin boost first in both). S4: Communities → Following shows only "technology" (local), remote "interop" still missing.
+- **Result:** 0 new; **3 re-confirmed OPEN** (S17, S20, S4).
+- **Checkpoint:** next pass targets S19 (community page 404 + missing tabs), S3 (Create persistence), S16-UX (poll badge), S2/S14 (blocked).
+
+---
+
 ## Pass 43 (2026-09-20) — S3/S19 re-verify + community page routing on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).

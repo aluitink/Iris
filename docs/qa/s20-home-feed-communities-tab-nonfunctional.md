@@ -43,3 +43,5 @@ Clean entry, logged in:
 2. Click **Communities** tab → a new API request fires with `?source=communities` (or equivalent), and the feed content changes to show community-specific posts (different from Posts tab).
 3. Click back to **Posts** tab → another new API request fires with `?source=posts` (or equivalent), and the feed reverts to the following feed.
 4. 0 console errors.
+
+**Re-verification evidence (Pass 43, 2026-09-20, andrew, deployed `65ccfa0`):** `/home` → Posts tab shows following feed (skinnylatte dolphin boost first). Click **Communities** tab → 0 new API requests fire (only initial 3 feed requests: `/ap/v1/u/andrew/feed`, `?page=2`, `?page=3`). First post is still skinnylatte dolphin boost — **identical to Posts tab**. Tab visually becomes active but feed data does not change. STILL OPEN.
