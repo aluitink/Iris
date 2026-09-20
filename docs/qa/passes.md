@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 71 (2026-09-20) — S4/S21 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed.
+- **Explored:** S4: Communities → Following tab shows **"technology" + "qa-pass46-test" + "qa-pass65-test"** (all local) — remote `lemmy.luit.ink/c/interop` **still missing**. Actor page shows "Unfollow" button (follow edge exists). S21: `/c/technology` → "Sorry, there's nothing at this address." — redirect page **STILL NOT active**. `/c/qa-pass65-test` → same.
+- **Result:** 0 new; **S4 re-confirmed OPEN** (remote interop missing — 11th consecutive pass). **S21 /c/{handle} STILL OPEN** (redirect not active — 8th pass).
+- **Checkpoint:** next pass targets S2/S14 (proxy 401), S16-UX (poll badge), S20 (Communities tab).
+
+---
+
 ## Pass 70 (2026-09-20) — S19 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed.
