@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 83 (2026-09-20) — S16-UX re-verify (badge missing, IRI format changed)
+
+- **Build/Live:** Container 12:15:50. Healthy.
+- **Explored:** S16-UX: Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` object detail — 1 votes, NO badge. DB confirms voters=[andrew], totalVotes=1. Old IRI format (without `/objects/`) returns "Object not found".
+- **Result:** 0 new; **S16-UX re-confirmed OPEN** (badge missing on object detail, vote count consistent). New note: IRI format changed, old URLs not redirected.
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S19 facet 2 (re-verify after deploy).
+
+---
+
 ## Pass 82 (2026-09-20) — S20 re-verify (Communities tab visual-only, 8th pass)
 
 - **Build/Live:** Container 12:15:50. Healthy.
