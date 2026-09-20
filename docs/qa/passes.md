@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 89 (2026-09-20) — S17 re-verify (profile over-fetch, container 12:43:01)
+
+- **Build/Live:** Container 12:43:01. Healthy.
+- **Explored:** S17: `/profile` — initial 9 outbox requests; Replies tab 13 requests; Likes tab 13 requests. Total 35 outbox requests for 3 tabs.
+- **Result:** 0 new; **S17 re-confirmed OPEN** (35 outbox requests for 3 tabs; identical to Pass 76/80 — no change).
+- **Checkpoint:** next pass targets S21 (/c/{handle}), S4 (remote communities), S20 (Communities tab).
+
+---
+
 ## Pass 88 (2026-09-20) — S4 re-verify (remote interop missing, 15th pass)
 
 - **Build/Live:** Container 12:43:01. Healthy.
