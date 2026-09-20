@@ -83,6 +83,10 @@ else
     {
         <div class="card"><div class="error" role="alert">@DeleteError</div></div>
     }
+    else if (LeaveError is not null)
+    {
+        <div class="card"><div class="error" role="alert">@LeaveError</div></div>
+    }
     else if (Items is not null)
     {
         var shown = ActiveTab switch
@@ -145,6 +149,27 @@ else
                                 else
                                 {
                                     <button type="button" class="button button--danger" @onclick="() => DeleteTargetIri = community.Id">Delete</button>
+                                }
+                                @if (IsCoOwner(community) && IsLastOwner(community))
+                                {
+                                    <span class="muted text-sm">You are the only owner</span>
+                                }
+                                else if (IsCoOwner(community))
+                                {
+                                    @if (LeaveTargetIri == community.Id)
+                                    {
+                                        <span class="delete-confirm">
+                                            <span class="muted">Leave this community?</span>
+                                            <button type="button" class="button button--secondary" disabled="@LeaveBusy" @onclick="() => LeaveCommunityAsync(community)">
+                                                @(LeaveBusy ? "Leaving…" : "Confirm")
+                                            </button>
+                                            <button type="button" class="button button--secondary" disabled="@LeaveBusy" @onclick="() => LeaveTargetIri = null">Cancel</button>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="button button--secondary" @onclick="() => LeaveTargetIri = community.Id">Leave</button>
+                                    }
                                 }
                                 @if (ActiveTab == "mine" && community.Id is { Length: > 0 } cid)
                                 {
@@ -241,6 +266,10 @@ else
     private string? DeleteTargetIri { get; set; }
     private bool DeleteBusy { get; set; }
     private string? DeleteError { get; set; }
+
+    private string? LeaveTargetIri { get; set; }
+    private bool LeaveBusy { get; set; }
+    private string? LeaveError { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -405,5 +434,58 @@ else
         {
             DeleteBusy = false;
         }
+    }
+
+    private async Task LeaveCommunityAsync(Group community)
+    {
+        if (community.Id is not { Length: > 0 } id || Session.LocalModeration is not { } localModeration || Session.ActorId is not { } myIri)
+        {
+            return;
+        }
+
+        LeaveBusy = true;
+        LeaveError = null;
+        try
+        {
+            var result = await localModeration.DemoteCommunityOwnerAsync(new Iri(id), myIri);
+            if (result.IsSuccess)
+            {
+                LeaveTargetIri = null;
+                await LoadAsync();
+            }
+            else
+            {
+                LeaveError = $"Failed to leave community (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            LeaveError = "Something went wrong while leaving the community. Please try again.";
+        }
+        finally
+        {
+            LeaveBusy = false;
+        }
+    }
+
+    private bool IsCoOwner(Group community)
+    {
+        if (Session.ActorId is not { } me)
+        {
+            return false;
+        }
+
+        return community.AttributedTo is { } attr && attr.Any(a =>
+            a is IObjectOrLink obj && obj.ResolveObjectIri() is { } oi && oi.Value == me.Value);
+    }
+
+    private bool IsLastOwner(Group community)
+    {
+        if (community.AttributedTo is not { } attr)
+        {
+            return true;
+        }
+
+        return attr.Count() <= 1;
     }
 }

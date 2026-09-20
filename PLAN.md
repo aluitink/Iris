@@ -116,9 +116,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `ee47565` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** pending (community co-owner Leave flow)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** S3 fixed. S19 all facets fixed + deployed (Requests tab + Edit Save + notification Accept/Decline + decided-request filter). S19 facet 3 verified working (Edit Save persists). NEW FIX: auto-accepted follows now visible in notifications (was incorrectly filtered). S21/S20 re-verified working. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** S3 fixed. S19 all facets fixed + deployed (Requests tab + Edit Save + notification Accept/Decline + decided-request filter). S19 facet 3 verified working (Edit Save persists). NEW FIX: auto-accepted follows now visible in notifications (was incorrectly filtered). S21/S20 re-verified working. NEW: Community co-owner Leave flow added. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
@@ -165,11 +165,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **④ Community co-owner Leave flow (2026-09-20):** Co-owners can leave communities (demoted from owner); last owner protected. 1559 passed. [change doc](docs/changes/1596-community-co-owner-leave-flow.md)
 - **Notification follow-filter fix (2026-09-20):** Auto-accepted follows now visible in notifications (was incorrectly filtered out). 1559 passed. [change doc](docs/changes/1595-notification-follow-filter-fix.md)
 - **S19 facet 3 verification (2026-09-20):** Edit community Save verified working; regression test added. 1393 passed. [change doc](docs/changes/1594-s19-edit-community-save-verified-fixed.md)
 - **④ Community management — "My communities" tab + "Manage peers →" link (2026-09-20):** `/communities` third tab shows owned communities with Delete + link to Peers tab. 1392 passed. [change doc](docs/changes/1593-community-management-my-communities-tab.md)
 - **S19 facet 2 — Notification Accept/Decline + decided-request filter (2026-09-20):** Follow-request notifications show Accept/Decline; endpoint drops decided requests. 1392 passed. [change doc](docs/changes/1592-s19-notification-accept-decline.md)
-- **S19 facets 1+3 — Community Requests tab + Edit Save (2026-09-20):** Cookie-auth passthrough; Retry button; `manuallyApprovesMembers` persists. 1392 passed. [change doc](docs/changes/1591-s19-community-requests-tab-and-edit-save.md)
 
 
 
