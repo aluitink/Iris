@@ -41,3 +41,19 @@ Clean entry, two local accounts:
 **Re-verification evidence (Pass 91, 2026-09-20, andrew, container 13:19:52):** Registered `qa91test` → followed `andrew` (edge created in DB). `andrew`'s notifications → Follows tab → **"No notifications yet"** (0 items). API: `GET /local/v1/notifications?limit=20&offset=0&type=Follow` → **200**, `{"items":[],"totalItems":0}`. The follow edge exists but no notification was created. **NEW BUG confirmed.**
 
 **Re-verification evidence (Pass 92, 2026-09-20, andrew, container 13:26:35):** Registered `qa92test` → followed `andrew` (edge created in DB). `andrew`'s notifications → Follows tab → **"No notifications yet"** (0 items). API: `GET /local/v1/notifications?limit=20&offset=0&type=Follow` → **200**, `{"items":[],"totalItems":0}`. Both `qa91test` and `qa92test` follow edges exist in DB but NO notifications were created. **S22 STILL OPEN (2nd pass).**
+
+**Root cause analysis (Pass 93, 2026-09-20, container 13:26:35):** The follow activities **DO exist** in the database:
+- `Activities` table: `qa91test/follows/…` and `qa92test/follows/…` both present with `ActivityType = 'Follow'`, `ObjectIri = andrew`.
+- `BoxItems` table: Both follow IRI values are in `andrew`'s inbox (`Direction=1`, `ActorId=andrew`).
+- `Edges` table: Both follow edges exist (`Kind=0`, `qa91test→andrew`, `qa92test→andrew`).
+
+However, `GET /local/v1/notifications?type=Follow` returns `{"items":[],"totalItems":0}`. Other notification types work correctly:
+- `type=Like` → 13 items
+- `type=Announce` → 77 items
+- `type=Mention` → 3 items
+- `type=Reply` → 0 items (expected — no replies)
+- `type=Follow` → **0 items (BUG — 7 Follow activities exist in Activities table targeting andrew)**
+
+**Suspected root cause:** The notification query for `type=Follow` does not resolve local Follow activities from the inbox. It may only be looking at remote follows (via the shared inbox) or using a different join path that doesn't include local follows. The local Follow activities are stored in `Activities` with `ObjectIri = andrew` and are in `andrew`'s `BoxItems` inbox, but the API's Follow-type filter doesn't pick them up.
+
+**Fix:** Ensure the `/local/v1/notifications?type=Follow` query includes local Follow activities from the `Activities` table where `ObjectIri` matches the current user's IRI, joined with `BoxItems` (Direction=1) for inbox verification.

@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 93 (2026-09-20) — S22 root cause identified; S4/S17/S16-UX re-confirmed (container 13:26:35)
+- **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (same as Pass 92; no new deploy).
+- **Explored:** DB investigation (`Activities`, `BoxItems`, `Edges` tables), API endpoint testing (all notification types), `/notifications` (Follows tab), `/communities` (Following tab), `/profile` (3 tabs), object detail (poll).
+- **Result:** **S22 ROOT CAUSE IDENTIFIED:** Follow activities exist in `Activities` (7 rows targeting andrew) and `BoxItems` (inbox, Direction=1) but `GET /local/v1/notifications?type=Follow` returns 0 items. Other types work: Like (13), Announce (77), Mention (3). The API's Follow-type filter does not resolve local Follow activities from the inbox. **S4 re-confirmed OPEN** (19th pass). **S17 re-confirmed OPEN** (39 outbox requests). **S16-UX re-confirmed OPEN** (1 votes, NO badge).
+- **Checkpoint:** next pass — wait for dev to fix S22 (notification query), then re-verify S19 facet 2 (Accept/Decline buttons). Otherwise: S4, S17, or S16-UX.
+
 ## Pass 92 (2026-09-20) — S22 re-confirmed (2nd pass); S4/S17/S16-UX re-confirmed; Peers tab works (container 13:26:35)
 - **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (6th restart today; dev deployed `45e5b70` — Peers tab).
 - **Explored:** `/notifications` (Follows tab), `/register` (new account qa92test), actor page (follow andrew), `/communities` (Following tab), `/profile` (3 tabs), object detail (poll), community detail (Peers tab).
