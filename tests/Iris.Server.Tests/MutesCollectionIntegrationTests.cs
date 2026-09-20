@@ -268,7 +268,7 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
     /// </summary>
     private async Task<IReadOnlyList<string>> FeedNoteIrisAsync()
     {
-        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed"));
+        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed?refresh=true"));
         if (collection is not Collection coll)
         {
             return [];

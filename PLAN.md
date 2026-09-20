@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `ce70787` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `047ae90` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** Unified home feed workstream complete (Phases 1-7). S5 + S7 verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** Unified home feed workstream complete (Phases 1-7). Feed-load-feel complete (server-side cache). S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **① Minor UI fixes — feed load feel: server-side follow-feed caching (dev, 2026-09-20).** Significant server change: cache the merged follow feed per-actor with a short TTL so repeated `/u/{handle}/feed` requests don't re-walk every outbox. See [change doc](docs/changes/1000-inbox-1-card-header-polish.md).
+- **S21 — No auto-follow on community creation + `/c/{handle}` route 404 (dev, 2026-09-20).** When a local actor creates a community, the creator should be auto-followed (the community appears in their Following tab). Additionally, `GET /c/{handle}` returns 404 — the community's public URL route is missing. See [QA finding](docs/qa/).
 
 ## Dev Queue
 
@@ -145,7 +145,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **②④⑤ Community simplification — unify members with followers (Lemmy-shape). ② Phases 1-6 DONE; ④ control surfaces + ⑤ live-interop re-verify remain.** Members = followers, Join/Leave → Follow/Undo, `manuallyApprovesMembers` gates the Follow, single **Follow** button (labeled **Join**/**Leave** for communities), dead `ICommunityStore` member methods retired (kept `EdgeKind.CommunityMember` for the startup migration). **Peering** is the single owner-only extra. Remaining: **④** the `/communities` **management** page + Profile **Communities** tab (with unified-home-feed P5/P6); **⑤** live Lemmy interop re-verify (gated by `IRIS_LIVE_INTEROP`). See [docs/plans/community-simplification.md](docs/plans/community-simplification.md) + [change doc](docs/changes/1001-inbox-2-community-simplification.md).
 - **③④ Unified home feed — COMPLETE (Phases 1-7, 2026-09-20).** Two feed tabs + bottom strip + community IA rework. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
-- **① Minor UI fixes — feed load feel.** (1)(2)(3) Done. (4) **Remaining:** server-side follow-feed caching/streaming (now Active Slice). See [change doc](docs/changes/1000-inbox-1-card-header-polish.md).
+- **① Minor UI fixes — feed load feel — COMPLETE (2026-09-20).** (1)(2)(3) Done. (4) Server-side per-actor follow-feed cache (30s TTL + `?refresh=true` bypass). [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
 
 ## QA Queue
 
@@ -163,6 +163,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
+- **① Feed load feel — server-side follow-feed caching (2026-09-20):** Per-actor 30s TTL cache in `FeedService`; `?refresh=true` bypass; 5 new unit tests + 4 integration test fixes. 1390 passed. [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
 - **③ Phase 7 — E2E verification (2026-09-20):** Full live pass: feed tabs, FeedBar, create/delete community, Profile Communities. 0 console errors. [change doc](docs/changes/1587-e2e-verification.md)
 - **③ Phase 6 — Profile Communities tab (2026-09-20):** `/profile` Communities tab: followed communities with Join/Leave. [change doc](docs/changes/1586-profile-communities-tab.md)
 - **③ Phase 5 — Community management: delete (2026-09-20):** `DELETE /local/v1/c/{name}` (owner-only). [change doc](docs/changes/1585-community-management-delete.md)

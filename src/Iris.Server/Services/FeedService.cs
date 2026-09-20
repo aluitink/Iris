@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
@@ -42,8 +43,18 @@ namespace Iris.Server.Services;
 /// when 1, first-level replies to followed actors' top-level posts are included; when 2, second-level
 /// replies are also included. Depth 0 (default) filters all replies.
 /// </remarks>
+/// <remarks>
+/// <strong>Server-side per-actor feed cache.</strong> The merged (pre-thread-filter) feed is cached per
+/// actor IRI with a 30-second TTL. Within the window, repeated requests for the same actor return the
+/// cached list without re-walking every follow's outbox. The cache is process-local; a multi-instance
+/// deployment holds one copy per instance (bounded by the same TTL). Thread-depth, query, type,
+/// visibility, and source filters are all applied per-request to the cached list.
+/// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
+
+    private readonly ConcurrentDictionary<Iri, (List<IObjectOrLink> Items, DateTime BuiltUtc)> _feedCache = new();
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
     private readonly IActorDocumentFetcher _actorDocs;
@@ -86,10 +97,15 @@ public sealed class FeedService : IFollowFeedService
         _moderation = moderation;
     }
 
+    /// <summary>
+    /// Removes all per-actor feed cache entries (test isolation / teardown).
+    /// </summary>
+    public void ClearFeedCache() => _feedCache.Clear();
+
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, bool bypassCache = false, CancellationToken ct = default)
     {
-        var feed = await BuildFeedAsync(actorIri, threadDepth, ct).ConfigureAwait(false);
+        var feed = await BuildFeedAsync(actorIri, threadDepth, bypassCache, ct).ConfigureAwait(false);
 
         // A non-empty query filters the feed to the matching items (the same content/name match as the
         // community feed's ?q filter, F-23 / 21.4.2): an item matches when its content/name (or, for
@@ -128,9 +144,9 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <summary>
-    /// Builds the unfiltered followed feed for the given actor: the actor's <em>own</em> outbox items plus
-    /// the union of the actor's local and remote follows' outbox items, newest-first, de-duplicated, capped
-    /// by <see cref="FeedOptions"/>.
+    /// Builds (or retrieves from the per-actor cache) the unfiltered followed feed for the given actor:
+    /// the actor's <em>own</em> outbox items plus the union of the actor's local and remote follows'
+    /// outbox items, newest-first, de-duplicated, capped by <see cref="FeedOptions"/>.
     /// </summary>
     /// <remarks>
     /// The actor's own outbox is always merged in (54.17): a home timeline shows the signed-in actor's own
@@ -140,12 +156,59 @@ public sealed class FeedService : IFollowFeedService
     /// IRI (a post the actor made cannot also appear in a follow's outbox, but the de-dup is a cheap
     /// safeguard) and caps the result to <see cref="FeedOptions.MaxItems"/>.
     /// </remarks>
+    /// <remarks>
+    /// <strong>Server-side per-actor caching (feed load feel).</strong> The merged feed is cached per
+    /// actor IRI with a short TTL (<see cref="CacheTtl"/> = 30 s). Within the window, a repeated
+    /// <c>GetFeedAsync</c> call for the same actor returns the cached item list without re-walking
+    /// every follow's outbox (the expensive path). The cache is keyed by the actor's IRI alone (the
+    /// merge is deterministic for a given set of follows); thread-depth filtering is applied to the
+    /// cached list per-request (the cached list is the <em>pre-thread-filter</em> union, so a depth
+    /// parameter can still narrow it without a rebuild). Stale entries beyond the TTL are rebuilt on
+    /// the next request. The cache is process-local (a <see cref="ConcurrentDictionary{TKey,TValue}"/>);
+    /// in a multi-instance deployment each instance holds its own copy (bounded by the same TTL).
+    /// </remarks>
     /// <param name="actorIri">The local actor whose feed is being built.</param>
     /// <param name="threadDepth">When non-null and > 0, replies (from both the actor's own outbox and
     /// followed actors' outboxes) are included in the feed (117.1, 117.5). When null or 0, all replies
     /// are filtered out — the home timeline shows only top-level content.</param>
+    /// <param name="bypassCache">When true, the per-actor cache is skipped (the feed is rebuilt and the
+    /// cache entry is refreshed).</param>
     /// <param name="ct">Cancellation token.</param>
-    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, int? threadDepth, CancellationToken ct)
+    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, int? threadDepth, bool bypassCache, CancellationToken ct)
+    {
+        if (!bypassCache
+            && _feedCache.TryGetValue(actorIri, out var cached)
+            && DateTime.UtcNow - cached.BuiltUtc < CacheTtl)
+        {
+            return ApplyThreadFilter(cached.Items, threadDepth);
+        }
+
+        var rebuilt = await BuildFeedUncachedAsync(actorIri, ct).ConfigureAwait(false);
+        _feedCache[actorIri] = (new List<IObjectOrLink>(rebuilt), DateTime.UtcNow);
+        return ApplyThreadFilter(rebuilt, threadDepth);
+    }
+
+    /// <summary>
+    /// Applies the thread-depth filter to a pre-built feed list: when <paramref name="threadDepth"/> is
+    /// null or 0, follow-replies are excluded (the default home-timeline behavior); when &gt; 0, all
+    /// items are kept.
+    /// </summary>
+    private static IReadOnlyList<IObjectOrLink> ApplyThreadFilter(IReadOnlyList<IObjectOrLink> items, int? threadDepth)
+    {
+        if (threadDepth is > 0)
+        {
+            return items;
+        }
+
+        return items.Where(item => !IsFollowReply(item)).ToList();
+    }
+
+    /// <summary>
+    /// Builds the unfiltered followed feed for the given actor (no cache): the actor's <em>own</em>
+    /// outbox items plus the union of the actor's local and remote follows' outbox items, de-duplicated,
+    /// capped by <see cref="FeedOptions"/>.
+    /// </summary>
+    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedUncachedAsync(Iri actorIri, CancellationToken ct)
     {
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
 
@@ -174,11 +237,6 @@ public sealed class FeedService : IFollowFeedService
         // allows opting in to include own replies (consistent with the followed-actor reply filter).
         foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
         {
-            if (threadDepth is not (> 0) && IsFollowReply(item))
-            {
-                continue;
-            }
-
             feed.Add(item);
         }
 
@@ -202,9 +260,7 @@ public sealed class FeedService : IFollowFeedService
                             ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
                             : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
 
-                    return items
-                        .Where(item => threadDepth is (> 0) || !IsFollowReply(item))
-                        .ToList();
+                    return items.ToList();
                 }
                 catch
                 {

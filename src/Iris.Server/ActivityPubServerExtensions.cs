@@ -9374,6 +9374,7 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(403);
         }
 
+        var refresh = HasRefreshBypass(context);
         var items = await feedService.GetFeedAsync(
             actorIri,
             query.Length > 0 ? query : null,
@@ -9381,6 +9382,7 @@ public static class ActivityPubServerExtensions
             threadDepth,
             requesterIri,
             source.Length > 0 ? source : null,
+            refresh,
             ct).ConfigureAwait(false);
 
         // Enrich nested objects with likedCount/sharedCount (+ isLiked/isShared for authenticated
@@ -9398,10 +9400,8 @@ public static class ActivityPubServerExtensions
             supportsRefresh: true, supportsQuery: true, supportsType: true, supportsDepth: true,
             namespaceIri: ns);
 
-        // The feed is not served through the local collection-page response cache (it merges remote
-        // follows' outboxes over the wire on every request), but it still carries the collection
-        // Cache-Control so intermediates may cache briefly.
-        var refresh = HasRefreshBypass(context);
+        // The feed is served through the server-side per-actor feed cache (30s TTL); a ?refresh=true
+        // bypass forces a rebuild. The Cache-Control header tells intermediates the same.
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;

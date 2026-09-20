@@ -62,10 +62,14 @@ public interface IFollowFeedService
     /// <param name="source">Optional source filter (unified-home-feed Phase 2): <c>"people"</c> → items
     /// whose <c>attributedTo</c> does not include a <c>Group</c>; <c>"communities"</c> → items whose
     /// <c>attributedTo</c> does include a <c>Group</c>; null/absent → full merged feed (back-compat).</param>
+    /// <param name="bypassCache">When true, the per-actor feed cache is skipped (the feed is rebuilt
+    /// from the stores and the cache entry is refreshed). This is the server-side <c>?refresh=true</c>
+    /// escape hatch: after a moderation edge change (block/mute/unblock/unmute) or a new post, the
+    /// caller can force a rebuild without waiting for the TTL to lapse.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the feed items (the actor's own posts plus the follows' posts;
     /// filtered when a query/type/source filter is supplied; empty only when the actor has no posts of
     /// their own and no followed actor has content, or nothing matches the filters). A remote outbox that
     /// cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, CancellationToken ct = default);
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, string? source = null, bool bypassCache = false, CancellationToken ct = default);
 }

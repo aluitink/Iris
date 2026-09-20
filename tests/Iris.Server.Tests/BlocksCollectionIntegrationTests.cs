@@ -271,7 +271,7 @@ public sealed class BlocksCollectionIntegrationTests : IAsyncLifetime
     /// </summary>
     private async Task<IReadOnlyList<string>> FeedNoteIrisAsync(Iri actorIri)
     {
-        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed"));
+        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed?refresh=true"));
         if (collection is not Collection coll)
         {
             return [];

@@ -281,8 +281,9 @@ public sealed class FeedServiceTests
         Assert.Empty(await service.GetFeedAsync(alice));
 
         // Un-muting (removing the mute edge) restores bob's content to the feed (the follow was never
-        // severed).
+        // severed). The cache must be cleared to pick up the new moderation state.
         await persistence.Moderation.RemoveMuteAsync(alice, bob);
+        service.ClearFeedCache();
         var restored = await service.GetFeedAsync(alice);
         Assert.Single(restored);
         Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(restored[0]));
@@ -1126,6 +1127,140 @@ public sealed class FeedServiceTests
 
         Assert.Single(feed);
         Assert.Equal("https://a.test/announce/b-1", IdOf(feed[0]));
+    }
+
+    // --- Server-side per-actor feed cache (feed load feel) ----------------------------
+
+    [Fact]
+    public async Task Feed_Cache_SameActor_ReturnsCachedList()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, bob, "b-2", "bob 2");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var first = await service.GetFeedAsync(alice);
+        var second = await service.GetFeedAsync(alice);
+
+        Assert.Equal(2, first.Count);
+        Assert.Equal(2, second.Count);
+        Assert.Equal(IdOf(first[0]), IdOf(second[0]));
+        Assert.Equal(IdOf(first[1]), IdOf(second[1]));
+    }
+
+    [Fact]
+    public async Task Feed_Cache_DifferentActors_AreIsolated()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var carol = Actor(LocalHost, "carol");
+            var bob = Actor(LocalHost, "bob");
+            var dave = Actor(LocalHost, "dave");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, dave, "Dave");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            persistence.Follows.RecordFollowAsync(carol, dave).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, dave, "d-1", "dave 1");
+        }));
+
+        var aliceFeed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+        var carolFeed = await service.GetFeedAsync(Actor(LocalHost, "carol"));
+
+        Assert.Single(aliceFeed);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(aliceFeed[0]));
+        Assert.Single(carolFeed);
+        Assert.Equal($"https://{LocalHost}/notes/d-1", IdOf(carolFeed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_Cache_ThreadDepth_AppliedPerRequest()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-top", "bob top-level");
+            AddReply(persistence, bob, "b-reply", "bob reply", Actor(LocalHost, "carol"));
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+
+        // Default (threadDepth null): replies excluded.
+        var topOnly = await service.GetFeedAsync(alice);
+        Assert.Single(topOnly);
+        Assert.Equal($"https://{LocalHost}/notes/b-top", IdOf(topOnly[0]));
+
+        // With threadDepth=1: replies included (from the same cached list).
+        var withReplies = await service.GetFeedAsync(alice, threadDepth: 1);
+        Assert.Equal(2, withReplies.Count);
+        var ids = new HashSet<string?>(withReplies.Select(IdOf));
+        Assert.Contains($"https://{LocalHost}/notes/b-top", ids);
+        Assert.Contains($"https://{LocalHost}/notes/b-reply", ids);
+
+        // The default view still excludes the reply (the cached list is unchanged).
+        var topOnlyAgain = await service.GetFeedAsync(alice);
+        Assert.Single(topOnlyAgain);
+        Assert.Equal($"https://{LocalHost}/notes/b-top", IdOf(topOnlyAgain[0]));
+    }
+
+    [Fact]
+    public async Task Feed_Cache_ClearFeedCache_ForcesRebuild()
+    {
+        var (service, persistence) = Build(persistence: SeedLocal(p =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(p, bob, "Bob");
+            p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(p, bob, "b-1", "bob 1");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var first = await service.GetFeedAsync(alice);
+        Assert.Single(first);
+
+        // Clear the cache and add a new post.
+        service.ClearFeedCache();
+        AddPost(persistence, Actor(LocalHost, "bob"), "b-2", "bob 2");
+
+        var second = await service.GetFeedAsync(alice);
+        Assert.Equal(2, second.Count);
+    }
+
+    [Fact]
+    public async Task Feed_Cache_QueryFilter_AppliedPerRequest()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-hello", "hello world");
+            AddPost(persistence, bob, "b-goodbye", "goodbye moon");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var all = await service.GetFeedAsync(alice);
+        Assert.Equal(2, all.Count);
+
+        var filtered = await service.GetFeedAsync(alice, query: "hello");
+        Assert.Single(filtered);
+        Assert.Equal($"https://{LocalHost}/notes/b-hello", IdOf(filtered[0]));
+
+        // The unfiltered view still returns both (the cache is not mutated by the query).
+        var allAgain = await service.GetFeedAsync(alice);
+        Assert.Equal(2, allAgain.Count);
     }
 
     // --- Builders --------------------------------------------------------------------

@@ -238,7 +238,7 @@ public sealed class CrossInstanceBlockedContentIntegrationTests : IAsyncLifetime
     /// </summary>
     private static async Task<bool> FeedContainsNoteAsync(HttpClient http, string noteIri)
     {
-        var response = await http.GetAsync($"https://{AHost}/ap/v1/u/{Alice}/feed");
+        var response = await http.GetAsync($"https://{AHost}/ap/v1/u/{Alice}/feed?refresh=true");
         response.EnsureSuccessStatusCode();
         var body = await response.Content.ReadAsStringAsync();
         return body.Contains(noteIri, StringComparison.Ordinal);
