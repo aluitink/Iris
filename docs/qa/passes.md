@@ -17,12 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 38 (2026-09-20) — S9/S11/S4/S18 re-verify on rebuilt container
+## Pass 38 (2026-09-20) — S9/S11/S12a/S10/S4/S18 re-verify on rebuilt container
 
-- **Build/Live:** rebuilt container (5 min before pass), deployed code includes `d729c66` (S11 fix) + `c1da416` (S9 fix). Container `irisweb-iris-web-1` healthy.
-- **Explored:** clean entry (andrew). S11a: body-less poll ("QA Pass 38 bodyless poll test" + 2 options) → posts successfully, visible in Profile "Your posts" with options. S9: flagged bob (actor detail) → button changes to "Reported ✓" + disabled, 0 console errors. S4: Communities → Following tab still shows only "technology" (local), remote "interop" missing. S18: qa37test (registered Pass 37) NOT in Followers tab (only qa34test, qa36test) — follow state not persisted.
-- **Result:** 0 new; **2 confirmed FIXED** (S9, S11a/b); **2 re-confirmed OPEN** (S4 remote, S18).
-- **Checkpoint:** next pass targets S10 (Article mislabel), S12a (@mention dead link), S17 (profile over-fetch), S3 (Create-IRI 404), S13 (Lemmy 404 noise), S15 (visibility hint), S16-UX (poll badge), S19 (community Requests), S2/S14 (proxy 401).
+- **Build/Live:** rebuilt container post-`b6987d4` (S12a) + `bdc0e66` (S10) + `d729c66` (S11) + `c1da416` (S9). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S11a: body-less poll → posts successfully, visible in Profile "Your posts". S9: flagged bob → "Reported ✓" + disabled. S12a: posted `@Alice` → mention links to `…/u/Alice`; navigating to that URL **redirects to canonical `alice` actor page** (200, renders profile, 0 errors) — no longer a dead link. S10: compose selector now says "Article" (no "(long-form)"); formatting tip honest about shared 500-char limit; compose hint type-aware ("An article addressed to…"). S4: Communities → Following tab still shows only "technology" (local), remote "interop" missing. S18: qa37test NOT in Followers tab — follow state not persisted.
+- **Result:** 0 new; **4 confirmed FIXED** (S9, S11a/b, S12a, S10); **2 re-confirmed OPEN** (S4 remote, S18).
+- **Checkpoint:** next pass targets S17 (profile over-fetch), S3 (Create-IRI 404), S13 (Lemmy 404 noise), S15 (visibility hint), S16-UX (poll badge), S19 (community Requests), S2/S14 (proxy 401).
 
 ---
 

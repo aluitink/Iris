@@ -138,9 +138,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S12** (S2) — @mention case + autocomplete mismatch: [s12](docs/qa/s12-mention-case-and-autocomplete.md)
 - **S3** (S3) — object-detail 404s local post collections: [s03](docs/qa/s03-object-detail-create-iri-404.md)
-- **S10** (S2) — Article "(long-form)" mislabeled: [s10](docs/qa/s10-article-longform-mislabeled.md)
 - **S13** (S3) — remote-Lemmy object-detail 404 noise: [s13](docs/qa/s13-remote-lemmy-404-noise.md)
 - **S15** (S3) — compose visibility hint misleading: [s15](docs/qa/s15-visibility-hint-misleading.md)
 
@@ -154,9 +152,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **13 open. No blockers (all S2/S3-sev).** (Pass 38: S9 + S11a/b confirmed FIXED on rebuilt container post-`d729c66`; S4 remote + S18 re-confirmed open.)
-- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S12, S17; S3-sev S3, S10, S13, S15, S16-UX. S4 (remote communities missing from Following tab) is S2-sev and blocks remote community discovery.
-- **Last pass:** 38 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S9 + S11 now fixed. Remaining open: S4 (remote), S10, S12a, S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
+- **11 open. No blockers (all S2/S3-sev).** (Pass 38: S9 + S11a/b + S12a + S10 confirmed FIXED on rebuilt container post-`bdc0e66`; S4 remote + S18 re-confirmed open.)
+- **Top priority:** S18 (local follow → empty Home timeline + follow state not persisted; data-integrity, breaks the core follow loop), S2/S14 (signed-out proxy 401s unsigned GET — seam deployed but not functional), S19 (community Requests tab dead-end — moderation entry point broken), then S17; S3-sev S3, S13, S15, S16-UX. S4 (remote communities missing from Following tab) is S2-sev and blocks remote community discovery.
+- **Last pass:** 38 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S9, S11, S12a, S10 now fixed. Remaining open: S4 (remote), S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
 
 ## Paused Questions
 

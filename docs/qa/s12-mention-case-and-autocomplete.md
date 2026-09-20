@@ -1,8 +1,8 @@
 # S12 — @mention linkify (two parts)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (S12a re-confirmed Pass 35, 2026-09-20; S12b clean)
-- **Found:** Pass 18 (2026-09-20) — S12a re-confirmed Passes 27, 35
+- **Status:** fixed (2026-09-20, verified Pass 38 on rebuilt container post-`b6987d4`)
+- **Found:** Pass 18 (2026-09-20) — S12a re-confirmed Passes 27, 35; **fixed + verified Pass 38**
 
 ## S12a — Case-sensitive same-instance mention → dead link
 
@@ -26,3 +26,5 @@
 **Re-verification evidence (Pass 27, 2026-09-20, andrew):** on the QA Pass 18 note, the `@Alice` mention still links to `https://iris.luit.ink/ap/v1/u/Alice` → **404** (the canonical `…/u/alice` = 200); the `/actor?iri=…/u/Alice` page shows **"Actor not found."** S12a STILL OPEN. (S12b not re-exercised this pass.)
 
 **Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** (S12a) typed `@Alice` without autocomplete → posted → profile shows `@Alice` linking to `…/ap/v1/u/Alice` → **404**; canonical `…/u/alice` = 200. STILL OPEN. (S12b) typed `@alice` → autocomplete shows **only** the local `alice` actor (no remote candidates); accepting it resolves to canonical `…/ap/v1/u/alice` (200). S12b appears **fixed** (or was never reproducible on this build).
+
+**Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`b6987d4`):** (S12a) typed `@Alice` → posted → profile shows `@Alice` linking to `https://iris.luit.ink/ap/v1/u/Alice`; navigating to that URL **redirects to the canonical `alice` actor page** (title "alice · Iris", renders profile with Block/Follow buttons, 0 console errors). The mention is no longer a dead link. **S12a FIXED.** (S12b not re-exercised — was already clean in Pass 35.)
