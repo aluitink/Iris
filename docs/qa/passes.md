@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 95 (2026-09-20) — S22 FIXED; S19 facet 2 PARTIALLY FIXED; NEW BUG S23 (Accept/Decline 404) (container 14:09:44)
+- **Build/Live:** container `irisweb-iris-web-1` started 14:09:44 (7th restart; dev deployed `ee47565` — "Fix notification follow-filter + verify S19 facet 3").
+- **Explored:** `/notifications` (Follows tab — 7 follow requests with Accept/Decline buttons), Accept/Decline button testing (404 errors), DB edge verification.
+- **Result:** **S22 FIXED** — API now returns 7 Follow notifications; UI shows all 7 with Accept/Decline buttons. **S19 facet 2 PARTIALLY FIXED** — buttons visible but clicking Accept → `POST /local/v1/u/andrew/requests/accept/{iri}` → **404**; Decline → `.../reject/{iri}` → **404**. DB edges unchanged. **NEW BUG S23** filed. **S4 re-confirmed OPEN** (21st pass — not re-tested this pass, same container).
+- **Checkpoint:** next pass — wait for dev to fix S23 (register accept/reject endpoints), then re-verify S19 facet 2 end-to-end. Otherwise: S4, S17, or S16-UX.
+
 ## Pass 94 (2026-09-20) — S4 20th pass; Peers tab verified; session hydration delay confirmed (container 13:26:35)
 - **Build/Live:** container `irisweb-iris-web-1` started 13:26:35 (same as Pass 92/93; no new deploy).
 - **Explored:** Fresh login → `/home` (feed renders after ~15s, 8 posts), `/communities` (Following tab, 3 local communities), `/profile` (renders correctly), community detail (Peers tab — 1 peer: andrew, with Follow/Look up/Refresh). User report investigated: "feed doesn't render unless I click around; some pages say I'm not logged in."
