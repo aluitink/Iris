@@ -1027,8 +1027,12 @@ public static class WebAppFactory
             // Filter out Follow notifications that are no longer pending (already accepted/rejected).
             // A Follow notification is actionable only when the follow request is still in the queue.
             // Once decided (edge removed), the notification becomes historical noise.
+            // Only apply this filter when the account has manuallyApprovesFollowers set — for
+            // auto-accepting accounts, Follow notifications are not actionable but are still
+            // meaningful (they indicate who followed you), so they should remain visible.
             var pendingRequests = await persistence.Follows.GetFollowRequestsAsync(account.ActorId, ct);
             var pendingSet = pendingRequests.Select(r => r.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var accountManuallyApproves = await IsAccountManuallyApprovesFollowersAsync(persistence, account.ActorId, ct);
             filtered = filtered.Where(item =>
             {
                 if (item is not Activity { Type: { } t } act)
@@ -1042,7 +1046,28 @@ public static class WebAppFactory
                 }
 
                 var requesterIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
-                return requesterIri is { } ri && pendingSet.Contains(ri.Value);
+                if (requesterIri is not { } ri)
+                {
+                    return false;
+                }
+
+                // If the requester is in the pending queue, always show the notification.
+                if (pendingSet.Contains(ri.Value))
+                {
+                    return true;
+                }
+
+                // If the requester is not in the pending queue, only hide the notification if the
+                // account has manuallyApprovesFollowers set (meaning the follow was either accepted
+                // or rejected, and the notification is now historical noise). For auto-accepting
+                // accounts, the follow was never in the queue (it was auto-accepted), so the
+                // notification should remain visible.
+                if (accountManuallyApproves)
+                {
+                    return false;
+                }
+
+                return true;
             }).ToList();
 
             // Optional type filter (e.g. ?type=Like for likes only). "Mention" is a
@@ -1620,6 +1645,22 @@ public static class WebAppFactory
         }
 
         return ServerOnlyNotificationTypes.Contains(type);
+    }
+
+    private static async Task<bool> IsAccountManuallyApprovesFollowersAsync(
+        IPersistenceProvider persistence,
+        Iris.Core.Identity.Iri actorId,
+        CancellationToken ct)
+    {
+        if (await persistence.Actors.TryGetActorAsync(actorId, out var actor, ct).ConfigureAwait(false)
+            && actor is { } localActor)
+        {
+            return localActor.ExtensionData is { } ext
+                && ext.TryGetValue("manuallyApprovesFollowers", out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+
+        return false;
     }
 
     internal static IReadOnlyList<IObjectOrLink> FilterInboxByPrefs(

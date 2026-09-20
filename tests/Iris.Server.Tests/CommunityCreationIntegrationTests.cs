@@ -271,6 +271,40 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
         Assert.NotNull(key);
     }
 
+    [Fact]
+    public async Task UpdateActorAsync_OnGroup_CommunityDocumentReflectsChange()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+        var createResult = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(createResult.IsSuccess, $"create must succeed (got {createResult.StatusCode})");
+
+        var updatedGroup = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = "devs",
+            Name = ["Updated Name"],
+            Summary = ["Updated summary"],
+            Icon = [],
+        };
+
+        var updateResult = await _client.UpdateActorAsync(communityIri, updatedGroup);
+        Assert.True(updateResult.IsSuccess, $"update must be accepted (got {updateResult.StatusCode})");
+
+        Assert.True(
+            await _persistence.Communities.TryGetCommunityAsync(communityIri, out var after),
+            "the community should still be stored after the update");
+        Assert.NotNull(after);
+        Assert.Equal("Updated Name", after.Name?.FirstOrDefault());
+        Assert.Equal("Updated summary", after.Summary?.FirstOrDefault());
+
+        using var docRequest = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/c/devs");
+        using var docResponse = await _server.CreateClient().SendAsync(docRequest);
+        Assert.Equal(System.Net.HttpStatusCode.OK, docResponse.StatusCode);
+        var docBody = await docResponse.Content.ReadAsStringAsync();
+        Assert.Contains("\"Updated Name\"", docBody, StringComparison.Ordinal);
+        Assert.Contains("\"Updated summary\"", docBody, StringComparison.Ordinal);
+    }
+
     // --- 19.5.1 discovery: the community document advertises iris:capabilities ---------------
 
     [Fact]
