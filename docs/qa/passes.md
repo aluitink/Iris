@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 76 (2026-09-20) — S17/S19 re-verify (Dev fix deployed)
+
+- **Build/Live:** Dev fix deployed. Container healthy.
+- **Explored:** S17: `/profile` — initial 9 pages, Replies 13 pages, Likes 13 pages (35 total). S19: Notifications All tab — 3 follow requests, NO Accept/Decline. Andrew actor page — no Requests tab.
+- **Result:** 0 new; **S17 re-confirmed OPEN** (35 outbox requests for 3 tabs; initial 9, tab-switch 13 each). **S19 re-confirmed OPEN** (no Accept/Decline in notifications; no Requests tab on actor page).
+- **Checkpoint:** next pass targets S20 (Communities tab), S21 (/c/{handle}), S16-UX (poll badge).
+
+---
+
 ## Pass 75 (2026-09-20) — S4/S21 re-verify (Dev fix deployed)
 
 - **Build/Live:** Dev fix deployed. Container healthy.
