@@ -116,13 +116,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `65ccfa0` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `P5-commit` (HEAD; rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
-- **Note:** the S7 fix (Directory external lookup via `Ui.GetActorAsync`) is live. S5 + S7 both verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
+- **Note:** Phase 5 community delete is live. S5 + S7 verified fixed. S2/S14 proxy seam still 401s unsigned GETs.
 
 ## Active Slice
 
-- **③④ Unified home feed — Phase 5: community management page (dev, 2026-09-20).** Server `DELETE /local/v1/c/{name}` (last-owner-only) + `DeleteCommunityAsync`. `/communities` repurposed as management page (my-communities + create + delete/leave). Top menu "Communities" → management page. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
+- **③④ Unified home feed — Phase 6: leave-when-co-owner (dev, 2026-09-20).** `POST /local/v1/c/{name}/leave` (co-owner only) + `RemoveFollowerAsync`. `/communities` management page: leave button for co-owners. See [docs/plans/unified-home-feed.md](docs/plans/unified-home-feed.md).
 
 ## Dev Queue
 
@@ -163,13 +163,12 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
-- **③ Phase 4 — Wire home-feed tabs to `?source=` filter (2026-09-20):** `HomeTabState` scoped service bridges FeedBar ↔ HomeTimeline. Tab switch triggers `?source=people|communities` feed request; per-tab empty states. Live-verified: 0 console errors. [change doc](docs/changes/1584-home-feed-tab-source-wiring.md)
-- **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`: Posts/Communities tabs + global `🔔` bell. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
-- **③ Phase 2 — Server `?source=` filter (2026-09-20):** `GET /u/{handle}/feed?source=people|communities` filters by attributedTo Group. All suites green (Server 1380, Web 106).
-- **S13 — Remote Lemmy object-detail 404 noise (2026-09-20):** Collection walks skipped for non-local objects. [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
-- **S3 — Object-detail 404s local post collections (2026-09-20):** `ContentIri` resolves to Note IRI. [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
-- **S15 — Compose visibility hint misleading (2026-09-20):** `ComposeHint` visibility + type aware. [change doc](docs/changes/1580-compose-visibility-hint-misleading.md)
-- **Inbox ① card header polish (2026-09-20):** moderation icons removed from feed cards (reserved for actor detail), header color strip extended to full width, boost "replying to" hint dropped. Feed load feel investigation deferred (server-side caching needed). [change doc](docs/changes/1000-inbox-1-card-header-polish.md)
+- **③ Phase 5 — Community management: delete (2026-09-20):** `DELETE /local/v1/c/{name}` (owner-only) + `DeleteCommunityAsync` across all 3 stores. `/communities` page: delete button with 2-step confirm for creators. 5 new server tests. [change doc](docs/changes/1585-community-management-delete.md)
+- **③ Phase 4 — Wire home-feed tabs to `?source=` filter (2026-09-20):** `HomeTabState` scoped service bridges FeedBar ↔ HomeTimeline. [change doc](docs/changes/1584-home-feed-tab-source-wiring.md)
+- **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
+- **③ Phase 2 — Server `?source=` filter (2026-09-20):** `GET /u/{handle}/feed?source=people|communities`. All suites green.
+- **S13 — Remote Lemmy object-detail 404 noise (2026-09-20):** [change doc](docs/changes/1582-remote-lemmy-object-detail-404-noise.md)
+- **S3 — Object-detail 404s local post collections (2026-09-20):** [change doc](docs/changes/1581-object-detail-create-iri-404-collections.md)
 
 
 

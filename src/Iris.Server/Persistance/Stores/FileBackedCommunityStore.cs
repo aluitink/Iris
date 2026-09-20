@@ -158,6 +158,24 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
             return result;
         }, ct);
 
+    /// <inheritdoc/>
+    public Task<bool> DeleteCommunityAsync(Iri communityIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s =>
+        {
+            var removed = CommunityMap(s).TryRemove(communityIri.Value, out _);
+            if (!removed)
+            {
+                return false;
+            }
+
+            foreach (var name in new[] { Members, Follows, Followers, Blocks, Flags, Mutes, JoinRequests })
+            {
+                SetMap(s, name).TryRemove(communityIri.Value, out _);
+            }
+
+            return true;
+        }, true, ct);
+
     // --- Community moderation (19.5.4) ---
 
     /// <inheritdoc/>

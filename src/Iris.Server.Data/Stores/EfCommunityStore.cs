@@ -182,6 +182,40 @@ public sealed class EfCommunityStore : ICommunityStore
     }
 
     /// <inheritdoc/>
+    public async Task<bool> DeleteCommunityAsync(Iri communityIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var iri = communityIri.Value;
+        var entity = await db.Set<ActorEntity>().FirstOrDefaultAsync(
+            e => e.Id == iri && (e.Type == "Group" || e.Type == ActivityJson.FeedCommunityType), ct).ConfigureAwait(false);
+        if (entity is null)
+        {
+            return false;
+        }
+
+        db.Remove(entity);
+        var edgeKinds = new[]
+        {
+            EdgeKind.CommunityMember,
+            EdgeKind.CommunityJoinRequest,
+            EdgeKind.CommunityFollow,
+            EdgeKind.CommunityFollower,
+            EdgeKind.CommunityBlock,
+            EdgeKind.CommunityFlag,
+            EdgeKind.CommunityMute,
+        };
+        var asSource = await db.Set<EdgeEntity>()
+            .Where(e => edgeKinds.Contains(e.Kind) && e.Source == iri).ToListAsync(ct).ConfigureAwait(false);
+        db.Set<EdgeEntity>().RemoveRange(asSource);
+        var asTarget = await db.Set<EdgeEntity>()
+            .Where(e => e.Kind == EdgeKind.CommunityFollower && e.Target == iri).ToListAsync(ct).ConfigureAwait(false);
+        db.Set<EdgeEntity>().RemoveRange(asTarget);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <inheritdoc/>
     public Task<bool> AddBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
         => _edges.AddIfNewAsync(EdgeKind.CommunityBlock, communityIri.Value, actorIri.Value, ct);
 

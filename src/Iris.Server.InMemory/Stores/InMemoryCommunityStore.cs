@@ -194,6 +194,25 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         return Task.FromResult<IReadOnlyCollection<Iri>>(result);
     }
 
+    /// <inheritdoc/>
+    public Task<bool> DeleteCommunityAsync(Iri communityIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var removed = _communities.TryRemove(communityIri, out _);
+        if (removed)
+        {
+            _members.TryRemove(communityIri, out _);
+            _follows.TryRemove(communityIri, out _);
+            _followers.TryRemove(communityIri, out _);
+            _blocks.TryRemove(communityIri, out _);
+            _flags.TryRemove(communityIri, out _);
+            _mutes.TryRemove(communityIri, out _);
+            _joinRequests.TryRemove(communityIri, out _);
+        }
+
+        return Task.FromResult(removed);
+    }
+
     // --- Community moderation (19.5.4) ---
 
     /// <inheritdoc/>

@@ -407,6 +407,34 @@ public sealed class LocalModerationClient : ILocalModerationClient
         return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
     }
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, CancellationToken ct = default)
+        => LocalDeleteCommunityAsync(communityId, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct)
+        => LocalDeleteCommunityAsync(communityId, credentials, ct);
+
+    /// <summary>
+    /// Performs a local, owner-gated DELETE for community deletion:
+    /// <c>DELETE /local/v1/c/{name}</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalDeleteCommunityAsync(
+        Iri communityId,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var (requestUri, handler, ownsHandler) = BuildCommunityLocalRequest(communityId, string.Empty, targetId: null, credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
     /// <summary>
     /// Builds the request URI and resolves the auth handler for a community-local request.
     /// </summary>
@@ -427,8 +455,9 @@ public sealed class LocalModerationClient : ILocalModerationClient
         var communitySegment = community[communitySegmentStart..];
         var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
         var target = targetId is not null ? $"/{targetId.Value.Value.TrimStart('/')}" : string.Empty;
+        var suffix = string.IsNullOrEmpty(path) ? string.Empty : $"/{path}{target}";
         var requestUri = new Uri(
-            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/{path}{target}");
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}{suffix}");
 
         var (handler, ownsHandler) = ResolveLocalHandlerWithPassthrough(credentials);
         return (requestUri, handler, ownsHandler);

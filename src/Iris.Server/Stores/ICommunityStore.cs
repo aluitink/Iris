@@ -159,9 +159,19 @@ public interface ICommunityStore
     /// <summary>
     /// Returns the IRIs of all communities this store hosts (the local communities).
     /// </summary>
-    /// <param name="ct">Cancellation token.</param>
+    /// <param name="ct">The cancellation token.</param>
     /// <returns>A task that completes with the community IRIs (possibly empty).</returns>
     public Task<IReadOnlyCollection<Iri>> GetAllCommunityIrisAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a community and all its associated edges (followers, follows, blocks, flags, mutes,
+    /// join requests). The community document is removed from the store.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community to delete.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when the community existed and was
+    /// deleted; <see langword="false"/> when no community was stored under that IRI.</returns>
+    public Task<bool> DeleteCommunityAsync(Iri communityIri, CancellationToken ct = default);
 
     // --- Community moderation (19.5.4) ---
     //

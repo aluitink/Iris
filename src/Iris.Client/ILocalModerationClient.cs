@@ -437,4 +437,23 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not followed; 503 degraded).</returns>
     public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a community (Phase 5): a local, owner-gated request to the community's home instance
+    /// (<c>DELETE /local/v1/c/{name}</c>) that removes the community document and all its associated
+    /// edges (followers, follows, moderation, join requests).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) to delete.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not found).</returns>
+    public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Deletes a community (Phase 5) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) to delete.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not found).</returns>
+    public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
 }

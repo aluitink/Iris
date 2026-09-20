@@ -77,6 +77,11 @@ else
     {
         <div class="card"><div class="error" role="alert">@Error</div></div>
     }
+
+    @if (DeleteError is not null)
+    {
+        <div class="card"><div class="error" role="alert">@DeleteError</div></div>
+    }
     else if (Items is not null)
     {
         var shown = ActiveTab == "following" ? (Following ?? LocalFollowing) : All;
@@ -108,7 +113,31 @@ else
             <div class="directory-cards">
                 @foreach (var community in shown)
                 {
-                    <CommunityCard Community="community" FollowChanged="FollowToggledAsync" />
+                    var isCreator = Session.ActorId is { } me && community.AttributedTo is { } cAttr &&
+                        cAttr.Any(a => (a is IObjectOrLink obj && obj.ResolveObjectIri() is { } oi && oi.Value == me.Value) ||
+                                       (a is IObject o && o.Id is { Length: > 0 } oid && oid == me.Value));
+                    <div class="community-card">
+                        <ActorCard Actor="@community" ActorId="@community.Id" ShowModeration="false" ShowStats="true" ShowSummary="true">
+                            <FollowButton TargetActor="@community" IsCommunity="true" FollowChanged="@FollowToggledAsync" />
+                            @if (isCreator)
+                            {
+                                @if (DeleteTargetIri == community.Id)
+                                {
+                                    <span class="delete-confirm">
+                                        <span class="muted">Delete this community?</span>
+                                        <button type="button" class="button button--danger" disabled="@DeleteBusy" @onclick="() => DeleteCommunityAsync(community)">
+                                            @(DeleteBusy ? "Deleting…" : "Confirm")
+                                        </button>
+                                        <button type="button" class="button button--secondary" disabled="@DeleteBusy" @onclick="() => DeleteTargetIri = null">Cancel</button>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button type="button" class="button button--danger" @onclick="() => DeleteTargetIri = community.Id">Delete</button>
+                                }
+                            }
+                        </ActorCard>
+                    </div>
                 }
             </div>
         }
@@ -180,6 +209,10 @@ else
     private bool CreateBusy { get; set; }
     private string? CreateError { get; set; }
     private bool CreateSuccess { get; set; }
+
+    private string? DeleteTargetIri { get; set; }
+    private bool DeleteBusy { get; set; }
+    private string? DeleteError { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -311,6 +344,38 @@ else
         finally
         {
             CreateBusy = false;
+        }
+    }
+
+    private async Task DeleteCommunityAsync(Group community)
+    {
+        if (community.Id is not { Length: > 0 } id || Session.LocalModeration is not { } localModeration)
+        {
+            return;
+        }
+
+        DeleteBusy = true;
+        DeleteError = null;
+        try
+        {
+            var result = await localModeration.DeleteCommunityAsync(new Iri(id));
+            if (result.IsSuccess)
+            {
+                DeleteTargetIri = null;
+                await LoadAsync();
+            }
+            else
+            {
+                DeleteError = $"Failed to delete community (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            DeleteError = "Something went wrong while deleting the community. Please try again.";
+        }
+        finally
+        {
+            DeleteBusy = false;
         }
     }
 }

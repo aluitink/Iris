@@ -1448,6 +1448,11 @@ public static class ActivityPubServerExtensions
         localGroup.MapPost("/c/{name}/owners/promote/{**actorIri}", CommunityPromoteOwnerHandler).WithName("community-promote-owner-endpoint");
         localGroup.MapPost("/c/{name}/owners/demote/{**actorIri}", CommunityDemoteOwnerHandler).WithName("community-demote-owner-endpoint");
 
+        // Community deletion (Phase 5): DELETE /local/v1/c/{name} — a community's last owner deletes
+        // the community and all its associated edges (followers, follows, moderation, join requests).
+        // Owner-only (the same credential seam as the other local community endpoints).
+        localGroup.MapDelete("/c/{name}", CommunityDeleteHandler).WithName("community-delete-endpoint");
+
         // Community peering (89): POST /local/v1/c/{name}/follow/{**targetIri} — a community's operator
         // makes the community follow the target actor (a person or another community). The community
         // (a Group actor) cannot sign its own outbox from the browser (it holds no client key), so the
@@ -10539,6 +10544,43 @@ public static class ActivityPubServerExtensions
         community.AttributedTo = newAttributedTo;
         await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
         InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Deletes a community (DELETE /local/v1/c/{name}). Owner-only. Removes the community document
+    /// and all its associated edges (followers, follows, blocks, flags, mutes, join requests).
+    /// </summary>
+    private static async Task<IResult> CommunityDeleteHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        await persistence.Communities.DeleteCommunityAsync(communityIri, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "feed");
 
         return Results.NoContent();
     }
