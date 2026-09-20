@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `ab8edf5` (⑤ Lemmy interop: actor `published` field + follow delivery for cached remote communities — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `e5fe8d1` (⑤ Lemmy interop: actor `published` field + follow delivery for cached remote communities — rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** ⑤ Lemmy interop unblocked: (1) actor documents now carry `published` (Lemmy `objects::instance` requires it — was 400 "missing field `published`"); (2) a person's Follow to a *cached* remote community now delivers over the wire (host-based local/remote split — was silently skipped). S3/S19/co-owner Leave all fixed + deployed. S2/S14 proxy seam still 401s unsigned GETs.
 
