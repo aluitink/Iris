@@ -56,6 +56,7 @@ else
         <a href="#likes" id="tab-likes" role="tab" aria-selected="@(ActiveTab == "likes")" aria-controls="panel-likes" class="tab @(ActiveTab == "likes" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("likes")'>Likes</a>
         <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers</a>
         <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
+        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
         @if (ApprovesFollowers)
         {
             <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(FollowRequestCount is { } frc && frc > 0 ? $" ({frc})" : string.Empty)</a>
@@ -122,6 +123,39 @@ else
             CollectionIri="@FollowingIri"
             Title="Following"
             EmptyMessage="Not following anyone yet." />
+        </div>
+    }
+    else if (ActiveTab == "communities")
+    {
+        <div role="tabpanel" id="panel-communities" aria-labelledby="tab-communities">
+            <div class="card" style="margin-bottom: 0.5rem;">
+                <a href="/communities" class="muted">Manage communities →</a>
+            </div>
+            @if (CommunitiesLoading)
+            {
+                <p class="muted">Loading communities…</p>
+            }
+            else if (CommunitiesError is not null)
+            {
+                <div class="error" role="alert">@CommunitiesError</div>
+            }
+            else if (FollowedCommunities is { Count: 0 })
+            {
+                <p class="muted">You haven't joined any communities yet. Browse <a href="/communities">all communities</a> to get started.</p>
+            }
+            else
+            {
+                <div class="directory-cards">
+                    @foreach (var community in FollowedCommunities ?? [])
+                    {
+                        <div class="community-card">
+                            <ActorCard Actor="@community" ActorId="@community.Id" ShowModeration="false" ShowStats="true" ShowSummary="true">
+                                <FollowButton TargetActor="@community" IsCommunity="true" FollowChanged="@CommunitiesFollowToggledAsync" />
+                            </ActorCard>
+                        </div>
+                    }
+                </div>
+            }
         </div>
     }
     else if (ActiveTab == "requests")
@@ -318,6 +352,11 @@ else
         {
             _ = LoadFollowRequestsAsync();
         }
+
+        if (tab == "communities" && FollowedCommunities is null)
+        {
+            _ = LoadFollowedCommunitiesAsync();
+        }
     }
 
     private List<string>? FollowRequestActors { get; set; }
@@ -326,6 +365,71 @@ else
     private string? FollowRequestError { get; set; }
     private bool IsDecidingFollowRequest { get; set; }
     private string? DecidingFollowActorIri { get; set; }
+
+    private List<Group>? FollowedCommunities { get; set; }
+    private bool CommunitiesLoading { get; set; }
+    private string? CommunitiesError { get; set; }
+    private List<Iri> _followingIris = [];
+    private List<Group> _allLocalGroups = [];
+
+    private async Task LoadFollowedCommunitiesAsync()
+    {
+        if (Session.Client is not { } client || Session.ActorId is not { } actorId)
+        {
+            return;
+        }
+
+        CommunitiesLoading = true;
+        CommunitiesError = null;
+        StateHasChanged();
+
+        try
+        {
+            _followingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
+            var marker = "/ap/v1";
+            var index = actorId.Value.IndexOf(marker, StringComparison.Ordinal);
+            Iri? baseIri = index >= 0 ? new Iri(actorId.Value[..(index + marker.Length)]) : null;
+
+            _allLocalGroups = [];
+            if (baseIri is { } instanceBase)
+            {
+                await foreach (var item in client.SearchAsync(
+                                    instanceBase,
+                                    string.Empty,
+                                    new SearchOptions { Type = "Actor", LocalOnly = true }))
+                {
+                    if (item is Group group)
+                    {
+                        _allLocalGroups.Add(group);
+                    }
+                }
+            }
+
+            FollowedCommunities = _allLocalGroups
+                .Where(g => g.Id is { Length: > 0 } id && _followingIris.Any(f => string.Equals(f.Value, id, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            CommunitiesError = "We couldn't load your communities right now. Please check your connection and try again.";
+        }
+        finally
+        {
+            CommunitiesLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CommunitiesFollowToggledAsync()
+    {
+        _followingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
+        FollowedCommunities = _allLocalGroups
+            .Where(g => g.Id is { Length: > 0 } id && _followingIris.Any(f => string.Equals(f.Value, id, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        StateHasChanged();
+    }
 
     private async Task LoadFollowRequestsAsync()
     {
