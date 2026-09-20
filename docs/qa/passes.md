@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 37 (2026-09-20) — S4/S8/S13/S15/S16 re-verify
+
+- **Build/Live:** deployed `bb28dcf` (== HEAD? n — HEAD is `3a7f934` merge of QA docs; no code change since `bb28dcf`). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S4: andrew follows both `technology` (local) and `lemmy.luit.ink/c/interop` (remote); Communities → Following tab shows **only "technology"** — remote `interop` is missing. S8: "All on this instance" tab lists all 6 local + 2 seeded remote communities (correct). S13: remote Lemmy post `lemmy.luit.ink/post/1` → 3 console 404s (`/replies|likes|shares`), post renders. S15: compose visibility hint — "A note addressed to the public…" for Public/Followers/Direct (all 3 wrong); Poll variant "A poll addressed to the public…" (also wrong). S16: fresh poll `06GBVCXGF7HRK17GJTH9N2ZXS0` — andrew voted Option A (count 0→1, DB confirms `voters=[andrew]`); new user `qa37test` voted Option B (first click 502, second click count 1→2, DB confirms `voters=[andrew, qa37test]`); hard-refresh reverts to "2" (votes persisted) but "You voted" badge does NOT re-hydrate.
+- **Result:** 0 new; **4 re-confirmed OPEN** (S4 remote, S13, S15, S16-UX); **1 confirmed FIXED** (S8). S16 core data-integrity is fixed (votes persist server-side) but UX gaps remain (badge re-hydration, 502 on first vote from new user).
+- **Checkpoint:** all 5 target findings from Pass 36 checkpoint now have Pass 37 evidence. Remaining open: S4 (remote), S9, S10, S11a/b, S12a, S13, S15, S16-UX, S17, S18, S19, S2/S14 (blocked on dev).
+
+---
+
 ## Pass 36 (2026-09-20) — S11/S19/S18/S2 re-verify
 
 - **Build/Live:** deployed `bb28dcf` (== HEAD? n — HEAD is `62a3897` merge of QA docs; no code change since `bb28dcf`).
