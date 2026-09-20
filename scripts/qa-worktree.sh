@@ -71,14 +71,15 @@ case "$cmd" in
 
   sync)
     [ -e "$WT_PATH" ] || { echo "no worktree — run create first" >&2; exit 1; }
-    # Fast-forward qa/ to the main branch so QA reads the latest docs/qa + PLAN.md.
-    # Only safe when qa has no uncommitted work and no divergent commits.
+    # Rebase qa/ onto the main branch so QA reads the latest docs/qa + PLAN.md
+    # with its own committed work replayed on top. Only safe when qa has no
+    # uncommitted work; divergent qa commits are exactly the normal case.
     if [ -n "$(git -C "$WT_PATH" status --porcelain)" ]; then
       echo "worktree has uncommitted changes — commit them first (see QA_LOOP.md step 5)" >&2
       exit 1
     fi
-    git -C "$WT_PATH" merge --ff-only "$MAIN_BRANCH"
-    echo "qa fast-forwarded to $MAIN_BRANCH"
+    git -C "$WT_PATH" rebase "$MAIN_BRANCH"
+    echo "qa rebased onto $MAIN_BRANCH"
     ;;
 
   merge)

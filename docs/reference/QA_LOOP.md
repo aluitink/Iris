@@ -56,7 +56,7 @@ git worktree remove .worktrees/qa                     # destroy (when clean)
 
 ### 0. Worktree + staleness pre-flight (every pass, before anything else)
 
-1. **Ensure your worktree exists** and is current: `scripts/qa-worktree.sh status`. If dev has merged new commits, fast-forward your `qa` branch (`scripts/qa-worktree.sh sync`, or `git -C .worktrees/qa merge --ff-only <main-branch>`) so you're reading the latest `docs/qa/` + PLAN.md. **If `docs/qa/` is missing from the worktree, the shared docs aren't committed on the main branch yet — stop and get them committed first** (see the [prerequisite note](#isolation-model-worktrees)).
+1. **Ensure your worktree exists** and is current: `scripts/qa-worktree.sh status`. If dev has merged new commits, rebase your `qa` branch onto main (`scripts/qa-worktree.sh sync`, or `git -C .worktrees/qa rebase <main-branch>`) so you're reading the latest `docs/qa/` + PLAN.md with your committed work replayed on top. **If `docs/qa/` is missing from the worktree, the shared docs aren't committed on the main branch yet — stop and get them committed first** (see the [prerequisite note](#isolation-model-worktrees)).
 2. **Staleness check — the #1 false-finding source.** Read PLAN.md's **Live state** `deployed:` and compare to `git log -1 --oneline`.
    - **They differ** → the live container is **stale** (dev committed but hasn't redeployed, or redeployed without updating Live state). **Do not start a pass against a stale build.** Record it in the pass log ("blocked: deployed `<X>` ≠ HEAD `<Y>`") and either (a) wait for dev to redeploy, or (b) if you have deploy access and it's safe, rebuild + redeploy and update Live state. **Never log findings against a build you know is behind.**
    - **They match** → proceed.
