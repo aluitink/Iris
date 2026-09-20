@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** pending (community co-owner Leave flow)
+- **Deployed commit:** `e5e7d9d` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** S3 fixed. S19 all facets fixed + deployed (Requests tab + Edit Save + notification Accept/Decline + decided-request filter). S19 facet 3 verified working (Edit Save persists). NEW FIX: auto-accepted follows now visible in notifications (was incorrectly filtered). S21/S20 re-verified working. NEW: Community co-owner Leave flow added. S2/S14 proxy seam still 401s unsigned GETs.
 
