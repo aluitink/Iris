@@ -116,7 +116,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit:** `a661cdd` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
+- **Deployed commit:** `45e5b70` (rebuilt + redeployed 2026-09-20, container `irisweb-iris-web-1` recreated, healthy)
 - **Container:** `irisweb-iris-web-1` — current
 - **Note:** S3 fixed. S19 all facets fixed + deployed (Requests tab + Edit Save + notification Accept/Decline + decided-request filter). S21/S20 re-verified working (stale WASM in QA browser). S2/S14 proxy seam still 401s unsigned GETs.
 
@@ -165,18 +165,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Recently Completed
 
-- **④ Community management — "My communities" tab (2026-09-20):** `/communities` now has a third tab showing owned communities (attributedTo includes the user) with Delete. 1392 passed. [change doc](docs/changes/1593-community-management-my-communities-tab.md)
-- **S19 facet 2 — Notification Accept/Decline buttons + decided-request filter (2026-09-20):** Follow-request notifications show Accept/Decline buttons; `/local/v1/notifications` now drops Follow notifications whose request is no longer pending. 1392 passed. [change doc](docs/changes/1592-s19-notification-accept-decline.md)
-- **S19 facets 1+3 — Community Requests tab + Edit Save (2026-09-20):** `ResolveLocalHandler` now falls back to cookie-auth passthrough; Requests tab Retry button added; `manuallyApprovesMembers` flag persists via Add/Remove outbox. 1392 passed. [change doc](docs/changes/1591-s19-community-requests-tab-and-edit-save.md)
-- **S20 re-verify (2026-09-20):** Communities tab IS firing `?source=communities` (200) in a fresh browser. QA's "0 new API requests" was a stale WASM cache artifact. No code change needed.
-- **S3 — Create-activity visibility gate fix (2026-09-20):** `ObjectDocumentHandler` visibility gate now skips Activities (metadata wrappers, not content). `GET /ap/v1/u/{handle}/creates/{id}` → 200. 1392 passed. [change doc](docs/changes/1590-s3-create-activity-visibility-gate.md)
-- **S21 — Community creation auto-follow + `/c/{handle}` route (2026-09-20):** Auto-follow edge on community creation; `/c/{handle}` redirect page. 1391 passed. [change doc](docs/changes/1589-s21-community-creation-autofollow-and-handle-route.md)
-- **① Feed load feel — server-side follow-feed caching (2026-09-20):** Per-actor 30s TTL cache in `FeedService`; `?refresh=true` bypass; 5 new unit tests + 4 integration test fixes. 1390 passed. [change doc](docs/changes/1588-server-side-follow-feed-caching.md)
-- **③ Phase 7 — E2E verification (2026-09-20):** Full live pass: feed tabs, FeedBar, create/delete community, Profile Communities. 0 console errors. [change doc](docs/changes/1587-e2e-verification.md)
-- **③ Phase 6 — Profile Communities tab (2026-09-20):** `/profile` Communities tab: followed communities with Join/Leave. [change doc](docs/changes/1586-profile-communities-tab.md)
-- **③ Phase 5 — Community management: delete (2026-09-20):** `DELETE /local/v1/c/{name}` (owner-only). [change doc](docs/changes/1585-community-management-delete.md)
-- **③ Phase 4 — Wire home-feed tabs to `?source=` filter (2026-09-20):** `HomeTabState` scoped service. [change doc](docs/changes/1584-home-feed-tab-source-wiring.md)
-- **③ Phase 3 — FeedBar bottom control strip (2026-09-20):** `FeedBar.razor` in `MainLayout`. [change doc](docs/changes/1583-feedbar-bottom-control-strip.md)
+- **④ Community management — "My communities" tab + "Manage peers →" link (2026-09-20):** `/communities` third tab shows owned communities with Delete + link to Peers tab. 1392 passed. [change doc](docs/changes/1593-community-management-my-communities-tab.md)
+- **S19 facet 2 — Notification Accept/Decline + decided-request filter (2026-09-20):** Follow-request notifications show Accept/Decline; endpoint drops decided requests. 1392 passed. [change doc](docs/changes/1592-s19-notification-accept-decline.md)
+- **S19 facets 1+3 — Community Requests tab + Edit Save (2026-09-20):** Cookie-auth passthrough; Retry button; `manuallyApprovesMembers` persists. 1392 passed. [change doc](docs/changes/1591-s19-community-requests-tab-and-edit-save.md)
+- **S3 — Create-activity visibility gate fix (2026-09-20):** Visibility gate skips Activities. 1392 passed. [change doc](docs/changes/1590-s3-create-activity-visibility-gate.md)
+- **S21 — Community auto-follow + `/c/{handle}` route (2026-09-20):** Auto-follow on create; handle redirect. 1391 passed. [change doc](docs/changes/1589-s21-community-creation-autofollow-and-handle-route.md)
 
 
 

@@ -412,3 +412,6 @@
 - **③ Phase 1 — Home-feed Page drop fix (COMPLETE):** `Page` added to `IsContentItem`. [changes/1002](changes/1002-inbox-3-phase1-page-drop-fix.md)
 - **② Community simplification — unify members with followers (COMPLETE):** Members = followers; Join/Leave → Follow/Undo. [changes/1001](changes/1001-inbox-2-community-simplification.md)
 - **③④ Unified home feed — Phases 1-7 (COMPLETE):** Two feed tabs + FeedBar bottom strip + community IA rework (management page + Profile Communities tab). [changes/1587](changes/1587-e2e-verification.md)
+- **① Feed load feel — server-side follow-feed caching (COMPLETE):** Per-actor 30s TTL cache; `?refresh=true` bypass. [changes/1588](changes/1588-server-side-follow-feed-caching.md)
+- **S20 re-verify (COMPLETE):** Communities tab fires `?source=communities`; QA's "0 new API requests" was stale WASM.
+- **③ Phase 3-6 (COMPLETE):** FeedBar + `?source=` wiring + community delete + Profile Communities tab. [changes/1583-1586](changes/1583-feedbar-bottom-control-strip.md)
