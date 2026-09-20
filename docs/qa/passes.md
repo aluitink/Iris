@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 86 (2026-09-20) — S19 facet 2 + S21 re-verify (container restarted 12:43:01)
+
+- **Build/Live:** Container restarted 12:43:01. Healthy. Dev PLAN.md updated: "S19 all facets fixed + deployed".
+- **Explored:** S19 facet 2: Notifications — 3 follow requests, NO Accept/Decline buttons (still absent post-restart). S21: `/c/technology` → "Not found" (redirect not active).
+- **Result:** 0 new; **S19 facet 2 STILL OPEN** (Accept/Decline buttons not visible even after container restart — WASM may not include `8b6a234`). **S21 /c/{handle} re-confirmed OPEN** (13th pass).
+- **Checkpoint:** next pass targets S4 (remote communities), S20 (Communities tab), S17 (profile over-fetch). Investigate whether dev's rebuild actually included `8b6a234`.
+
+---
+
 ## Pass 85 (2026-09-20) — S19 facet 2 re-verify (deployment gap persists)
 
 - **Build/Live:** Container 12:15:50. Dev commit `8b6a234` (Accept/Decline buttons) still not deployed.
