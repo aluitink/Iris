@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 61 (2026-09-20) — S20/S17 re-verify on `65ccfa0`
+
+- **Build/Live:** deployed `65ccfa0` (== HEAD? y).
+- **Explored:** S20: `/home` → Posts tab shows following feed (WeirdWriter boost first, 8 feed requests). Click **Communities** tab → **0 new API requests** (no `?source=` parameter, no community-specific call). Feed content **identical to Posts tab** (same first post, same items). 0 console errors. S17: `/profile` → "Your posts" fired `outbox` **4 times** (pages 1–4). Switched to **Replies** tab → fired the **full 13-page outbox fan-out** (pages 1–13). Switched to **Likes** tab → fired the **full 13-page outbox fan-out a third time** (pages 1–13). Total: **30 outbox requests** for 3 tabs viewed.
+- **Result:** 0 new; **S20 re-confirmed OPEN** (Communities tab is visual-only — 0 new API requests on tab switch, feed data never changes — 4th consecutive pass). **S17 re-confirmed OPEN** (30 outbox requests for 3 tabs — initial load reduced to 4 pages, but tab-switch still pulls all 13 pages each time).
+- **Checkpoint:** next pass targets S4 (remote interop missing from Following), S16-UX (poll badge missing on object detail), S19 (requests endpoint missing).
+
+---
+
 ## Pass 60 (2026-09-20) — S2/S14 re-verify on `65ccfa0`
 
 - **Build/Live:** deployed `65ccfa0` (== HEAD? y).
