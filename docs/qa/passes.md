@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 87 (2026-09-20) — S20 re-verify (Communities tab visual-only, 9th pass)
+
+- **Build/Live:** Container 12:43:01. Healthy.
+- **Explored:** S20: `/home` → Communities tab → 0 new API requests, feed content identical to Posts tab (8 boosted posts).
+- **Result:** 0 new; **S20 re-confirmed OPEN** (visual-only toggle — 9th consecutive pass).
+- **Checkpoint:** next pass targets S4 (remote communities), S17 (profile over-fetch), S16-UX (poll badge).
+
+---
+
 ## Pass 86 (2026-09-20) — S19 facet 2 + S21 re-verify (container restarted 12:43:01)
 
 - **Build/Live:** Container restarted 12:43:01. Healthy. Dev PLAN.md updated: "S19 all facets fixed + deployed".
