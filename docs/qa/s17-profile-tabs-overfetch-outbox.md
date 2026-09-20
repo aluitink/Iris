@@ -1,7 +1,7 @@
 # S17 — Profile tabs over-fetch the entire outbox (on load + every tab switch)
 
 - **Class:** perf / request-spam — **Severity:** S2
-- **Status:** open (re-confirmed Pass 35, 2026-09-20, on deployed `bb28dcf`)
+- **Status:** open (re-confirmed Pass 39, 2026-09-20, on deployed `4f5dd5c`)
 - **Found:** Pass 29 (2026-09-20) — re-confirmed Pass 35
 - **Related:** [s16](s16-poll-votes-not-persisted.md) (polls also missing from "Your posts"), the Profile pagination ("Load more") control
 
@@ -40,3 +40,5 @@ Clean entry, `/profile` (a user with a large outbox):
 **Re-verification evidence (Pass 35, 2026-09-20, andrew, deployed `bb28dcf`):** fresh load of `/profile` → "Your posts" fired `outbox` **13 times** (pages 1–13) before rendering; only ~3 items shown. Switched to **Replies** tab → fired the **full 13-page outbox fan-out again** (requests 95–107, identical sequence). Replies tab rendered an empty list. Still 26 outbox requests for 2 tabs viewed. STILL OPEN.
 
 **Re-verification evidence (Pass 38, 2026-09-20, andrew, rebuilt container post-`bdc0e66`):** fresh load of `/profile` → "Your posts" fired `outbox` **4 times** (pages 1–4) before rendering (reduced from 13, but still a multi-page fan-out, not single-page). Switched to **Replies** tab → fired the **full 13-page outbox fan-out again** (requests 86–98, pages 1–13). Replies tab rendered an **empty list** (no "No replies yet" message). Switched to **Likes** tab → fired the **full 13-page outbox fan-out a third time** (requests 99–111, pages 1–13). Total: **29 outbox requests** for 3 tabs viewed. STILL OPEN (reduced on initial load but tab-switch fan-out unchanged).
+
+**Re-verification evidence (Pass 39, 2026-09-20, andrew, deployed `4f5dd5c`):** fresh load of `/profile` → "Your posts" fired `outbox` **6 times** (pages 1–6) before rendering. Switched to **Replies** tab → fired the **full 13-page outbox fan-out again** (requests 88–100, pages 1–13). Replies tab rendered an **empty list**. Total: **19 outbox requests** for 2 tabs viewed. STILL OPEN (initial load reduced to 6 pages but tab-switch fan-out still pulls all 13 pages).
