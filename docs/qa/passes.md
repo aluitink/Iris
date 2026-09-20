@@ -17,12 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 38 (2026-09-20) — S9/S11/S12a/S10/S4/S18 re-verify on rebuilt container
+## Pass 38 (2026-09-20) — S9/S11/S12a/S10/S15/S16/S17/S3/S13/S19/S4/S18 re-verify on rebuilt container
 
-- **Build/Live:** rebuilt container post-`b6987d4` (S12a) + `bdc0e66` (S10) + `d729c66` (S11) + `c1da416` (S9). Container `irisweb-iris-web-1` healthy.
-- **Explored:** clean entry (andrew). S11a: body-less poll → posts successfully, visible in Profile "Your posts". S9: flagged bob → "Reported ✓" + disabled. S12a: posted `@Alice` → mention links to `…/u/Alice`; navigating to that URL **redirects to canonical `alice` actor page** (200, renders profile, 0 errors) — no longer a dead link. S10: compose selector now says "Article" (no "(long-form)"); formatting tip honest about shared 500-char limit; compose hint type-aware ("An article addressed to…"). S4: Communities → Following tab still shows only "technology" (local), remote "interop" missing. S18: qa37test NOT in Followers tab — follow state not persisted.
-- **Result:** 0 new; **4 confirmed FIXED** (S9, S11a/b, S12a, S10); **2 re-confirmed OPEN** (S4 remote, S18).
-- **Checkpoint:** next pass targets S17 (profile over-fetch), S3 (Create-IRI 404), S13 (Lemmy 404 noise), S15 (visibility hint), S16-UX (poll badge), S19 (community Requests), S2/S14 (proxy 401).
+- **Build/Live:** rebuilt container post-`bdc0e66` (S10) + `b6987d4` (S12a) + `d729c66` (S11) + `c1da416` (S9). Container `irisweb-iris-web-1` healthy.
+- **Explored:** clean entry (andrew). S11a: body-less poll → posts successfully. S9: flagged bob → "Reported ✓" + disabled. S12a: `@Alice` mention → redirects to canonical `alice` page (200). S10: selector says "Article" (no "(long-form)"); type-aware hint. S15: hint now visibility-aware in all 6 cases (minor grammar: "A note a private message"). S16: poll votes persist (Option A: 2), no "You voted" badge on fresh load. S17: profile tabs — initial load 4 outbox pages (reduced from 13), but tab switch still fires full 13-page fan-out (29 total for 3 tabs). S3: Create-IRI `?iri=…/creates/{id}` → "Object not found" + 1 console 404; Note IRI → 200. S13: remote Lemmy post → 3 console 404s (`/replies|likes|shares`). S19: technology Requests tab → "couldn't load" dead-end, no request fires. S4: Communities → Following shows only "technology" (local), remote "interop" missing. S18: qa37test NOT in Followers (4) tab — follow state lost.
+- **Result:** 0 new; **4 confirmed FIXED** (S9, S11a/b, S12a, S10); **1 mostly fixed** (S15 — hint now visibility-aware, minor grammar); **7 re-confirmed OPEN** (S3, S4 remote, S13, S16-UX badge, S17, S18, S19).
+- **Checkpoint:** next pass targets S2/S14 (signed-out proxy 401 — blocked on dev), S18 (fresh account follow → Home empty), S17 (profile over-fetch fix).
 
 ---
 
