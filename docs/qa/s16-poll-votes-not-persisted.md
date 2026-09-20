@@ -51,3 +51,5 @@ Vote on a poll's object-detail page, then hard-refresh: the count and "You voted
 **Re-verification evidence (Pass 91, 2026-09-20, andrew, container 13:19:52):** Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Object detail page: fresh load shows **1 votes** + **NO "You voted" badge**. Vote count consistent. Badge still missing on object detail page. Core data-integrity still FIXED. UX gap unchanged: badge missing on object detail page. STILL OPEN.
 
 **Re-verification evidence (Pass 92, 2026-09-20, andrew, container 13:26:35):** Poll `06GBVZDNA8JPCCFC8WW2JGAFZR` — Object detail page: fresh load shows **1 votes** + **NO "You voted" badge**. Vote count consistent. Badge still missing. STILL OPEN.
+
+**Re-verification evidence (Pass 93, 2026-09-20, andrew, container 13:26:35):** Same container as Pass 92. S16-UX not re-tested this pass (focused on S22 root cause). **Still OPEN** (1 votes, NO badge, unchanged since Pass 90).
