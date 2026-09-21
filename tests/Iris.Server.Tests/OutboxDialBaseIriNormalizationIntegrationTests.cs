@@ -35,6 +35,7 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly KeyPair _aliceKey;
+    private readonly KeyPair _bobKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobAdvertisedIri;
 
@@ -47,6 +48,7 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
         _aliceActorIri = aliceSeeded.ActorIri;
 
         var bobSeeded = TestSeeder.SeedPersonWithKey(_persistence, AdvertiseHost, Bob);
+        _bobKey = bobSeeded.Key;
         _bobAdvertisedIri = bobSeeded.ActorIri;
 
         _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
@@ -176,6 +178,137 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
             "the follow edge must not be rewritten to the advertised base for a remote target");
     }
 
+    // --- S39 (local-reply facet): a reply whose inReplyTo carries the dial base reaches the parent
+    //     author's inbox (the parent author resolves through the rewritten, canonical parent IRI) ----
+
+    [Fact]
+    public async Task OutboxPublish_Reply_LocalParentViaDialBase_LandsInParentAuthorInbox()
+    {
+        // Arrange: alice posts a note (stored under the advertised base).
+        var parentNote = new Note { Content = ["parent note"], AttributedTo = [new Link { Href = new Uri(_aliceActorIri.Value) }] };
+        var parentCreate = new Create
+        {
+            Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+            Object = [parentNote],
+        };
+        using (var parentRequest = SignedRequest(_aliceActorIri, _aliceKey, parentCreate, $"/ap/v1/u/{Alice}/outbox"))
+        {
+            using var parentResponse = await _http.SendAsync(parentRequest);
+            Assert.Equal(HttpStatusCode.Accepted, parentResponse.StatusCode);
+        }
+
+        var parentIri = await GetFirstCreateObjectIriAsync(_aliceActorIri);
+        Assert.NotNull(parentIri);
+        var parentIriValue = parentIri!.Value;
+        var parentPath = parentIriValue.Substring(parentIriValue.IndexOf("/ap/v1/", StringComparison.Ordinal));
+
+        // Act: bob replies to the note, but the reply's inReplyTo carries the DIAL base (what a client
+        // dialing through the host-published port emits), not the advertised base. Before the fix the
+        // exact-IRI object-store lookup misses the stored parent (it is stored under the advertised
+        // base), so the parent author cannot be resolved and the reply never lands in alice's inbox —
+        // no notification (the S39 live divergence).
+        var replyNote = new Note
+        {
+            Content = ["a reply"],
+            AttributedTo = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            InReplyTo = [new Link { Href = new Uri($"{DialBase}{parentPath}") }],
+        };
+        var replyCreate = new Create
+        {
+            Actor = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            Object = [replyNote],
+        };
+        using var replyRequest = SignedRequest(_bobAdvertisedIri, _bobKey, replyCreate, $"/ap/v1/u/{Bob}/outbox");
+        using var replyResponse = await _http.SendAsync(replyRequest);
+        Assert.Equal(HttpStatusCode.Accepted, replyResponse.StatusCode);
+
+        // Assert: the reply's Create landed in the parent author's (alice's) inbox — the reply
+        // notification is produced from the inbox.
+        var inboxItems = await _persistence.Activities.GetInboxAsync(_aliceActorIri);
+        var replyInInbox = inboxItems.Any(item =>
+            item is Create create && create.Object is { } objects
+            && objects.FirstOrDefault() is IObject note
+            && note.InReplyTo is { } inReplyTo
+            && inReplyTo.Select(r => r.ResolveObjectIri()?.Value).Contains(parentIriValue));
+        Assert.True(
+            replyInInbox,
+            "the reply's Create must land in the parent author's inbox (the inReplyTo dial-base IRI is " +
+            "rewritten to the advertised base so the parent author resolves)");
+    }
+
+    // --- A reply whose inReplyTo is a REMOTE object on a genuinely foreign host is NOT rewritten ----
+
+    [Fact]
+    public async Task OutboxPublish_Reply_RemoteParentViaForeignHost_NotRewritten()
+    {
+        // Arrange: nothing local — the parent is a note on a genuinely foreign host (a different
+        // instance). The reply's inReplyTo carries that foreign host.
+        const string remoteHost = "remote.example";
+        var remoteParentIri = new Iri($"https://{remoteHost}/ap/v1/01J9REMOTE000000000000000000");
+
+        // Act: bob replies to the remote note.
+        var replyNote = new Note
+        {
+            Content = ["a reply to a remote note"],
+            AttributedTo = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            InReplyTo = [new Link { Href = new Uri(remoteParentIri.Value) }],
+        };
+        var replyCreate = new Create
+        {
+            Actor = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            Object = [replyNote],
+        };
+        using var replyRequest = SignedRequest(_bobAdvertisedIri, _bobKey, replyCreate, $"/ap/v1/u/{Bob}/outbox");
+        using var replyResponse = await _http.SendAsync(replyRequest);
+        Assert.Equal(HttpStatusCode.Accepted, replyResponse.StatusCode);
+
+        // Assert: the stored reply's inReplyTo is UNTOUCHED (still the foreign host) — the
+        // normalization never rewrites a genuinely foreign parent to the advertised base.
+        var outbox = await _persistence.Activities.GetOutboxAsync(_bobAdvertisedIri);
+        var storedReply = outbox.OfType<Create>().SelectMany(c => c.Object ?? [])
+            .OfType<IObject>().FirstOrDefault(n => n.Content is { } content && string.Join(" ", content).Contains("remote note"));
+        Assert.NotNull(storedReply);
+        var storedParent = storedReply!.InReplyTo?.FirstOrDefault()?.ResolveObjectIri()?.Value;
+        Assert.Equal(remoteParentIri.Value, storedParent);
+    }
+
+    // --- A reply whose inReplyTo points at a local-looking path that is NOT stored locally is NOT
+    //     rewritten (the store check is authoritative) ----------------------------------------------
+
+    [Fact]
+    public async Task OutboxPublish_Reply_LocalLookingParentNotStored_NotRewritten()
+    {
+        // Arrange: nothing is stored at the parent IRI (the note was never posted).
+        const string remoteHost = "iris-dev2.luit.ink";
+        var missingParentIri = new Iri($"https://{remoteHost}/ap/v1/01J9MISSING0000000000000000");
+
+        // Act: bob "replies" to the missing object.
+        var replyNote = new Note
+        {
+            Content = ["a reply to a missing note"],
+            AttributedTo = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            InReplyTo = [new Link { Href = new Uri(missingParentIri.Value) }],
+        };
+        var replyCreate = new Create
+        {
+            Actor = [new Link { Href = new Uri(_bobAdvertisedIri.Value) }],
+            Object = [replyNote],
+        };
+        using var replyRequest = SignedRequest(_bobAdvertisedIri, _bobKey, replyCreate, $"/ap/v1/u/{Bob}/outbox");
+        using var replyResponse = await _http.SendAsync(replyRequest);
+        Assert.Equal(HttpStatusCode.Accepted, replyResponse.StatusCode);
+
+        // Assert: the stored reply's inReplyTo is UNTOUCHED — the canonical form does not exist in the
+        // object store (the host is not this instance's advertised host either), so the rewrite is a
+        // no-op.
+        var outbox = await _persistence.Activities.GetOutboxAsync(_bobAdvertisedIri);
+        var storedReply = outbox.OfType<Create>().SelectMany(c => c.Object ?? [])
+            .OfType<IObject>().FirstOrDefault(n => n.Content is { } content && string.Join(" ", content).Contains("missing note"));
+        Assert.NotNull(storedReply);
+        var storedParent = storedReply!.InReplyTo?.FirstOrDefault()?.ResolveObjectIri()?.Value;
+        Assert.Equal(missingParentIri.Value, storedParent);
+    }
+
     // --- A Follow of a REMOTE actor that shares a handle with a LOCAL actor is NOT rewritten --------
 
     [Fact]
@@ -209,6 +342,29 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
     }
 
     // --- Helpers ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns the IRI of the first Create's embedded object in the actor's outbox (the note the actor
+    /// posted) — null when the outbox holds no Create with an embedded object.
+    /// </summary>
+    private async Task<Iri?> GetFirstCreateObjectIriAsync(Iri actorIri)
+    {
+        var outbox = await _persistence.Activities.GetOutboxAsync(actorIri);
+        foreach (var item in outbox)
+        {
+            if (item is not Create create || create.Object is not { } objects)
+            {
+                continue;
+            }
+
+            if (objects.FirstOrDefault() is IObject embedded && embedded.Id is { Length: > 0 } id)
+            {
+                return new Iri(id);
+            }
+        }
+
+        return null;
+    }
 
     private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {

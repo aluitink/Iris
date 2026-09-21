@@ -15,6 +15,8 @@ using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
 using Iris.Server.Security;
+using Iris.Server.Stores;
+using ActivityStreamsObject = KristofferStrube.ActivityStreams.Object;
 using KristofferStrube.ActivityStreams;
 using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
@@ -365,6 +367,11 @@ public static class ActivityPubServerExtensions
             new DefaultLocalActorResolver(
                 sp.GetRequiredService<IPersistenceProvider>(),
                 sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri));
+        // S39 (local-reply facet): the reply-side dial-base IRI normalization probes the object store for
+        // the canonical (advertised-base) form of a reply's inReplyTo reference. The probe is a minimal
+        // seam in Iris.Core (ILocalObjectProbe); this adapter delegates to the IObjectStore.
+        services.TryAddSingleton<ILocalObjectProbe>(sp =>
+            new ObjectStoreLocalProbe(sp.GetRequiredService<IObjectStore>()));
         // The activity handlers are an OPEN list: each is a distinct implementation registered under
         // the same service type (IActivityHandler), so AddSingleton (not TryAddSingleton) is required —
         // TryAddSingleton would treat the second and later registrations as duplicates of the first
@@ -4114,6 +4121,7 @@ public static class ActivityPubServerExtensions
         LocalActorDocumentCache actorDocumentCache,
         IFollowFeedService followFeed,
         IActivityPubClient? objectFetch,
+        ILocalObjectProbe localObjectProbe,
         Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
@@ -4196,6 +4204,27 @@ public static class ActivityPubServerExtensions
         // recorded edge) use the canonical IRI — otherwise the instance treats its own actor as remote
         // and attempts a cross-instance delivery that cannot route.
         await NormalizeLocalActorObjectIriAsync(activity, baseUrl, context.Request.Host.Value ?? string.Empty, persistence, ct).ConfigureAwait(false);
+
+        // S39 (local-reply facet): the SAME dial-base mismatch on the REPLY side. A reply's embedded
+        // object carries its parent in inReplyTo (a Link to the parent object); when the client dialed
+        // via the host-published base, that reference carries the dial base, but the instance stores
+        // its content objects under the advertised base. The exact-IRI object-store lookup in the
+        // reply-parent-author delivery (Phase 136.7) then misses the stored parent, so the parent
+        // author cannot be resolved and the reply never lands in the parent author's inbox — no
+        // notification, exactly the S39 live divergence (in-process tests use one consistent base and
+        // pass). Rewrite the inReplyTo reference to the advertised base (store-checked, host-guarded,
+        // local /ap/v1/… paths only — see ReplyIriNormalization) so the parent author resolves.
+        if (activity is Create createActivity && createActivity.Object is { } createObjects)
+        {
+            foreach (var item in createObjects)
+            {
+                if (item is IObject embeddedCreateObject)
+                {
+                    await embeddedCreateObject.RewriteInReplyToToAdvertisedBaseAsync(
+                        baseUrl, context.Request.Host.Value ?? string.Empty, localObjectProbe, ct).ConfigureAwait(false);
+                }
+            }
+        }
 
         // Decision 055: the server is the sole authority for the id of an object/activity it creates.
         // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
