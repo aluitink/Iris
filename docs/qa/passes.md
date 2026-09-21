@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 149 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Re-verified S31 (edit preserves published, advances updated) with a FRESH A post + edit on `38ae87c` → STILL FIXED: A posted a fresh note (II-S31-5, A note 06GC63QMBV, published 08:22:12Z, updated None) then edited it → published PRESERVED (08:22:12.3188076Z unchanged) + updated SET (08:23:12.6496208Z) + content changed. No new defect; state stable on 38ae87c
+- **Build/Live:** No new commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
+- **Explored:** Re-verified **S31 (edit preserves `published`, advances `updated`)** with a **fresh** A post + edit on `38ae87c` — A (ii-a1) posted a fresh note, then edited it.
+- **Result:** **S31 STILL FIXED on `38ae87c`.**
+  - A (ii-a1) posted fresh note **II-S31-5** (A note `06GC63QMBVKFV9TV94WSQP8QE4`) → **`published 2026-09-21T08:22:12.3188076Z`**, **`updated None`** (baseline).
+  - A then **edited** the note (content → "II-S31-5 EDITED — Pass 149 edited content…").
+  - After the edit: **`published` PRESERVED** (still `2026-09-21T08:22:12.3188076Z`, unchanged) + **`updated` SET** (`2026-09-21T08:23:12.6496208Z`) + content changed. **S31 holds** — the edit preserves the original `published` and advances `updated` (correct ActivityPub semantics).
+- **Checkpoint:** **S31 re-confirmed FIXED on `38ae87c`** (fresh post + edit: `published` preserved, `updated` advanced, content changed). No new defect; state stable on `38ae87c`. S36 (home feed) + S24 D2 + S38 + S30 A8.4 + S37/S28 button-UI all still OPEN (Passes 144–146). S33 unfollow Undo + S26 reply threading re-confirmed FIXED (Passes 147–148). S32 cross-instance Delete + Update propagation WORK (Pass 142); S30 A8.2/A8.3 + cross-post leg WORK (Pass 143); S37/S28 wire counts FIXED (Pass 141). A4 PASS. S27/S29 re-confirmed FIXED. **M2–M12 + L2–L12 blocked** (operator accounts).
+
 ## Pass 148 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Re-verified S26 (cross-instance reply threading) with a FRESH B reply on `38ae87c` → STILL FIXED: B (ii-b1) posted a fresh reply (II-S26-5, B note 06GC6337X9MNP8W4CNRTP29HJR) to the A note 06GC5MR7 (II-S37-5) → the reply federated to A and is in the A note's /replies collection (totalItems=1) + carries inReplyTo → the A note (threading intact). No new defect; state stable on 38ae87c
 - **Build/Live:** No new commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
 - **Explored:** Re-verified **S26 (cross-instance reply threading)** with a **fresh** B reply on `38ae87c` — B (ii-b1) posted a reply to the A note `06GC5MR7` (II-S37-5, which had "No replies yet").
