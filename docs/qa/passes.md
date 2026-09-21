@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 257 (2026-09-21) — build `401c08b5` / Outbox embedded objects: Create activities embed full Note objects inline (no need to fetch separate note IRI); note IRI also 200 when fetched directly; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A outbox Create activities; embedded object structure; direct note IRI fetch.
+- **Result:**
+  - **Outbox Create activities embed the full Note object inline** (the `object` field is the complete Note JSON, not just a IRI). This is valid ActivityPub.
+  - **Direct note IRI fetch:** `GET /ap/v1/u/ii-a1/notes/06GCAYZD0RBSXSQFSNC2PV05J8` → 200 (the note is also accessible via its own IRI).
+  - The earlier 404 when fetching `create.object` was because `create.object` is the full embedded object (not a IRI string) — `fetch()` was called on an object, not a URL.
+  - No new defects. The outbox structure is correct.
+- **Checkpoint:** Outbox embedded objects work correctly. Next: waiting for dev to fix S40 (private key leak) and S36 (home feed).
+
 ## Pass 256 (2026-09-21) — build `401c08b5` / Actor collections: followers (2), following (2), outbox (86 Creates, paginated 20/page, 5 pages), liked (4) — all 200 OK; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A actor collections (followers, following, outbox, liked) via authenticated fetch.
