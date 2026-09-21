@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 205 (2026-09-21) — build `8243361c` / "Content unavailable" explained: deleted note (Tombstone)
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Home-feed "Content unavailable" items; A outbox full scan for Announces; note AP route for the boosted note.
+- **Result:**
+  - **"Content unavailable" explained (NEW):** The 2 "Content unavailable — view original post" items on A's home feed are Announces (Boosts) by **ii-b1** of ii-a1's note `06GC3AWSHG64NJHJ24EM27HZSW`. That note is a **Tombstone** (deleted 2026-09-21T02:15:52Z). The note was deleted, so the object store returns a Tombstone (no content) → the feed renders "Content unavailable". This is **correct behavior** for a deleted note, not a bug.
+  - **A outbox full scan (75 items):** 3 Announces by ii-b1 (B) boosting A notes: (1) `06GC5MR7VQSR9TC2V2Z4KXPNBW` (S37-5), (2) `06GC4RR4CN76NCSW2WJKQ3BPZW`, (3) `06GC3AWSHG64NJHJ24EM27HZSW` (deleted → Tombstone). The Announces are stored in A's outbox (S24 D2 A-side growth: 19→22 foreign).
+  - **S24 D2 A-side growth:** A outbox foreign from B: 19 (Pass 195) → 22 (this pass, 3 new Announces).
+  - S36 40th consecutive. 0 console errors.
+- **Checkpoint:** "Content unavailable" is correct (deleted note → Tombstone). Not a new defect. S24 D2 A-side growing (19→22). Next: new exploration.
+
 ## Pass 204 (2026-09-21) — build `8243361c` / community feed includes REMOTE member posts (ii-b1)
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Community detail page (A8 test community) — Members tab + Feed tab.
