@@ -84,3 +84,13 @@ So the **local delete is correct** (Tombstone), but the **peer-propagation defec
 - **Why the fix didn't trigger here:** `6b11799` is a **receiving-side** routing fix for the *local-note* shared-inbox case (dev's integration tests). In the normal **cross-instance A→B** flow, the **sending side (A) does not address/deliver the Delete to B** (`to`/`cc` empty; no delivery to B's shared inbox), so B never receives a Delete to route. The fix does not close the cross-instance delivery gap.
 
 **Verdict (build `6b11799`): S32 PARTIALLY addressed.** The receiving-side routing of a shared-inbox Delete/Update of a local note is fixed + tested (`6b11799`), but the **cross-instance A→B Delete is still not delivered** (A's `to`/`cc` empty, no delivery to B's shared inbox), so a **non-refetching peer would still keep a stale live copy** — the core peer-stale-copy risk **persists** for the cross-instance case. **Suggested dev follow-up:** on Delete/Update, **address the activity to the note's original `to`/`cc` (the audience)** so the peer actually receives it (the sending side), in addition to the receiving-side routing now in place. **Status: OPEN (narrowed) — receiving-side fixed, sending-side delivery still missing.**
+
+## Re-test — Update path (Pass 110, 2026-09-21, build `6b11799`)
+
+**The S32 `Update` facet reproduces identically (sending-side delivery missing).** `ii-a1` (A) edited a note B already had a live cached copy of — `…/ii-a1/notes/06GC48G96…` (content `II-A7-3 reverify S28 remote boost shares` → `…[edited: S32 update-path reverify Pass 110]`). B had fetched it earlier (`GET B /ap/v1/proxy/<note>` → 200, same content).
+
+- **Local (A):** `GET A <note>` → content = the **edited** text, `updated` = `2026-09-21T04:58:16Z` (stamped) ✓.
+- **Peer (B):** `GET B /ap/v1/proxy/<note>` → content = the **OLD** text, `updated` = **None** — **B's copy is STALE** (not refreshed by the edit).
+- **Wire:** B's inbox log shows **no inbound `Update`** for the note (not "unknown recipient" — it was simply **never delivered**); A's log shows **no outbound Update to B**. Same sending-side delivery gap as the Delete path: A does not address/deliver the `Update` to the peer.
+
+**Verdict (Update path, build `6b11799`): S32 OPEN (narrowed) — confirmed for BOTH Delete and Update.** The cross-instance `Update` (like the `Delete`) is **not delivered to the peer** (A's sending side doesn't address/send it), so a cached peer copy goes **stale** after an edit. Dev's `6b11799` receiving-side routing is correct but unreachable in the normal cross-instance flow. **Status: OPEN (narrowed) — receiving-side (Delete + Update) fixed; sending-side delivery (address Delete/Update to the note's audience) still missing for both.**
