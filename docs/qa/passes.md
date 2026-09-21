@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 206 (2026-09-21) — build `adf65b84` / S36 fix deployed: NEW posts fetch+cache on inbound (AP 200), historical posts NOT backfilled, home feed STILL empty
+- **Build/Live:** `adf65b84` (S36 fix: fetch + cache bare-link Create objects on inbound delivery; rebuilt + redeployed QA cluster).
+- **Explored:** Fresh A post II-S36-P206; B cache/outbox/notifications/home-feed for P206; B object-detail + actor-page for P206; A cache for P189 (historical B post).
+- **Result:**
+  - **NEW — S36 fix works for NEW posts:** A post P206 (note `06GCA8ABTNZQDGEYX1Q6MXJG7W`): B's AP note route `GET /ap/v1/u/ii-a1/notes/06GCA8ABTNZQDGEYX1Q6MXJG7W` → **200 with content** (was 404 before the fix). The fetch+cache on inbound Create is working — the bare-link object is fetched from A and cached on B.
+  - **B object-detail renders P206:** `GET /object?iri=...` → 200, shows "ii-a1 6m ago II-S36-P206..." with content. B actor-page Posts tab: P206 is the first item with content.
+  - **B home feed STILL empty:** "Your timeline is empty" — despite P206's Create being in B's outbox (totalItems=67) AND the note being cached on B (AP 200). The feed query is not picking up the cached note.
+  - **A cache for historical B post P189:** STILL 404 — the fix does NOT backfill historical posts (pre-redeploy Creates are not re-processed).
+  - **S36 PARTIALLY FIXED:** The fetch+cache step now works for NEW inbound Creates (AP 200). But the home feed is still empty for both new and historical posts. The feed query has a separate issue (it's not finding the cached note).
+  - **S36 41st consecutive (home feed empty).** 0 console errors.
+- **Checkpoint:** S36 fix (fetch+cache) works for NEW posts (AP 200). Home feed still empty (separate feed-query issue). Historical posts not backfilled. Next: investigate why the feed query doesn't surface the cached note.
+
 ## Pass 205 (2026-09-21) — build `8243361c` / "Content unavailable" explained: deleted note (Tombstone)
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Home-feed "Content unavailable" items; A outbox full scan for Announces; note AP route for the boosted note.
