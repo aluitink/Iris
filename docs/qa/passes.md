@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 241 (2026-09-21) — build `401c08b5` / S36 re-confirmed (65th consecutive) after re-login: A home feed = 1 Tombstone-Announce, no content posts; no new angles
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Re-login as ii-a1 (after Pass 240 logout); A home feed.
+- **Result:**
+  - **Re-login:** ii-a1 / Password1 → /home (successful).
+  - **A home feed:** 2 DOM elements → 1 unique item (Tombstone-Announce, "Content unavailable"). No content posts.
+  - **S36 65th consecutive.** Pattern stable. No new angles.
+  - 0 console errors.
+- **Checkpoint:** S36 65th consecutive (post-re-login). A: 1 Tombstone-Announce; no content posts. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 240 (2026-09-21) — build `401c08b5` / Authless pass: /home → 302 to /login ✓, / → 302 to /login ✓; no data leaks; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Authless access to /home and / on A.
