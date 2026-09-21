@@ -374,3 +374,16 @@ So the remote Boost no longer reaches the author at all on this build — the sh
 - **REGRESSED:** **S28** (remote Announce now dropped at the shared inbox; author `shares`/`sharedCount`/Shares-tab all empty — pre-fix build).
 - **RE-CONFIRMED:** **S36** (home feed empty for own + followed posts).
 - **CHECKPOINT:** S36 top priority (dev code pass on `FeedService.BuildFeedUncachedAsync`). S28 re-verify deferred until the dev WIP fix is committed + deployed. S24 D1/D2 + S32 still open. M2–M12 + L2–L12 blocked on operator accounts.
+
+---
+
+## Re-verify pass (Pass 106, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-exercised the full cross-instance **reply** flow (A5 / S26) from a clean entry (not re-run since the Pass 100 fix confirmation).
+
+**A5 / S26 — PASS (fix holding).** `ii-b1` (B) replied to A's note `…/ii-a1/notes/06GC48G96…` (the S28 test note):
+- **B (replier):** outbox reply Note `…/ii-b1/notes/06GC4CXP22T3Q8QSAPPB99HWC0`, `inReplyTo` = the parent Note IRI ✓; composer showed the parent context ("This reply is threaded under the parent note").
+- **Delivery to A:** the reply **delivered**; A parent `GET <note>/replies` now **includes B's reply IRI** (`…/ii-b1/notes/06GC4CXP22…`).
+- **A object-detail UI (ii-a1):** Replies tab renders the remote reply **nested under the parent** with the **"In reply to ii-a1"** context card + the parent's quoted text. 0 console errors.
+
+Cross-instance reply threading works end-to-end on the current build — **S26 stays fixed**. No new defects.

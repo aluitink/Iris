@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 106 (2026-09-21) — Re-verified A5/S26 (remote reply threading) end-to-end → PASS (fix holding)
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
+- **Explored:** Re-exercised the full cross-instance **reply** flow (A5 / S26) from a clean entry, which had not been re-run since the Pass 100 fix confirmation.
+- **Result:** **S26 PASS (fix holding).** `ii-b1` (B) replied to A's note `…/06GC48G96…` (B outbox reply `inReplyTo` = the parent Note IRI ✓). The reply **delivered to A** and A's parent `GET <note>/replies` now **includes B's reply IRI** (`…/ii-b1/notes/06GC4CXP22…`); A's object-detail **Replies tab renders it nested** under the parent with the "In reply to ii-a1" context card. Cross-instance reply threading works end-to-end on the current build. No new defects.
+- **Checkpoint:** S36 still top priority (home feed empty; dev code pass on `FeedService.BuildFeedUncachedAsync`). S24 D1 (UI Following-tab remote-actor rendering) + D2; S28 (deferred until dev WIP fix committed+deployed); S32 (Delete to/cc empty + rejected at peer). **S26 re-confirmed PASS.** M2–M12 + L2–L12 blocked on operator accounts. **Merge blocked** on dev's uncommitted WIP.
+
 ## Pass 105 (2026-09-21) — No build change; re-confirmed S32 root-cause facet (Delete to/cc empty)
 
 - **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged since Pass 101). Dev's S28 fix still in **uncommitted WIP** (not deployed) → nothing new to re-verify; merge still blocked on that WIP.
