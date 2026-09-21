@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 192 (2026-09-21) — build `8243361c` / S36+S24 D2 root cause linkage
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post (II-S36-P192) → B cache/proxy check (30s wait); B outbox full scan (4 pages, 64 items); S24 D2 quantification.
+- **Result:**
+  - **S36+S24 D2 root cause linked (NEW INSIGHT):** II-S36-P192's Create IS in B's outbox (foreign A activity, stored) but the content note is 404 on B (cache + proxy). The Create activity is delivered + stored, but the **Note object is never fetched/cached**. S24 D2 (30 foreign items in B outbox: 27 Create + 3 Follow) are the same notes that are 404 on B's note route.
+  - **Unified root cause:** Missing object-fetch/caching on inbound Create processing. The activity is stored in the outbox, but the referenced Note is not fetched from the source and cached locally. The feed query correctly finds no cached Note → returns only actor-doc noise.
+  - **Fix direction:** Fetch + cache the Note object when a Create activity is received (not a feed-query or outbox change).
+  - S36 28th consecutive. 0 console errors.
+- **Checkpoint:** S36+S24 D2 root cause linked to object-fetch/caching gap. Next: new exploration or stability.
+
 ## Pass 191 (2026-09-21) — build `8243361c` / cross-instance note cache gap quantified
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post (II-S36-P191) → B cache/proxy check; prior B post (II-S36-P189) → A cache/proxy check; health checks both instances.
