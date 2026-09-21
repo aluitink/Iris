@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 189 (2026-09-21) — build `8243361c` / B-side page sweep + cross-instance actor pages + S36 B-side confirmation
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** B-side /profile (posts + Following), /search (ii-a1), cross-instance actor pages (B→A: ii-a1; A→B: ii-b1, authless), fresh B post → B own feed check.
+- **Result:**
+  - **B /profile:** 8 own posts render; Following = 2 (ii-b1 self, ii-a1) — correct.
+  - **B /search "ii-a1":** 2 results (matching notes referencing ii-a1) — works.
+  - **Cross-instance actor pages:** B→A (ii-a1 from B): 6 A posts render, Unfollow button present (follow edge active). A→B (ii-b1 from A, authless): 5 B posts render, "Sign in to follow or moderate" — correct authless gating.
+  - **S36 B-side confirmation (NEW DATA):** Fresh ii-b1 post `II-S36-P189` is in B outbox (clean `Create`) but **NOT in B's own feed** (totalItems=20, 0 Creates, Like/Follow/Undo noise). B `/home` UI = "Your timeline is empty." The S36 feed-query defect is **symmetric** — B's own posts are also omitted, not just A's. 25th consecutive pass.
+  - 0 console errors.
+- **Checkpoint:** B-side page inventory complete. S36 confirmed on both instances (A + B own posts omitted). Next: Lemmy/Mastodon interop spot-check or new exploration.
+
 ## Pass 188 (2026-09-21) — build `8243361c` / page-inventory sweep (signed-in + authless)
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Page-inventory sweep: /profile (posts, Following, Followers), /search (content search), /communities, /directory, /settings (Account/Content/Danger tabs), /notifications, /home, /compose. Authless pass: all routes 302→login (no data leak), / and /register render signed-out UI, 0 console errors.
