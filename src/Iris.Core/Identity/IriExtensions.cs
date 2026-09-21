@@ -1404,3 +1404,150 @@ public sealed record PollData(
 /// <param name="Preview">The attachment's preview image URL, when present (for Audio/Video).</param>
 /// <param name="MediaType">The MIME type of the media (e.g. <c>"video/mp4"</c>, <c>"application/pdf"</c>), when the attachment carries one. Lets a renderer pick the right player without sniffing the URL.</param>
 public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview, string? MediaType = null);
+
+/// <summary>
+/// An object store seam for dial-base IRI normalization at the Iris boundary: a minimal
+/// <c>TryGet</c> surface so <see cref="ReplyIriNormalization"/> (in <c>Iris.Core</c>) can check
+/// whether a canonical (advertised-base) local object exists without depending on
+/// <c>Iris.Server</c>.
+/// </summary>
+/// <remarks>
+/// The single production implementation wraps <c>Iris.Server.Stores.IObjectStore</c> (registered in
+/// <c>Iris.Server</c>'s DI). The store check is what keeps the rewrite safe: a canonical-IRI miss
+/// (the parent is not a local object) is a no-op, so a genuinely foreign object on a
+/// coincidentally local-looking host is never rewritten.
+/// </remarks>
+public interface ILocalObjectProbe
+{
+    /// <summary>
+    /// Probes whether the object at <paramref name="objectIri"/> exists in the local object store.
+    /// </summary>
+    /// <param name="objectIri">The canonical (advertised-base) object IRI to probe.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns><see langword="true"/> when the object is stored locally.</returns>
+    Task<bool> TryGetAsync(Iri objectIri, CancellationToken ct);
+}
+
+/// <summary>
+/// Re-anchoring of an object's <c>inReplyTo</c> reference to the instance's advertised base (the
+/// dial-base IRI normalization for replies — the S39 local-reply facet). Lives in this file (not
+/// <see cref="IriExtensions"/>) because it is async and needs the <see cref="ILocalObjectProbe"/>
+/// store seam; it is the reply-side counterpart of the outbox handler's local-actor object
+/// normalization (Follow/block targets).
+/// </summary>
+public static class ReplyIriNormalization
+{
+    /// <summary>
+    /// Re-anchors an object's <see cref="IObject.InReplyTo"/> (its <c>inReplyTo</c> reference) to the
+    /// instance's advertised base when it points at a local content object (a <c>/ap/v1/…</c> path on
+    /// a local-looking host) reached via a non-canonical base (the dial-base case).
+    /// </summary>
+    /// <remarks>
+    /// The authoring client dials the instance on a host-published base (e.g.
+    /// <c>http://localhost:8081</c>) and carries that base in the reply's <c>inReplyTo</c> reference
+    /// (a <see cref="ILink"/> to the parent object), but the instance stores its content objects under
+    /// the <em>advertised</em> base (e.g. <c>https://iris.luit.ink</c>). Without this rewrite the
+    /// exact-IRI object-store lookup misses the stored object, so the parent author cannot be
+    /// resolved and the reply never reaches the parent author's inbox (no notification — the S39
+    /// dial-base facet). Mirrors the outbox handler's local-actor normalization: only local-looking
+    /// paths (<c>/ap/v1/…</c>), only when the target's host is local (the advertised base's host,
+    /// the request's host, or <c>localhost</c>/<c>127.0.0.1</c>), only when the canonical form
+    /// differs, and only when the canonical object exists in the object store (a store miss — a
+    /// genuinely foreign object on a coincidentally local-looking host — is left untouched).
+    /// </remarks>
+    /// <param name="obj">The object whose <c>inReplyTo</c> is rewritten. May be null.</param>
+    /// <param name="baseUrl">The instance's advertised base URI.</param>
+    /// <param name="requestHost">The host the authoring client used to dial this instance (the dial
+    /// base, e.g. <c>localhost:8081</c>).</param>
+    /// <param name="probe">The local object-store probe (the canonical-IRI existence check).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>A task that completes when the rewrite (or no-op) is done.</returns>
+    public static async Task RewriteInReplyToToAdvertisedBaseAsync(
+        this IObject? obj,
+        string baseUrl,
+        string requestHost,
+        ILocalObjectProbe probe,
+        CancellationToken ct)
+    {
+        var first = obj?.InReplyTo?.FirstOrDefault();
+        if (first is not { } parentRef)
+        {
+            return;
+        }
+
+        var parentIri = parentRef.ResolveObjectIri();
+        if (parentIri is not { } parent)
+        {
+            return;
+        }
+
+        // A local content object lives under the instance's ActivityPub route prefix (/ap/v1/…).
+        // Anything else (a bare IRI, a remote path, a non-AP reference) is a genuinely foreign parent —
+        // never rewrite it.
+        const string routePrefix = "/ap/v1/";
+        var path = parent.Value;
+        if (!path.Contains(routePrefix, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var parentUri = parent.Uri;
+        if (!parentUri.IsAbsoluteUri
+            || (parentUri.Scheme != Uri.UriSchemeHttp && parentUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return;
+        }
+
+        // The canonical (advertised-base) form of the same local path.
+        var canonicalValue = $"{baseUrl.TrimEnd('/')}{parentUri.PathAndQuery}";
+        if (canonicalValue == parent.Value)
+        {
+            return;
+        }
+
+        // Guard: the parent's host must be local (the advertised base's host, the request's host —
+        // the dial base — or a loopback host). A genuinely foreign host (a different instance's
+        // public hostname) is left untouched even when its path contains /ap/v1/… (a remote
+        // instance whose route prefix coincides with this instance's).
+        var baseHostOnly = new Uri(baseUrl).DnsSafeHost;
+        var requestHostOnly = requestHost.Contains(':')
+            ? requestHost[..requestHost.LastIndexOf(':')]
+            : requestHost;
+        var parentHostOnly = parentUri.DnsSafeHost;
+        var isLocalHost = parentHostOnly.Equals(baseHostOnly, StringComparison.OrdinalIgnoreCase)
+            || parentHostOnly.Equals(requestHostOnly, StringComparison.OrdinalIgnoreCase)
+            || parentHostOnly.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || parentHostOnly.Equals("127.0.0.1", StringComparison.Ordinal);
+        if (!isLocalHost)
+        {
+            return;
+        }
+
+        // Store check: only rewrite when the canonical object exists locally (the object store is
+        // authoritative — a miss means the parent is not a local object, e.g. a foreign object on a
+        // coincidentally local-looking host).
+        if (!await probe.TryGetAsync(new Iri(canonicalValue), ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Rewrite the parent reference to the canonical (advertised-base) IRI. A Link reference (the
+        // common reply shape) is replaced in the collection. `InReplyTo` is an interface-typed
+        // IEnumerable<IObjectOrLink> property with a setter, so the collection is rebuilt with the
+        // parent reference swapped for the canonical-IRI Link (the elements are reference types — the
+        // other references are preserved).
+        if (parentRef is ILink)
+        {
+            var rebuilt = new List<IObjectOrLink>();
+            foreach (var item in obj!.InReplyTo!)
+            {
+                rebuilt.Add(ReferenceEquals(item, parentRef) ? new Link { Href = new Uri(canonicalValue) } : item);
+            }
+            obj.InReplyTo = rebuilt;
+        }
+        else if (parentRef is IObject embeddedParent)
+        {
+            embeddedParent.Id = canonicalValue;
+        }
+    }
+}
