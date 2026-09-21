@@ -3914,8 +3914,10 @@ public static class ActivityPubServerExtensions
         // Parse the activity to learn its intended recipient(s). The recipient is not in the URL, so it
         // must be read from the payload. A content activity (Create, Announce) is addressed to the
         // author's local followers (the local actors who follow the remote author — the shared-inbox
-        // equivalent of the per-actor inbox fan-out); any other activity (Follow, Accept, Reject, Undo,
-        // Tombstone, ...) is addressed to its object.
+        // equivalent of the per-actor inbox fan-out); an Undo of a Follow is addressed to the follow's
+        // target (the followee — the Undo's object is the original Follow, whose target is the followee,
+        // not the follow's own IRI, which is not an actor and would 404 as "unknown recipient"); and any
+        // other activity (Follow, Accept, Reject, Tombstone, ...) is addressed to its object.
         var parsed = ActivityJson.Deserialize<IObjectOrLink>(json);
         List<Iri> recipients = [];
         Iri? fanOutAuthor = null;
@@ -3927,6 +3929,40 @@ public static class ActivityPubServerExtensions
                 fanOutAuthor = FirstIriFromCollection(typedActivity.Actor) is { } author
                     ? new Iri(author)
                     : null;
+            }
+            else if (typedActivity is Undo { Object: { } undoObjects } undoActivity)
+            {
+                // An Undo of a Follow: the Undo's object is the original Follow (embedded or by IRI). The
+                // follow's target (the followee) is the party whose inbox must receive the Undo (it removes
+                // the unfollower from its followers set). Routing to the follow's own IRI (the embedded
+                // Follow's id, or the bare link) would 404 as "unknown recipient" — the follow IRI is an
+                // activity, not an actor. Resolve the follow's target from the activity store when it is a
+                // bare IRI, or read the embedded Follow's object directly. (S33.)
+                if (undoObjects.FirstOrDefault() is { } undoObject)
+                {
+                    var followIri = undoObject.ResolveObjectIri();
+                    if (followIri.HasValue)
+                    {
+                        if (undoObject is Follow embeddedFollow)
+                        {
+                            // The embedded Follow carries its object (the followee) directly.
+                            if (embeddedFollow.Object?.FirstOrDefault() is { } followTarget)
+                            {
+                                recipients.Add(followTarget.ResolveObjectIri()!.Value);
+                            }
+                        }
+                        else if (await persistence.Activities.TryGetActivityAsync(followIri.Value, out var storedFollow, ct).ConfigureAwait(false)
+                                 && storedFollow is Follow stored)
+                        {
+                            // A bare IRI link to a Follow this instance stored (it recorded the follow):
+                            // read the follow's target (the followee).
+                            if (stored.Object?.FirstOrDefault() is { } storedTarget)
+                            {
+                                recipients.Add(storedTarget.ResolveObjectIri()!.Value);
+                            }
+                        }
+                    }
+                }
             }
             else
             {

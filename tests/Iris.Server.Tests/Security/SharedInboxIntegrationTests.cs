@@ -168,6 +168,82 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             "A Follow to a remote actor delivered via the shared inbox should not record a follow edge");
     }
 
+    // --- S33: an Undo of a Follow delivered to the shared inbox must route to the follow's TARGET
+    // --- (the followee), not the follow's own IRI. The Undo's object is the original Follow (embedded
+    // --- or by IRI); routing to the follow IRI 404s as "unknown recipient" (it is an activity, not an
+    // --- actor) and the peer's followers edge is left stale. The shared inbox must resolve the follow's
+    // --- target and remove the unfollower from it. (Both shapes: the embedded Follow and the bare IRI
+    // --- link that the followee's activity store can resolve.) ---
+
+    [Fact]
+    public async Task UndoOfFollow_DeliveredToSharedInbox_RoutesToFollowTargetAndRemovesEdge()
+    {
+        // Establish the follow edge in B's store (alice → bob) and store the original Follow in B's
+        // activity store (the bare-IRI Undo branch resolves against it).
+        var follow = BuildFollow(AliceActorIri, BobActorIri);
+        await _bPersistence.Follows.RecordFollowAsync(AliceActorIri, BobActorIri);
+        await _bPersistence.Activities.PutActivityAsync(follow);
+        Assert.True(
+            await _bPersistence.Follows.IsFollowingAsync(AliceActorIri, BobActorIri),
+            "Setup: alice should follow bob in B's store before the un-follow.");
+
+        // alice (remote) un-follows bob: an Undo whose object is the original Follow EMBEDDED (the shape
+        // a real sender delivers after the Lemmy-interop embed fix). Deliver it to B's shared inbox over
+        // the wire (B resolves alice's key from A's actor doc).
+        var undoIri = $"https://{AHost}/activities/undo-{Guid.NewGuid():N}";
+        var undo = new Undo
+        {
+            Id = undoIri,
+            Actor = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            Object = [follow],
+            To = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, undo);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B removed the alice → bob edge — the shared inbox routed the Undo to the follow's target (bob),
+        // not the follow's own IRI (which would 404 as "unknown recipient" and leave the edge stale).
+        Assert.False(
+            await _bPersistence.Follows.IsFollowingAsync(AliceActorIri, BobActorIri),
+            "An Undo of a Follow delivered to the shared inbox should remove the unfollower from the " +
+            "followee's followers set (S33).");
+    }
+
+    [Fact]
+    public async Task UndoOfFollow_BareIri_DeliveredToSharedInbox_RoutesToFollowTargetAndRemovesEdge()
+    {
+        // The bare-IRI shape: the Undo's object is a link to the original Follow IRI (not an embedded
+        // activity). The shared inbox must resolve the follow from B's activity store and route to its
+        // target (bob). This is the shape S33 reproduced on the live stack (the peer's outbox shows a bare
+        // IRI, and the peer rejected it as "unknown recipient <follow-IRI>").
+        var follow = BuildFollow(AliceActorIri, BobActorIri);
+        await _bPersistence.Follows.RecordFollowAsync(AliceActorIri, BobActorIri);
+        await _bPersistence.Activities.PutActivityAsync(follow);
+        Assert.True(
+            await _bPersistence.Follows.IsFollowingAsync(AliceActorIri, BobActorIri),
+            "Setup: alice should follow bob in B's store before the un-follow.");
+
+        var undoIri = $"https://{AHost}/activities/undo-{Guid.NewGuid():N}";
+        var undo = new Undo
+        {
+            Id = undoIri,
+            Actor = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            Object = [new Link { Href = new Uri(follow.Id!) }],
+            To = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, undo);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        Assert.False(
+            await _bPersistence.Follows.IsFollowingAsync(AliceActorIri, BobActorIri),
+            "A bare-IRI Undo of a Follow delivered to the shared inbox should remove the unfollower from " +
+            "the followee's followers set (S33).");
+    }
+
     // --- A Create whose author is not local is accepted and dropped (not this instance's concern) ---
 
     [Fact]
