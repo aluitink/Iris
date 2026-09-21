@@ -217,13 +217,14 @@ public sealed class GlobalSearchServiceTests
     // --- IRI-prefix-based local/remote discrimination (Phase 105 directory) -----------------
 
     [Fact]
-    public async Task Search_LocalOnly_WithInstanceBase_ExcludesRemoteActorsWithPreferredUsername()
+    public async Task Search_LocalOnly_WithInstanceBase_KeepsRemoteActorsWithPreferredUsername()
     {
         var persistence = new InMemoryPersistenceProvider();
-        // A local actor and a remote actor that DOES carry a preferredUsername (like a Mastodon user).
-        // The old preferredUsername heuristic would include the remote actor in "This instance"; the
-        // canonical-IRI check correctly excludes it (a preferredUsername marks a LOCAL actor, and this
-        // one's IRI is on a foreign origin — it is not canonical for this instance).
+        // A local actor and a remote actor that DOES carry a preferredUsername (a remote Iris actor from
+        // another instance, or a Mastodon user). Both are legitimate directory entries in the "All known"
+        // scope: the remote actor's IRI is on a different origin, so it is a cached peer, not a local
+        // actor with a stale IRI (S5). The previous logic dropped any actor with a preferredUsername whose
+        // IRI was not on the local instance base, which incorrectly excluded remote Iris actors.
         await PutActorAsync(persistence, "alice");
         var foreignIri = new Iri($"https://mastodon.social/users/remote_user");
         await persistence.ActorStore.PutActorAsync(new Person
@@ -236,12 +237,18 @@ public sealed class GlobalSearchServiceTests
         var instanceBase = new Iri($"https://{AHost}");
         var service = new GlobalSearchService(persistence, instanceBase);
 
-        // "All known actors" (the mixed path) keeps only canonical local actors: the foreign-origin
-        // preferredUsername actor is not canonical for this instance, so it is dropped (S5 rule).
-        var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
-        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(all));
+        // "All known actors" (the mixed path) keeps both the local actor and the remote actor (a cached
+        // peer, even though it carries a preferredUsername).
+        var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).OrderBy(i => i).ToArray();
+        Assert.Equal(
+            [
+                $"https://{AHost}/ap/v1/u/alice",
+                foreignIri.Value,
+            ],
+            all);
 
-        // "This instance" (localOnly + instance base) excludes it too.
+        // "This instance" (localOnly + instance base) excludes the remote actor (it is not on this
+        // instance) but keeps the local one.
         var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
         Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
     }

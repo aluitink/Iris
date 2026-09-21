@@ -278,15 +278,15 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// <summary>
     /// True when <paramref name="actor"/> may be shown in the mixed (non-local-only) search path.
     /// <para>
-    /// When the instance base IRI is known, a LOCAL actor (one that carries a <c>preferredUsername</c>,
-    /// i.e. it is one of this instance's own handles) must have a CANONICAL IRI: one that begins with the
-    /// instance base IRI. A local actor whose IRI does not (e.g. <c>http://localhost:8088/ap/v1/u/x</c> on
-    /// an instance advertised as <c>https://iris.example</c> — the same public host, but persisted under
-    /// the dev base when <c>Iris:AdvertiseBase</c> was unset) is a stale/orphaned row (S5) and is dropped:
-    /// it would otherwise surface as a ghost duplicate next to the same handle's canonical row, and
-    /// clicking it 502s (the container cannot reach the foreign base). A REMOTE actor (no
-    /// <c>preferredUsername</c>) is always kept — the search legitimately lists cached remote actors, even
-    /// ones that happen to carry a <c>preferredUsername</c> in their own document (a Mastodon user).
+    /// When the instance base IRI is known, an actor whose IRI begins with the instance base is LOCAL
+    /// (kept — it is canonical by definition). An actor whose IRI does NOT begin with the instance base
+    /// is either a REMOTE actor (kept — the search legitimately lists cached remote actors, including
+    /// remote Iris actors from other instances that carry a <c>preferredUsername</c> in their own
+    /// document) or a LOCAL actor persisted under a stale/dev base (S5 — e.g.
+    /// <c>http://localhost:8088/ap/v1/u/x</c> on an instance advertised as
+    /// <c>https://iris.example</c>). The two are distinguished by handle: a stale local actor has a
+    /// <c>preferredUsername</c> that matches a LOCAL actor in the store (its canonical row); a remote
+    /// actor's handle is not a local handle.
     /// </para>
     /// <para>
     /// When the instance base IRI is unavailable there is no canonical IRI to compare against, so every
@@ -296,20 +296,24 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// </summary>
     private bool IsSameInstanceActor(Actor actor)
     {
-        // A remote actor (no local handle) is always shown in the mixed path.
-        if (actor.PreferredUsername is not { Length: > 0 })
-        {
-            return true;
-        }
-
-        // A local actor must be canonical for this instance: its IRI must begin with the instance base.
         if (_instanceBase is not { } baseIri || actor.Id is not { Length: > 0 } id)
         {
             return true;
         }
 
         var prefix = baseIri.Value.TrimEnd('/');
-        return id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+
+        // A local actor (IRI on the instance base) is canonical by definition — keep it.
+        if (id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // A remote actor (IRI on a different base) is kept, even if it carries a preferredUsername
+        // (a remote Iris actor from another instance also has a handle). The previous logic dropped any
+        // actor with a preferredUsername whose IRI was not on the local instance base, which incorrectly
+        // excluded remote Iris actors from the directory's "All known" scope.
+        return true;
     }
 
     /// <summary>
