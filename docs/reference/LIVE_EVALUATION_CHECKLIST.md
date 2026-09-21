@@ -5,9 +5,10 @@
 > **repeatable**: run it after any code change, after a `down`/`up` recreation, or before declaring a
 > phase done. A clean sweep = every item passes or is explicitly recorded as a known gap (19.4).
 >
-> **Prerequisites:** the compose stack is up and healthy (`docker compose ps`), the public FQDNs
-> resolve (`https://iris-dev1.luit.ink`, `https://iris-dev2.luit.ink`), and the smoke test passes
-> (`./scripts/docker-smoke-test.sh`).
+> **Prerequisites:** the compose stack is up and healthy (`docker compose ps`), the dev-cluster
+> FQDNs resolve (`https://dev-iris-a.luit.ink`, `https://dev-iris-b.luit.ink`; legacy names
+> `https://iris-dev1.luit.ink` / `https://iris-dev2.luit.ink` still map to the same ports), and the
+> smoke test passes (`./scripts/docker-smoke-test.sh`).
 
 ## Standing checklist (every session)
 
@@ -18,9 +19,9 @@ phase-specific waypoints.
 
 | # | Check | UI path / wire | Pass criteria |
 |---|---|---|---|
-| 1.1 | Alice logs on to iris-dev1 | UI: open explorer → enter `https://iris-dev1.luit.ink` → log on as `alice` / `iris-sample` | Actor detail page loads, `privateKey` extension present (raw inspector) |
-| 1.2 | Bob logs on to iris-dev1 | UI: switch actor to `bob` | Bob's actor detail loads, `keyAlgorithm: rsa` |
-| 1.3 | Alice logs on to iris-dev2 | UI: switch instance to `https://iris-dev2.luit.ink` → log on as `alice` | Actor detail loads (different key from iris-dev1's alice) |
+| 1.1 | Alice logs on to dev-iris-a | UI: open explorer → enter `https://dev-iris-a.luit.ink` → log on as `alice` / `iris-sample` | Actor detail page loads, `privateKey` extension present (raw inspector) |
+| 1.2 | Bob logs on to dev-iris-a | UI: switch actor to `bob` | Bob's actor detail loads, `keyAlgorithm: rsa` |
+| 1.3 | Alice logs on to dev-iris-b | UI: switch instance to `https://dev-iris-b.luit.ink` → log on as `alice` | Actor detail loads (different key from dev-iris-a's alice) |
 | 1.4 | Wrong password rejected | UI: log on as `alice` / `wrongpass` | Public document only (no `privateKey` extension) |
 
 ### 2. Explore
@@ -37,8 +38,8 @@ phase-specific waypoints.
 
 | # | Check | UI path / wire | Pass criteria |
 |---|---|---|---|
-| 3.1 | iris-dev1 → iris-dev2 | UI: instance switcher → `https://iris-dev2.luit.ink` | Explorer re-loads against iris-dev2, alice's actor detail loads |
-| 3.2 | iris-dev2 → iris-dev1 | UI: switch back | Same as above, reverse direction |
+| 3.1 | dev-iris-a → dev-iris-b | UI: instance switcher → `https://dev-iris-b.luit.ink` | Explorer re-loads against dev-iris-b, alice's actor detail loads |
+| 3.2 | dev-iris-b → dev-iris-a | UI: switch back | Same as above, reverse direction |
 
 ### 4. Cross-instance write
 

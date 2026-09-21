@@ -136,5 +136,66 @@ validations). Before it could federate, it needed:
 - `uri`, `inbox_url`, `outbox_url`, `followers_url`, `following_url`,
   `shared_inbox_url` set to proper AP URIs
 - `public_key` / `private_key` generated (RSA 2048)
-- The `FollowService` expects an `Account` (not `User`) as the
+- The `FollowService` expects an `Account` (not a `User`) as the
   `source_account` parameter
+
+---
+
+## Follow-up (2026-09-20): `followtest1` follow → post → unfollow cycle
+
+A second local Iris user, `followtest1`
+(`https://iris.luit.ink/ap/v1/u/followtest1`), was registered via the
+browser and used to verify the full follow / receive / unfollow cycle
+against `mstest`.
+
+### Results (all verified)
+
+1. **Follow** — `followtest1` followed `mstest` in the browser. The
+   forward edge was recorded (Edges, Kind=0,
+   `followtest1 → https://mastodon.luit.ink/ap/users/117290170565281751`)
+   and the outbound Follow was delivered; Mastodon auto-accepted and
+   sent an `Accept` (`#accepts/follows/4`), which Iris processed
+   (`AcceptActivityHandler` — ok).
+   - `followtest1`'s `followers` collection staying at `totalItems: 0`
+     is **expected**, not a bug: a remote follower's Follow is directed
+     at the remote actor (mstest), so Iris never receives a reverse
+     edge. Only the forward edge matters for delivery.
+2. **Receive** — `mstest` posted (via `rails runner`
+   `PostStatusService`), status `117304217614685992`. The Create was
+   delivered to `followtest1`'s per-actor inbox, stored in
+   `BoxItems` (Direction=1), and processed by `CreateActivityHandler`
+   — ok. It appeared in `followtest1`'s Notifications feed
+   ("MSTest posted … Interop test post 2 …").
+3. **Unfollow** — `followtest1` clicked Unfollow. The forward edge was
+   removed (Edges Kind=0 `followtest1 → mstest` gone; `following`
+   collection `totalItems: 0`) and the Undo was delivered — Mastodon's
+   `follows` row for `followtest1 → mstest` was deleted.
+4. **No longer receive** — `mstest` posted again (status
+   `117304272519390243`). `followtest1` was **not** a recipient: its
+   `BoxItems` were unchanged and Mastodon's `StatusReachFinder` no
+   longer listed followtest1 (only the shared inbox was targeted).
+
+### Finding: Iris advertises a shared inbox it does not handle
+
+Mastodon's `Account.inboxes` coalesces delivery targets by
+`preferred_inbox_url`, and both remote Iris accounts
+(`followtest1`, `mastodtest`) advertise the **same**
+`shared_inbox_url` (`https://iris.luit.ink/ap/v1/shared-inbox`).
+Mastodon therefore delivers to that shared inbox, but **Iris implements
+no POST handler for its advertised shared-inbox route** — it is only
+written into the actor document's `endpoints.sharedInbox`
+(`ActivityPubServerExtensions.cs`), and the catch-all returns HTTP 200
+and silently drops the body (no `BoxItem`, no `Inbox` log).
+
+A direct signed POST to the per-actor inbox
+(`POST /ap/v1/u/followtest1/inbox`) returns **202** and is stored and
+processed correctly, whereas the same payload to the shared inbox
+returns **200** and is dropped.
+
+This means that for a remote sender that prefers `endpoints.sharedInbox`
+(like Mastodon), a local Iris follower will not receive posts unless the
+sender falls back to the per-actor inbox. **Gap to fix in Iris:** either
+implement a `POST /ap/v1/shared-inbox` handler (route the Create to the
+appropriate local actor's inbox, or fan out to all local followers of the
+creator) or stop advertising `endpoints.sharedInbox` so peers use the
+per-actor inbox.
