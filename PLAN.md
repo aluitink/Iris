@@ -117,7 +117,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit (code):** `746c6a1e` — **S36 regression net (test-only) + diagnosis recorded.** S36 fix `adf65b84` + diagnostic `863f22c8` + directory fix `401c08b5` all in effect. `iris-web` (single-instance steady-state) rebuilt + redeployed 2026-09-21.
+- **Deployed commit (code):** `e8988af6` — **S17 profile tab fan-out fix + S40/S2/S14 QA status updates.** S17: reduced `FilteredTopUpMaxPages` from 12→3 (bounds worst-case to 4 requests per tab load) + removed `@key` from Profile.razor's PagedCollection instances (component persists across tab switches, re-filters already-loaded items instead of re-fetching). S40 CLOSED (FALSE POSITIVE), S2 FIXED, S14 FIXED. `iris-web` (single-instance steady-state) rebuilt + redeployed 2026-09-21.
 - **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84` (directory fix `401c08b5` not yet on the QA cluster — QA must rebuild to re-verify).
 
     ## Active Slice

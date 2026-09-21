@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="/workspace/src/Iris.Core/Iris.Core.csproj" />
+    <ProjectReference Include="/workspace/src/Iris.Client/Iris.Client.csproj" />
+    <ProjectReference Include="/workspace/src/Iris.Server/Iris.Server.csproj" />
+    <ProjectReference Include="/workspace/src/Iris.Server.InMemory/Iris.Server.InMemory.csproj" />
+    <ProjectReference Include="/workspace/tests/Iris.Testing/Iris.Testing.csproj" />
+  </ItemGroup>
+</Project>
