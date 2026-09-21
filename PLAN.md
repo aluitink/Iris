@@ -129,7 +129,9 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Inbox (user/loop injections — action oldest first):**
 
-- *(empty — the 2026-09-21 service-restructuring injection was actioned same turn: base `docker-compose.yml` is the steady state for all deploys.)*
+**Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed.
+
+**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs.
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
