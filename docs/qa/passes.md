@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 115 (2026-09-21) — No new commit / no build change; dev S36 WIP grew to 2 tests; S37 count facet re-confirmed (note likedCount/likes.totalItems None + actor likedCount None, while /likes totalItems=1)
+- **Build/Live:** No new commit (HEAD `aebe420`); QA cluster unchanged. **Dev S36 WIP grew**: `FeedServiceTests.cs` now has **2 new test methods** (+98 lines) — the S36 fix is in progress (still uncommitted).
+- **Explored:** Re-confirmed the **S37 count facet** (count-materialization theme) on an A note that B already Liked (`06GC3VAX`, from B's outbox).
+- **Result:** **S37 re-confirmed OPEN.** Note `06GC3VAX` (B liked it): `GET A <note>/likes` → `totalItems` = **1** (the Like IS registered — correct), but the note's own `likedCount` = **None** and embedded `likes.totalItems` = **None** (the count is not materialized on the object), and the **actor** `ii-a1` `likedCount` = **None** (absent, not just 0). So a remote Like is stored + retrievable via `/likes`, but the `likedCount` (note + actor) and the inline Like-count are not surfaced — the same count-materialization gap as S28 (Boost `sharedCount`). This is the shared dev theme: **remote social actions are delivered + stored + surfaced, but the associated counts aren't materialized.**
+- **Checkpoint:** S36 top priority (dev fix in progress — 2 WIP tests). S37 + S28 count facets re-confirmed (count materialization is the remaining shared gap). S24 D1/D2 + S30 A8.4 + S32 (sending-side) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 114 (2026-09-21) — No new commit / no build change; re-confirmed S24 D2 (foreign activities in local actor outbox) — 3 B activities in ii-a1's outbox
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (`FeedServiceTests.cs` repro test still uncommitted). QA cluster unchanged (no redeploy).
 - **Explored:** Re-confirmed **S24 D2** (foreign activities in a local actor's outbox) — inspected `GET A /ap/v1/u/ii-a1/outbox` for activities whose `actor` is on the B instance.
