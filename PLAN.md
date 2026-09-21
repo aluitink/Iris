@@ -123,7 +123,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
    ## Active Slice
 
-- **Phase 145 — QA re-verification (dev-gated on QA results).** All S-series interop fixes (S24–S37) are DONE + unit-verified + deployed (`4431006`). The live re-verification is owned by the QA two-instance federation stack. Dev's next action: triage + fix any residual findings as QA reports them. Open S2 items: **S36** (home-feed; BLOCKED in-process, needs QA wire capture) and **S24-D1** (Following tab; CLOSED non-reproducible, needs QA two-instance repro). No new feature scope.
+- **Phase 146 — Production hardening (ACTIVE).** First slice: **Feed observability** — add structured logging + latency metrics to `FeedService.BuildFeedUncachedAsync` (per-follow fan-out timing, cache hit/miss, item count by type). Phase 145 (QA re-verify) remains dev-gated on QA results; S36 + S24-D1 are the open S2 items. No new feature scope; Phase 146 focuses on production-readiness (observability, performance, resilience).
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
@@ -152,6 +152,10 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **Await QA two-instance re-verify results** for the deployed S-series fixes (S32 delete/update audience, S36 home-feed, S37 likedCount, S30 A8.2/A8.4, S26, S27, S28). When QA reports back: triage any residual failures, capture the wire shape, and fix in-process with a regression test. The two open S2 items are **S36** (home-feed omits posts + actor-doc noise; BLOCKED in-process, needs QA wire capture) and **S24-D1** (Following tab omits remote actors; CLOSED non-reproducible, needs QA two-instance repro). No new feature scope in this phase.
 - **S36 regression test added (this turn):** `S36_LiveWireShape_CommunityGroupCreatePlusActorDocNoisePlusOwnNotePlusFollowNote_AllContentCreatesPresent` reproduces the exact live S36 wire shape (community Group Create + heavy actor-doc noise + own note Create + local-follow note Create) and asserts all three content Creates are present. **PASSES** — confirms the server is correct for the live shape in-process; the live issue is environmental (data shape not reproducible in-process). Gives QA a reference test for the two-instance re-verify.
+
+**Phase 146 — Production hardening (ACTIVE):**
+
+- **Feed observability:** add structured logging + latency metrics to `FeedService.BuildFeedUncachedAsync` (per-follow fan-out timing, cache hit/miss, item count by type). This gives operators visibility into feed performance and helps diagnose the S36 class of issues (feed dominated by noise) without a two-instance repro. First slice of Phase 146; the loop's step 2.5 exhaustion handler (define next phase, seed Dev Queue, commit, end turn).
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
