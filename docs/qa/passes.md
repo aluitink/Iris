@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 162 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Open-item sweep + S26 re-verify — all open items STABLE (4th consecutive stable pass)
+- **Build/Live:** No new dev commit (dev commits since `38ae87c` are PLAN-only `069fd7f` + `e07faa5`, no `src/` change) → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200; follow edges intact: ii-a1 followers=2, ii-b1 followers=2).
+- **Explored:** **Open-item stability sweep** on `38ae87c` (S36, S39, S24 D2, S24 D4, S38) + **S26 cross-instance reply threading re-verify** (holding-fix spot check).
+- **Result (all STABLE — 4th consecutive stable pass; no regression, no new defect, no fix landed):**
+  - **S36 (home feed) STILL OPEN (top priority).** `ii-a1` (A) `/home` → **boost wrapper only** ("Boosted by ii-b1", target note `06GC3AWSHG` = a **Tombstone** → "Content unavailable"), **no own content posts** (unchanged from Passes 129/144/146/152/154/158/159/160/161).
+  - **S39 (A-side notifications) STILL OPEN.** `ii-a1` (A) `/local/v1/notifications` → `totalItems=0`, items 0 (unchanged).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN.** `GET A /ap/v1/u/ii-a1/outbox` → `totalItems` = **55** (stable); page 1 = **6 foreign (ii-b1)** items.
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN (both directions).** `GET A /u/ii-b1` doc = **200**; `/outbox` = **404**; `/followers` = **404** (own-instance control `GET A /u/ii-a1/outbox` = **200**).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (both directions; own-instance control = 200).
+  - **S26 (cross-instance reply threading) re-verified → FIXED (holding).** A note `06GC5MR7` `/replies` totalItems=2 (was 1 in Pass 148); the B reply `06GC6337X9` still carries `inReplyTo` → the A parent (threading intact). The 2nd reply `06GC6MZE` is the leftover Pass-157 S39 repro reply (a valid B→A threaded reply, not a defect).
+- **Checkpoint:** **No build change; open-item sweep + S26 re-verify on `38ae87c` — all open items STABLE (4th consecutive stable pass).** S36 (home feed, top priority) + S39 (A-side notifications) + S24 D2 (foreign outbox, total 55) + S24 D4 (remote-collection 404) + S38 (webfinger) + S37/S28 (button-UI residual) all STILL OPEN. S30/S26/S33/S31/S29/S32/S34/S27 hold. **M2–M12 + L2–L12 blocked** (operator accounts). Awaiting a dev commit + rebuild to re-verify any fix (top priority: S36 home feed; then S39 A-side notification delivery + S24 D4 remote-collection proxy + S24 D2 outbox integrity).
+
 ## Pass 161 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Open-item sweep — all open items STABLE (3rd consecutive stable pass)
 - **Build/Live:** No new dev commit (HEAD `d030014` = QA Pass 160 docs; dev commits since `38ae87c` are PLAN-only `069fd7f` + `e07faa5`, no `src/` change) → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a1 following=2, ii-b1 followers=2).
 - **Explored:** **Open-item stability sweep** on `38ae87c` — S36 (home feed), S39 (A-side notifications), S24 D2 (foreign outbox), S24 D4 (remote-actor collections), S38 (webfinger), S37/S28 (counts).
