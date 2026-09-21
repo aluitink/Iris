@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 201 (2026-09-21) — build `8243361c` / follow-request notifications render in UI despite object-store 404
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** ii-a1 notifications (UI + API) for Follow items; actor Followers tab.
+- **Result:**
+  - **NEW — follow-request notifications render in UI:** ii-a1 UI shows 2 "sent you a follow request" notifications (ii-a2, ii-b1, 5h ago) with **Accept/Decline buttons**. The notification object is a bare IRI (no inlined content), yet the UI renders the actor handle + "follow request" label + action buttons.
+  - **Followers tab consistent:** ii-a1 Followers tab shows ii-b1 (Unfollow) + ii-a2 (Follow) — matches the follow notifications.
+  - **Content-source map extended:** The notification path has **3 sub-paths**: (1) Create → inlines content (Pass 196-200), (2) Like → inlines content, (3) Follow → bare IRI, UI resolves the actor handle from the IRI (no object store needed). All 3 sub-paths bypass the object-store gap.
+  - **S36 36th consecutive.** 0 console errors.
+- **Checkpoint:** Content-source map now covers all 3 notification sub-paths (Create/Like inline, Follow resolves IRI). The home-feed path is the only UI surface that depends on the object store. Next: new exploration.
+
 ## Pass 200 (2026-09-21) — build `8243361c` / P200 confirms notification-inlining + feed-omission asymmetry
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post II-S36-P200; B cache/proxy/outbox/notifications/home-feed for P200.
