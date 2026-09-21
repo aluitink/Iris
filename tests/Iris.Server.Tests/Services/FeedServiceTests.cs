@@ -1676,6 +1676,72 @@ public sealed class FeedServiceTests
         Assert.Contains($"https://{LocalHost}/notes/b-1", createIris);
     }
 
+    [Fact]
+    public async Task S36_OwnPostsSurvive_CapSaturationByLocalFollowPlusBrokenRemotePlusDeliveredContent()
+    {
+        // S36 live regression net: the home feed is saturated by a LOCAL follow whose outbox exceeds
+        // MaxItems (200), AND a broken remote follow whose wire walk yields nothing but whose
+        // inbox-delivered content is stored in the object store (the S25 union). The actor's OWN posts
+        // (their outbox, merged before the follows) must still surface in the capped feed. This is the
+        // in-memory shape of the live S36 symptom (home feed empty even for the actor's own posts)
+        // under maximum load from all three merge sources (own outbox, local follow, remote follow's
+        // delivered content).
+        var local = Actor(LocalHost, "bob");
+        var remote = Actor(RemoteHost, "carol");
+        var (service, persistence) = Build(
+            persistence: SeedLocal(p =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                SeedActor(p, alice, "Alice");
+                SeedActor(p, local, "Bob");
+                p.Follows.RecordFollowAsync(alice, local).GetAwaiter().GetResult();
+                p.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+
+                // The local follow's outbox saturates the MaxItems cap (300 posts > 200).
+                for (var i = 0; i < 300; i++)
+                {
+                    AddPost(p, local, $"lb-{i}", $"bob post {i}");
+                }
+
+                // The broken remote follow's delivered content (S25 union): stored in the object store
+                // under the remote author, attributed to them (mirrors the inbox write path).
+                for (var i = 0; i < 40; i++)
+                {
+                    p.Objects.PutObjectAsync(new Note
+                    {
+                        Id = $"https://{RemoteHost}/notes/delivered-{i}",
+                        Content = [$"carol delivered {i}"],
+                        AttributedTo = [new Link { Href = new Uri(remote.Value) }],
+                        To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                    }).GetAwaiter().GetResult();
+                }
+
+                // The actor's own posts.
+                AddPost(p, alice, "a-own-1", "alice own 1");
+                AddPost(p, alice, "a-own-2", "alice own 2");
+            }),
+            actorDocs: new StubActorDocumentFetcher(iri =>
+            {
+                if (iri == remote)
+                {
+                    var actor = new Person { Id = remote.Value };
+                    actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                    return actor;
+                }
+
+                return null;
+            }),
+            client: new StubClient(Pages())); // the remote outbox walk yields nothing (broken remote)
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The cap holds (200).
+        Assert.Equal(200, feed.Count);
+        // The actor's own posts survive the cap saturation.
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-own-1");
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-own-2");
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(
