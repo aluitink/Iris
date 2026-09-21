@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 191 (2026-09-21) — build `8243361c` / cross-instance note cache gap quantified
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post (II-S36-P191) → B cache/proxy check; prior B post (II-S36-P189) → A cache/proxy check; health checks both instances.
+- **Result:**
+  - **Cross-instance note cache gap (NEW DATA):** B→A: B note 200, A cache 404, A proxy 404. A→B: A note 200, B cache 404, B proxy 404. **Bidirectional: the peer never caches the content note** (both cached + proxy routes 404). The Create activity reaches the peer's inbox (feed has noise from the same window) but the **content object is never fetched/cached**.
+  - **Narrows S36 root cause:** Not just the feed query omitting Creates — the content object is never cached on the peer, so there's nothing to return. The 12 "unknown" items in A's feed may be partially-fetched references.
+  - **Health:** Both A+B healthy (delivery queue empty, workers running, no dead letters). Delivery works; object-fetch/caching path is the gap.
+  - S36 27th consecutive. 0 console errors.
+- **Checkpoint:** S36 root cause narrowed to object-fetch/caching (not just feed query). Next: new exploration or stability.
+
 ## Pass 190 (2026-09-21) — build `8243361c` / Lemmy/Mastodon interop + S36 fresh A post + feed type histogram
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Lemmy API health + post list, Mastodon instance API + cross-origin actor resolution, fresh A post (II-S36-P190) → A feed check, feed type histograms (A + B), /ap/v1/health both instances.
