@@ -4242,22 +4242,27 @@ public static class ActivityPubServerExtensions
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
 
-                // Phase 136.7 (cross-instance reply integrity): when the Create is a reply (its embedded
-                // object's inReplyTo is set), the reply must ALSO reach the PARENT's home instance — the
-                // parent's author is not (in general) a follower of the replier, so the follower fan-out
-                // above does not carry the reply to the parent's home (the Lemmy author of a post that an
-                // Iris user replied to would otherwise never see the reply — the thread is broken on the
-                // parent's home). Resolve the parent's author (local lookup, or a remote fetch when the
-                // parent is on another instance) and deliver the reply to it, so the parent's home stores
-                // the reply and serves it under the parent's /replies collection. A local parent (the
-                // author is a local actor) is a no-op (the reply is already on the same instance); a
-                // resolvable remote parent is delivered. Best-effort: an unresolvable parent (a fetch
-                // failure) simply skips the extra delivery — the follower fan-out still ran.
+                // Phase 136.7 (cross-instance reply integrity) + S39 (local reply notification): when the
+                // Create is a reply (its embedded object's inReplyTo is set), the reply must reach the
+                // PARENT's author — the parent's author is not (in general) a follower of the replier, so
+                // the follower fan-out above does not carry the reply to the parent's inbox. A local
+                // parent (same instance) is added directly to the parent author's inbox (S39: without this,
+                // a local reply produces no notification for the parent author — the reply is in the
+                // replier's outbox, not the parent's inbox). A remote parent is delivered over the wire.
+                // Best-effort: an unresolvable parent (a fetch failure) simply skips the extra delivery.
                 if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor
-                    && !await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
                 {
-                    await delivery.DeliverToActorAsync(parentAuthor, activity, actorIri, ct).ConfigureAwait(false);
+                    if (await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
+                    {
+                        await persistence.Activities
+                            .AddToInboxAsync(parentAuthor, activity, ct)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await delivery.DeliverToActorAsync(parentAuthor, activity, actorIri, ct).ConfigureAwait(false);
+                    }
                 }
 
                 // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
