@@ -37,9 +37,9 @@ In this order, from the worktree:
 
 ## 3. The pass (summary — the docs are authoritative)
 
-1. **Sync down (mandatory, every pass):** `git merge interop-testing --no-edit` in your
+1. **Sync down (mandatory, every pass):** `git merge main --no-edit` in your
    worktree (or `scripts/qa-worktree.sh sync`). Verify you are 0 behind:
-   `git rev-list --count qa..interop-testing` must be 0. If not, stop and fix it.
+   `git rev-list --count qa..main` must be 0. If not, stop and fix it.
    On conflict: abort the merge, log it in PLAN.md **Paused Questions**, continue or end
    the pass cleanly — do not guess.
 2. **Staleness check (the #1 false-finding source):**
@@ -90,7 +90,7 @@ In this order, from the worktree:
    `git -C /workspace/.worktrees/qa add docs/qa/ PLAN.md && git -C /workspace/.worktrees/qa commit -m "qa: pass NN — <summary>"`
    then from `/workspace`: `git merge qa` (or `scripts/qa-worktree.sh merge`).
    **Verify it landed:** `git -C /workspace log --oneline -1` must show your pass commit.
-   If you can't see it on `interop-testing`, redo the merge before ending the pass.
+   If you can't see it on `main`, redo the merge before ending the pass.
 9. **Prune + checkpoint:** append a brief 4-line entry to `docs/qa/passes.md`
    (Build/Live, Explored, Result, Checkpoint) — no repro detail there; if the log
    exceeds ~40 entries, archive the oldest half to `passes-archive.md`. Update the
@@ -115,6 +115,6 @@ In this order, from the worktree:
 ## 5. Done for this pass
 
 The pass ends when: synced down, staleness checked, findings written, PLAN.md QA
-sections updated, the pass committed **and merged to `interop-testing`** (verified),
+sections updated, the pass committed **and merged to `main`** (verified),
 and the checkpoint updated. Say one line: pass number, build tested, what passed /
 re-confirmed / newly found, and the checkpoint for the next pass.

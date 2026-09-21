@@ -34,7 +34,7 @@ In this order, from the worktree:
 
 ## 3. The turn (summary — the docs are authoritative)
 
-1. **Sync down:** `git merge interop-testing --no-edit` in your worktree.
+1. **Sync down:** `git merge main --no-edit` in your worktree.
 2. **Green gate:** `dotnet build` + `dotnet test --filter "Category!=Slow"`. Red → repair
    (max 2 attempts) → commit `fix: repair broken state from previous turn` → end turn.
 3. **Select work** (DEV_LOOP.md step 2 order): Inbox → Re-verify debt → new QA findings in
@@ -50,7 +50,7 @@ In this order, from the worktree:
    Record the deployed commit + uptime in PLAN.md **Live state** (dev1 only writes this
    for the dev stacks; dev2 notes its deploy in its Active Slice line).
 6. **Commit** — implementation + tests together (`feat|fix: …`), docs separately (`docs: …`).
-7. **Merge up:** from `/workspace`, `git merge <you> --no-edit`. On conflict: resolve by
+7. **Merge up:** from `/workspace` (on `main`), `git merge <you> --no-edit`. On conflict: resolve by
    hand, log it in PLAN.md **Paused Questions**, continue.
 8. **Update PLAN.md** per your write scope (§1), prune (Dev Queue ≤ ~7, Recently
    Completed ≤ ~5), then end the turn.
@@ -76,5 +76,5 @@ In this order, from the worktree:
 ## 5. Done for this turn
 
 The turn ends when: build + fast tests green, work committed and merged to
-`interop-testing`, your stack deployed (if web change), and PLAN.md updated + pruned.
+`main`, your stack deployed (if web change), and PLAN.md updated + pruned.
 Say one line: what you did, what you deployed, what's next.

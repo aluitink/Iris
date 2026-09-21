@@ -15,7 +15,7 @@
 Dev1 works in `.worktrees/dev1` (branch `dev1`). Dev2 works in `.worktrees/dev2` (branch `dev2`). QA works in `.worktrees/qa` (branch `qa`). Each agent builds its Iris image from **its own worktree** and deploys to **its own environment stack** (see [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md)). The primary repo (`/workspace`) is for production only.
 
 ```
-/workspace                  ← production (primary repo, branch interop-testing)
+/workspace                  ← production (primary repo, branch main)
   └─ apps/Iris.Web/ + environments/  (prod stack, port 8088)
 /workspace/.worktrees/dev1  ← dev1 (worktree, branch dev1)   → dev1-* stack (10xxx)
 /workspace/.worktrees/dev2  ← dev2 (worktree, branch dev2)   → dev2-* stack (20xxx)

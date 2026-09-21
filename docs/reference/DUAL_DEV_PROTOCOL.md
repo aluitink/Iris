@@ -5,7 +5,7 @@
 ## Topology
 
 ```
-/workspace                  ← production (primary repo, branch interop-testing)
+/workspace                  ← production (primary repo, branch main)
   apps/Iris.Web/.env        ← prod config (git-ignored, port 8088)
   environments/stack/       ← shared compose template (all envs use this)
   environments/dev1/.env    ← dev1 config (committed, port block 10xxx)
@@ -48,7 +48,7 @@ Service offsets: `01`=iris-a, `02`=iris-b, `11`=lemmy, `12`=mastodon.
 | **dev1** | `.worktrees/dev1` | `dev1` | `-p dev1` (10xxx) | `dev1-*` |
 | **dev2** | `.worktrees/dev2` | `dev2` | `-p dev2` (20xxx) | `dev2-*` |
 | **QA** | `.worktrees/qa` | `qa` | `-p qa` (30xxx) | `qa-*` |
-| **prod** | `/workspace` (primary) | `interop-testing` | `irisweb` (8088) | `iris` |
+| **prod** | `/workspace` (primary) | `main` | `irisweb` (8088) | `iris` |
 
 Each agent is the **sole deployer** for its own environment. dev1 deploys to `dev1-*`, dev2 to `dev2-*`, QA to `qa-*`. No agent deploys to another agent's stack.
 
@@ -77,24 +77,24 @@ The `REPO_ROOT` in each `.env` points to that agent's worktree, so `--build` use
 
 ### dev1 — every turn
 
-1. **Sync down:** `git -C .worktrees/dev1 merge interop-testing --no-edit` (pull in dev2's merged work + QA doc merges).
+1. **Sync down:** `git -C .worktrees/dev1 merge main --no-edit` (pull in dev2's merged work + QA doc merges).
 2. **Run build + fast tests** in the worktree. Red state → repair (max 2 attempts) → end turn.
 3. **Select work item** per DEV_LOOP.md step 2 (Inbox → Re-verify → new QA findings → Dev Queue).
 4. **Work on the item** (code + tests).
 5. **Deploy to dev1 stack:** `docker compose -f environments/stack/docker-compose.yml --env-file environments/dev1/.env -p dev1 up -d --build` (from the dev1 worktree, so `REPO_ROOT` is correct).
 6. **Commit** (implementation + tests together; docs separate).
-7. **Merge to `interop-testing`:** from `/workspace`, `git merge dev1 --no-edit`.
+7. **Merge to `main`:** from `/workspace`, `git merge dev1 --no-edit`.
 8. **Update PLAN.md** (Active Slice, Dev Queue, Live state, Recently Completed).
 
 ### dev2 — every turn
 
-1. **Sync down:** `git -C .worktrees/dev2 merge interop-testing --no-edit`.
+1. **Sync down:** `git -C .worktrees/dev2 merge main --no-edit`.
 2. **Run build + fast tests** in the worktree. Red state → repair (max 2 attempts) → end turn.
 3. **Select work item** from the Dev Queue, **disjoint** from dev1's current item (see Scope assignment).
 4. **Work on the item** (code + tests).
 5. **Deploy to dev2 stack:** `docker compose -f environments/stack/docker-compose.yml --env-file environments/dev2/.env -p dev2 up -d --build` (from the dev2 worktree).
 6. **Commit** in the worktree.
-7. **Merge to `interop-testing`:** from `/workspace`, `git merge dev2 --no-edit`.
+7. **Merge to `main`:** from `/workspace`, `git merge dev2 --no-edit`.
 8. **Update PLAN.md's Active Slice** — dev2 records its own progress (narrow exception, see below).
 
 **PLAN.md ownership:** dev1 owns the dev sections (Active Slice, Dev Queue, Live state, Recently Completed). dev2 may write to the Active Slice section **only** for lines describing its own assigned item. dev2 does NOT edit Dev Queue, Live state, or Recently Completed. Both agents write to `docs/changes/` for their own slices.
@@ -121,7 +121,7 @@ Rules:
 
 ## Conflict resolution
 
-**Code conflicts (merge to interop-testing):** should not happen if scope is disjoint. If a merge conflict appears:
+**Code conflicts (merge to main):** should not happen if scope is disjoint. If a merge conflict appears:
 1. The merging agent resolves it by hand.
 2. Log the conflict in PLAN.md's Paused Questions (which file, both sides' intent).
 3. The loop continues; a human reviews if needed.
@@ -132,7 +132,7 @@ Rules:
 
 ## Staleness check (QA's perspective)
 
-QA's staleness check is unchanged: compare PLAN.md's **Live state** `deployed:` against the qa stack's current build. The deployed commit may include work from both dev1 and dev2 (merged via `interop-testing`). QA does not need to distinguish whose work is in the build.
+QA's staleness check is unchanged: compare PLAN.md's **Live state** `deployed:` against the qa stack's current build. The deployed commit may include work from both dev1 and dev2 (merged via `main`). QA does not need to distinguish whose work is in the build.
 
 **Dev agents' staleness check:** each dev agent compares its own stack's deployed commit against its worktree HEAD. If they differ, rebuild + redeploy its own stack.
 
@@ -141,20 +141,20 @@ QA's staleness check is unchanged: compare PLAN.md's **Live state** `deployed:` 
 | Failure mode | Guard |
 |---|---|
 | dev1 and dev2 touch the same file → merge conflict | Scope assignment: disjoint areas; each agent reads Active Slice before picking |
-| dev2 commits work that's never deployed → QA never sees it | dev2 deploys to its own dev2 stack; QA tests the qa stack (which builds from the qa worktree, merged from interop-testing) |
+| dev2 commits work that's never deployed → QA never sees it | dev2 deploys to its own dev2 stack; QA tests the qa stack (which builds from the qa worktree, merged from main) |
 | Both devs work on the same S-number → conflict | Active Slice coordination: each agent sees the other's current item |
 | dev2 writes to PLAN.md dev sections → clobbers dev1's state | Ownership rule: dev2 writes only Active Slice's own-item lines + `docs/changes/` |
-| dev2's branch drifts behind main | dev2 syncs down (`merge interop-testing`) every turn, before working |
+| dev2's branch drifts behind main | dev2 syncs down (`merge main`) every turn, before working |
 | Worktree missing .env files | .env files are committed in `environments/` (shared, not per-worktree) |
 | Agent builds from wrong worktree | `REPO_ROOT` in each `.env` points to the correct worktree path |
 
 ## Setup (one-time)
 
 ```bash
-# Create worktrees (from /workspace, on interop-testing)
-git worktree add .worktrees/dev1 -b dev1 interop-testing
-git worktree add .worktrees/dev2 -b dev2 interop-testing
-git worktree add .worktrees/qa   -b qa   interop-testing
+# Create worktrees (from /workspace, on main)
+git worktree add .worktrees/dev1 -b dev1 main
+git worktree add .worktrees/dev2 -b dev2 main
+git worktree add .worktrees/qa   -b qa   main
 
 # Bring up each agent's environment stack
 docker compose -f environments/stack/docker-compose.yml --env-file environments/dev1/.env -p dev1 up -d --build
