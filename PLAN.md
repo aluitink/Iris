@@ -112,12 +112,13 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 - **Dev loop** → [DEV_LOOP.md](docs/reference/DEV_LOOP.md). Owns code + tests + the **Dev Queue** below. Deploys the live container and records the deployed commit in **Live state**.
 - **QA loop** → [QA_LOOP.md](docs/reference/QA_LOOP.md). Owns the live app's behavior + the **QA Queue** (`docs/qa/`). Works in an isolated **worktree** (`scripts/qa-worktree.sh`) so it never writes dev's files.
 - **Staleness is the #1 false-finding source.** Before QA starts a pass it checks **Live state `deployed:` == HEAD**; if they differ, the container is stale and no pass may start. When either loop sees an error that *might* be redeploy-related, the **redeploy-error rule** in [DEV_LOOP.md](docs/reference/DEV_LOOP.md#when-qa-reports-an-error-or-you-see-one-that-may-be-redeploy-related) decides whether to rebuild/redeploy or actually fix code.
-- **Environment split:** the QA loop uses the QA cluster (`qa-iris-a`, `qa-iris-b`, `qa-lemmy`, `qa-mastodon`); the dev loop uses the dev cluster (`dev-iris-a`, `dev-iris-b` — legacy names `iris-dev1` / `iris-dev2` remain mapped to the same ports); `iris.luit.ink` is the production/public FQDN and is not used for dev or QA testing.
+- **Environment split:** the QA loop uses the QA cluster (`qa-iris-a`, `qa-iris-b`, `qa-lemmy`, `qa-mastodon`); the dev loops use the dev1/dev2 clusters (`dev1-*` / `dev2-*`); `iris.luit.ink` is the production/public FQDN and is not used for dev or QA testing.
 - **Ownership:** each loop writes only its own PLAN.md sections and files (the [ownership map](docs/reference/DEV_LOOP.md#ownership-map-planmd) is binding).
 
 ## Live state
 
 - **Topology:** per-agent environment stacks (see [DUAL_DEV_PROTOCOL.md](docs/reference/DUAL_DEV_PROTOCOL.md)). dev1 → `dev1-*` (10xxx), dev2 → `dev2-*` (20xxx), qa → `qa-*` (30xxx), prod → `iris.luit.ink` (8088). Each agent builds from its own worktree.
+- **Verified 2026-09-21:** all 13 FQDNs serve HTTP 200 over TLS via the gateway proxies; WebFinger confirms each Iris instance advertises its own FQDN (e.g. `alice@dev1-iris-a.luit.ink` → `acct:alice@dev1-iris-a.luit.ink`). Gateway `stack.sh` updated to bring up the `proxies/iris-environments` compose (4th stack).
 - **Dev1 stack:** `dev1-iris-a` + `dev1-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21).
 - **Dev2 stack:** `dev2-iris-a` + `dev2-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21).
 - **QA stack:** `qa-iris-a` + `qa-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21). QA must re-verify S40/S2/S14 (fixed) + directory fix (awaiting re-verify) on the new stack.
