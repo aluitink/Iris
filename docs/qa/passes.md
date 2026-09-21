@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 100 (2026-09-21) — Re-verify S31/S33/S27 fixes on rebuilt QA cluster (Iris↔Iris)
+
+- **Build/Live:** QA cluster `qa-iris-a`/`qa-iris-b` images were **3h stale** (pre-dated the fixes). Rebuilt both Iris services from `interop-testing` HEAD `27b1ba6` (`docker compose -p qa up -d --build iris-a iris-b`) → now **== HEAD**. First edit attempt on the stale build still showed `published=None` (confirmed the build was behind), then the rebuild made the fixes live.
+- **Explored:** Clean-entry re-verify of the three newly-committed shared-inbox/edit fixes on the two-instance stack: **S31** (A9 edit preserves `published`), **S33** (A10 unfollow `Undo` propagates, bare-IRI wire shape), **S27** (A6 remote Like applied on author).
+- **Result:** **S31 FIXED** (`GET A <note>` `published` preserved `03:05:53.7578037Z` + `updated` stamped; the peer-copy-dropped side-effect is S32, tracked separately). **S33 FIXED** (B unfollowed A; bare-IRI `Undo` delivered to A's shared inbox, A resolves the Follow from its store, A `ii-a1/followers` drops `ii-b1` → `[ii-a2]`; no "unknown recipient" rejection). **S27 FIXED** (B liked A's note; A note `likedCount` 0→1 via shared-inbox routing to the note's author).
+- **Checkpoint:** S24/S25/S28/S30/S32 remain OPEN (not re-exercised this pass — they pre-date these 3 fixes). M2–M12 (Mastodon) + L2–L12 (Lemmy) still **BLOCKED** pending operator-provided peer accounts. Next: re-verify S24/S25/S28/S30/S32 on the current build, or resume a peer suite once unblocked.
+
 ## Pass 98 (2026-09-21) — Iris↔Mastodon M1 (bootstrap) + NEW S35 (remote-actor discovery 404); M2–M12 BLOCKED
 - **Build/Live:** fresh QA cluster — Iris A `qa-iris-a.luit.ink` ↔ Mastodon 4.7.2 `qa-mastodon.luit.ink`.
 - **Explored:** M1 (bootstrap both systems) + Iris→Mastodon discovery (fediverse search + actor page) + Mastodon cluster wire probes (webfinger, public API, AP actor doc, registration config).

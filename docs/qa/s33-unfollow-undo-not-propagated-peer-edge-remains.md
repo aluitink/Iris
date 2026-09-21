@@ -1,7 +1,7 @@
 # S33 — Unfollow (`Undo` of `Follow`) emitted locally but NOT propagated; peer's `followers` edge remains
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** open
+- **Status:** **fixed (2026-09-21, `d6914d6`, change 14823)** — clean-entry re-verify on the rebuilt QA cluster (HEAD `27b1ba6`); bare-IRI `Undo` now routes to the follow's target and the peer edge is removed.
 - **Found:** Interop suite A10 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S32](s32-delete-not-propagated-peer-stale-copy.md) (same "bare-IRI Undo/Delete → peer can't resolve recipient → not applied" class). Distinct from [S24](s24-cross-instance-follow-state-inconsistent.md) (follow *state*; this is the unfollow *propagation*).
 
@@ -59,3 +59,14 @@ S33 OPEN (reproduces on a fresh build).
 - **Peer (B):** `GET B /ap/v1/u/ii-b1/followers` → **still `[ii-a1@A]` (count 1)** after ~12 s — the unfollow did **not** propagate; B's `followers` edge remains. (A10.3 ✗)
 
 Same bare-IRI `Undo` + stale peer `followers` as the prior runs. **S33 OPEN (reproduces on the 2026-09-21 fresh cluster).**
+
+## Re-verify after fix (2026-09-21, rebuilt QA cluster @ HEAD `27b1ba6`)
+
+Rebuilt the two Iris services from `interop-testing` HEAD (`27b1ba6`) before re-verifying (the prior 3h-old images pre-dated the fix). Clean entry as `ii-b1` (B); B was following `ii-a1` (A) — A `ii-a1/followers` = `[ii-b1, ii-a2]`.
+
+`ii-b1` pressed **Unfollow** on `ii-a1`'s actor page:
+- **Local (B):** `GET B /ap/v1/u/ii-b1/following` → **empty** (ii-b1 no longer follows ii-a1). ✓
+- **Wire:** B outbox `Undo` `…/ii-b1/undos/06GC3VXYCY9KB98J9BP6PD9824`, `object` = **bare IRI** `…/ii-b1/follows/06GC3AHWHYVY7GAS4ETX73AAAR` (the original Follow IRI — the exact wire shape S33 reproduced; still a bare-IRI link, **not** an embedded Follow).
+- **Peer (A):** after the async delivery settled (A delivery queue drained), `GET A /ap/v1/u/ii-a1/followers` → **`[ii-a2]` only — `ii-b1` REMOVED**. ✅ (First check at ~4 s still showed ii-b1; it cleared once the queued `Undo` was delivered — the fix routes the shared-inbox `Undo` to the follow's target, A resolves the bare-IRI Follow from its activity store, and removes the edge.)
+
+**S33 FIXED** — the unfollow now propagates to the peer's `followers` on the current build, via the shared-inbox bare-IRI `Undo` path (no "unknown recipient" rejection). Note the fix does **not** change the wire to an embedded Follow; it corrects the **receiving** shared-inbox routing so a bare-IRI `Undo` resolves to the follow's target.

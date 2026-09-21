@@ -1,7 +1,7 @@
 # S27 — Cross-instance Like delivered to the author's shared inbox but DROPPED ("no local recipient"), never applied to the note
 
 - **Class:** bug / federation-delivery — **Severity:** S2
-- **Status:** open
+- **Status:** **fixed (2026-09-21, `27b1ba6`, change 14824)** — clean-entry re-verify on the rebuilt QA cluster (HEAD `27b1ba6`); a remote `Like` now routes to the note's author via the shared inbox and is applied (`likedCount` increments on the author's instance).
 - **Found:** Interop suite A6 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S25](s25-remote-post-not-in-followers-home-feed.md) (delivered+stored, not surfaced in feed), [S26](s26-remote-reply-not-threaded-under-parent.md) (stored, not threaded), [S28](s28-remote-announce-stored-not-in-shares.md) — S27 is a **distinct mechanism** specific to **Like**: the activity is **discarded at the shared inbox** before any store/surface step. Note: **Announce is NOT affected by S27** — A's log shows the remote Announce *received + accepted* (see S28); only the Like is dropped. So the shared-inbox "no local recipient" drop applies to **Like** specifically.
 
@@ -57,3 +57,12 @@ The original S27 evidence was produced by a signed client in the prior run. To r
 - **B (author's instance):** `GET B <note>/likes` → **count 0**; B object-detail UI (as ii-b1): Like button count **0**, not pressed; Likes tab = **"No likes yet."** (A6.2 ✗)
 
 So the cross-instance Like is created and emitted by the liker, but is **not applied on the author's instance** — the note's `likes` collection / count stays 0. (Mechanism this run: the Like didn't land in B's note `likes`; consistent with the original shared-inbox "no local recipient" drop, though B's log was not captured this pass.) **S27 OPEN (reproduces on the 2026-09-21 fresh cluster; now UI-testable).**
+
+## Re-verify after fix (2026-09-21, rebuilt QA cluster @ HEAD `27b1ba6`)
+
+Rebuilt the two Iris services from `interop-testing` HEAD (`27b1ba6`) before re-verifying (the prior 3h-old images pre-dated the S27 fix). Clean entry as `ii-b1` (B); re-followed `ii-a1` (A) so A's note was in B's feed. B liked A's note `S31 re-verify v2 base` (Note `…/ii-a1/notes/06GC3VAXBN4MEP52TQF1N21CM0`) from B's view of A's actor page.
+
+- **Wire (B):** B outbox `Like` `…/ii-b1/likes/06GC3WBJMSK3K93K9ZW9GN0T50`, `object` = the Note IRI (the author is `ii-a1` on A). ✓
+- **Author (A):** after the async delivery settled (A delivery queue drained), `GET A <note>` → **`likedCount` = 1** (was 0). ✅ The remote Like was received at A's shared inbox, **routed to the note's author** (`ii-a1`), and **applied** — no "no local recipient; accepting and dropping" drop.
+
+**S27 FIXED** — a cross-instance `Like` now reaches the author's instance and increments the note's `likedCount` on the current build. (Direction this run: B→A; the fix routes a shared-inbox `Like` to the note's author regardless of direction.)
