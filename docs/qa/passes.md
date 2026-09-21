@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 221 (2026-09-21) — build `401c08b5` / S36 re-confirmed: A home feed = 1 unique item (duplicate "Content unavailable" Announce); B home feed = completely empty (52nd consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed (re-check, dedup); B home feed (re-check).
+- **Result:**
+  - **A home feed:** 3 DOM elements → **1 unique item** (after dedup): "Boosted by ii-b1, 17h ago, Content unavailable — view original post". The "3 items" from previous passes was a DOM artifact (nested elements). The actual home feed has **1 item** (a duplicate Announce with "Content unavailable").
+  - **B home feed:** Completely empty ("Your timeline is empty. Follow people to see their posts here. Browse the directory →").
+  - **S36 re-confirmed (52nd consecutive):** Home feed is broken on both instances. A shows 1 duplicate Announce (no content); B shows nothing.
+  - **Refinement:** The home feed isn't "3 items" — it's **1 unique item** (a "Content unavailable" Announce) on A, and **0 items** on B. The feed is effectively empty (no readable content).
+  - 0 console errors.
+- **Checkpoint:** S36 re-confirmed (52nd consecutive). A home feed = 1 unique item (duplicate Announce, "Content unavailable"); B home feed = completely empty. The "3 items" from previous passes was a DOM artifact. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 220 (2026-09-21) — build `401c08b5` / Settings page: Account (Profile/Security/Change password/Moderation), Content (Notifications/Muted actors/Muted Communities/Relays), Danger (Account deletion) — all tabs work
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A settings page (all 3 tabs: Account, Content, Danger).
