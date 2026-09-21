@@ -117,12 +117,12 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit (code):** `adf65b84` — **S36 fix: fetch + cache bare-link Create objects on inbound delivery** (+2 unit tests; 1433 tests pass). QA cluster rebuilt 2026-09-21.
-- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84`.
+- **Deployed commit (code):** `863f22c8` — **S36 diagnostic logging** (added to the bare-link fetch+store path in `CreateActivityHandler.StoreEmbeddedObjectAsync`; traces fetch success/failure, `attributedTo` value, or `_objectFetcher` null). Built on `adf65b84` (S36 fix: fetch + cache bare-link Create objects on inbound delivery). Dev cluster (`irisweb-iris-web-1`) rebuilt + recreated, healthy on host `8088`.
+- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84` (S36 fix; QA needs to rebuild to `863f22c8` for the diagnostic logs).
 
     ## Active Slice
 
-- **S36 home-feed (IN PROGRESS, fix `adf65b84` deployed + partially working).** QA Passes 194–207 fully characterized the root cause: the notification path inlines content at store time (bypasses object-cache gap); the home-feed path queries the local object store (finds no cached Note → 404). The fix (`adf65b84`) fetches + caches the bare-link Create object on inbound delivery. **Live results (Pass 207):** the object IS cached (object-detail page renders remote content) but the AP note route (`/ap/v1/u/{actor}/notes/{id}`) still 404s — the cached object is stored in a different location than the AP note route reads from. Home feed still empty. **Dev action needed:** populate the actor-keyed note route (or make the feed query read from the same store as the object-detail page). Historical posts (pre-redeploy) are NOT backfilled.
+- **S36 home-feed (IN PROGRESS, fix `adf65b84` deployed + diagnostic `863f22c8` deployed).** QA Passes 194–207 fully characterized the root cause: the notification path inlines content at store time (bypasses object-cache gap); the home-feed path queries the local object store (finds no cached Note → 404). The fix (`adf65b84`) fetches + caches the bare-link Create object on inbound delivery. **Live results (Pass 207):** the object-detail page renders the content (from the outbox store) but the AP note route still 404s and the home feed is still empty. **Diagnostic logging added (`863f22c8`):** the S36 fetch+store path now logs (a) whether `_objectFetcher` is null, (b) the fetched object's type + `attributedTo`, (c) fetch failure. QA needs to rebuild to `863f22c8` + capture the logs when a fresh A→B post is made. The logs will reveal whether the fetch+store is actually being executed in the live environment. Historical posts (pre-redeploy) are NOT backfilled.
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
