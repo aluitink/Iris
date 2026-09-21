@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 236 (2026-09-21) — build `401c08b5` / Communities page: 3 tabs (Following, My communities, All on this instance), NO "All known" scope; ii-a8-community visible in Following + All on this instance; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A Communities page (tabs + scope).
+- **Result:**
+  - **Tabs:** Following, My communities, All on this instance. **NO "All known" scope** (unlike Directory page which has "This instance" / "All known").
+  - **Following tab:** ii-a8-community visible (Leave + Delete buttons, "You are the only owner").
+  - **All on this instance tab:** ii-a8-community visible (same card).
+  - **My communities tab:** (not tested, but ii-a8-community is owned by ii-a1 so should be here).
+  - **Observation:** Communities page has no "All known" scope — you can only see communities on the local instance. Remote communities (e.g., from B) are not listed. This is a feature gap (not a defect) — the Directory page has "All known" for People but not for Communities.
+  - No new defects found.
+  - 0 console errors.
+- **Checkpoint:** Communities page has no "All known" scope (feature gap, not defect). No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 235 (2026-09-21) — build `401c08b5` / Search: word-based works (33 results for "fresh"), exact token "II-S36" = 0 results (search tokenization quirk); no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A search for "II-S36" and "fresh".
