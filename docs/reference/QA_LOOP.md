@@ -4,7 +4,7 @@
 
 ## Principles
 
-- **You test the live app, not the code.** Every pass is **Playwright-driven** against the QA cluster, primarily `https://qa-iris-a.luit.ink` (with QA peers `https://qa-lemmy.luit.ink` and `https://qa-mastodon.luit.ink`). `https://iris.luit.ink` is the production FQDN and is not used for dev/test work; the dev cluster uses `https://dev-iris-a.luit.ink` / `https://dev-iris-b.luit.ink` (legacy `iris-dev1` / `iris-dev2` names still map to the same ports).
+- **You test the live app, not the code.** Every pass is **Playwright-driven** against the QA cluster, primarily `https://qa-iris-a.luit.ink` (with QA peers `https://qa-lemmy.luit.ink` and `https://qa-mastodon.luit.ink`). `https://iris.luit.ink` is the production FQDN and is not used for dev/test work. The dev agents use `https://dev1-iris-a.luit.ink` / `https://dev1-iris-b.luit.ink` (dev1, 10xxx ports) and `https://dev2-iris-a.luit.ink` / `https://dev2-iris-b.luit.ink` (dev2, 20xxx ports) — see [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md) for the full port/FQDN map.
 - **You work in an isolated worktree.** All your doc writes (`docs/qa/` + your PLAN.md sections) happen in a git worktree on a `qa/` branch, then **merge back**. This means dev and QA never write the same file at the same time — the two-person conflict problem is solved at the filesystem layer, not by politeness.
 - **A finding is a document, not a PLAN.md paragraph.** One doc per finding in `docs/qa/` (template in its [README](../qa/README.md)). PLAN.md carries only a count + top-priority pointer.
 - **You verify fixes, you don't just trust them.** A finding flips to `fixed` only after you re-confirm it **from a clean entry** on a container whose **deployed commit is current**. No evidence, no `fixed`.
@@ -12,13 +12,14 @@
 
 ## Isolation model (worktrees)
 
-Dev works in the main checkout (`/workspace`) on its branch. QA works in a **worktree** — a second checkout of the same repo on a `qa` branch. Both see the same commits; neither can clobber the other's uncommitted work.
+Dev1 works in `.worktrees/dev1` (branch `dev1`). Dev2 works in `.worktrees/dev2` (branch `dev2`). QA works in `.worktrees/qa` (branch `qa`). Each agent builds its Iris image from **its own worktree** and deploys to **its own environment stack** (see [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md)). The primary repo (`/workspace`) is for production only.
 
 ```
-/workspace                 ← dev (main checkout, e.g. branch interop-testing)
-  └─ code + docs/changes + docs/decisions  (dev-owned)
-/workspace/.worktrees/qa   ← QA  (worktree, branch qa)   [gitignored — see note]
-  └─ docs/qa/ + PLAN.md QA sections          (QA-owned)
+/workspace                  ← production (primary repo, branch interop-testing)
+  └─ apps/Iris.Web/ + environments/  (prod stack, port 8088)
+/workspace/.worktrees/dev1  ← dev1 (worktree, branch dev1)   → dev1-* stack (10xxx)
+/workspace/.worktrees/dev2  ← dev2 (worktree, branch dev2)   → dev2-* stack (20xxx)
+/workspace/.worktrees/qa    ← QA   (worktree, branch qa)     → qa-* stack (30xxx)
 ```
 
 > **Prerequisite — the shared docs must be committed.** A worktree is a checkout of a **commit**, not of the working tree. `scripts/qa-worktree.sh create` branches `qa` from the **current HEAD**, so anything that is only in the main checkout's *uncommitted* working tree (e.g. `docs/qa/` before its first commit) **will not appear in the worktree** — it looks like it vanished. Before the first QA pass, make sure `docs/qa/`, the loop docs, and PLAN.md are all committed on the main branch. (The worktree's own files are never tracked in the main repo — git records worktrees in `.git/worktrees/` metadata, not as files — so `.worktrees/` is gitignored only to keep IDE/file-watcher/backup tools from tripping over a second checkout.)

@@ -48,9 +48,9 @@ A slice must be **vertically complete**: implementation + its tests. Coverage ex
   - No dependency-direction violations (`Iris.Core` never references `Iris.Client`/`Iris.Server`; no upward dependencies).
   - No new NuGet packages without a note in PLAN.md's Active Slice (or the change doc) and a justification.
 - **Deploy if it's a web change** (so QA tests current code):
-  - **Deploy target:** the **single-instance steady-state stack** at `/workspace/apps/Iris.Web` (docker-compose → `iris.luit.ink:8088`). This is the environment the QA loop tests against for single-instance behavior. The **QA two-instance federation stack** (`qa-iris-a.luit.ink` + `qa-iris-b.luit.ink`) is **QA-owned** — dev does not build or deploy to it; cross-instance re-verification is QA's job on that stack.
-  - `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
-  - `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web`
+  - **Deploy target:** your **own environment stack**. Each agent deploys to its own stack (dev1 → `dev1-*` on 10xxx ports, dev2 → `dev2-*` on 20xxx ports, qa → `qa-*` on 30xxx ports). See [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md) for the full topology.
+  - **Build from your worktree** (the `REPO_ROOT` in your env's `.env` points to your worktree):
+    `docker compose -f environments/stack/docker-compose.yml --env-file environments/<your-env>/.env -p <your-env> up -d --build`
   - **Avoid `--no-cache`** (it fills the host disk; on `No space left on device`, run `docker builder prune -af` first).
   - Record the **deployed commit** + container uptime in PLAN.md's **Live state** (this is the number the QA loop compares against).
 - **Open Questions (autonomous default):** if you hit a design fork you can reasonably decide yourself, make the call, record it in the slice's change doc, and continue. Don't stall.
