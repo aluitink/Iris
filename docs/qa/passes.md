@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 202 (2026-09-21) — build `8243361c` / directory "All known" omits remote actors; search includes them
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Directory "All known" tab on A + B; search for remote actors.
+- **Result:**
+  - **NEW — directory "All known" omits remote actors:** A "All known": alice, ii-a1, ii-a2, im-user, iris-bot (A) — **NO ii-b1** (B actor, follower of ii-a1). B "All known": alice, ii-b1, iris-bot (B) — **NO ii-a1** (A actor, followed by ii-b1). The S30 A8.2 fix (cached remote communities in directory) does NOT extend to remote **actors**.
+  - **Search DOES include remote actors:** `/search?q=ii-b1` on A: 2 results (ii-b1 actor + P184 note). The search path uses the same inlined-content source as notifications/actor-page; the directory "All known" path does not.
+  - **Content-source map extended:** Directory "All known" uses a **local-only actor store** (no remote actors). Search, actor-page, object-detail, and notifications use the inlined-content source (which includes remote actors). The directory gap is a separate facet from S36 (home-feed) — it affects actor discovery, not content surfacing.
+  - S36 37th consecutive. 0 console errors.
+- **Checkpoint:** Directory "All known" omits remote actors (separate from S36). Search includes them. Content-source map now covers 6 UI surfaces. Next: file as new finding or add to S24.
+
 ## Pass 201 (2026-09-21) — build `8243361c` / follow-request notifications render in UI despite object-store 404
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** ii-a1 notifications (UI + API) for Follow items; actor Followers tab.
