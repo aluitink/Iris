@@ -1,6 +1,8 @@
 # Iris — Dev Loop
 
 > One of two parallel workstreams driven by [PLAN.md](../../PLAN.md). This is the **developer** loop: it owns **code** (source + tests) and the **Dev Queue**. The **QA** loop ([QA_LOOP.md](QA_LOOP.md)) owns the live app's behavior and the **QA Queue** (`docs/qa/`). Read both; you are the dev one.
+>
+> **Dual-dev mode:** when two dev agents work in parallel (dev1 primary + dev2 secondary in a worktree), the coordination rules are in [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md). The core loop below is unchanged; the protocol doc adds scope assignment, merge order, and deploy ownership for the two-dev case.
 
 ## Principles
 
