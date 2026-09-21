@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 196 (2026-09-21) — build `8243361c` / notification path bypasses object-cache gap
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** ii-a1 notifications (UI + `/local/v1/notifications` API); P189 note route on A.
+- **Result:**
+  - **NEW — notification path inlines content:** ii-a1 `/local/v1/notifications` (30 total, 20 page 1) has 10 `Create` items with **full content inlined** (e.g., II-S36-P189: actor=ii-b1, object.content="II-S36-P189 fresh B post..."). UI renders "ii-b1 posted 36m ago" with content.
+  - **Note route still 404:** `GET A /ap/v1/u/ii-b1/notes/06GC9RFVB4BRXGCYYMVGHWX0XM` → 404 (same note the notification references). Object NOT in local store, yet notification carries full content.
+  - **Root cause refined:** Notification path inlines content at store time (bypasses object-cache gap). Home-feed path does NOT inline (queries object store, finds nothing). Outbox path does NOT inline (S24 D2). Fix: inline or fetch+cache the object in the feed path.
+  - S36 29th consecutive. 0 console errors.
+- **Checkpoint:** Root cause refined — notification path inlines, feed path doesn't. Next: new exploration.
+
 ## Pass 195 (2026-09-21) — build `8243361c` / S24 D2 bidirectional growth + object-cache gap persistence
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** B outbox full scan (S24 D2 B-side); A outbox full scan (S24 D2 A-side); P189 A-cache re-check; P193 B-cache re-check.
