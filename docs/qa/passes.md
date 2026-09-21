@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 254 (2026-09-21) — build `401c08b5` / Change password: wrong current → "Current password is incorrect"; correct current + same new → "Password changed successfully"; re-login works; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A settings → Change password; wrong current password; correct current + same new password; re-login.
+- **Result:**
+  - **Wrong current password:** "Current password is incorrect." (clear error).
+  - **Correct current + same new password:** "Password changed successfully." (no "password unchanged" validation, but no harm).
+  - **Re-login after password change:** ii-a1 / Password1 → redirected to `/home` (session invalidated, re-login works).
+  - **Security:** Password change invalidates existing session (forced re-login). No user enumeration in error messages.
+  - No new defects.
+- **Checkpoint:** Change password works. Session invalidated on change. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 253 (2026-09-21) — build `401c08b5` / Login security: wrong password + nonexistent user both return identical "Invalid username or password" (no user enumeration); valid login works; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A login page; wrong password; nonexistent user; valid login.
