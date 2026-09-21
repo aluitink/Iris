@@ -23,4 +23,11 @@ public sealed class FeedOptions
     /// exceeds this, the extra (oldest) items are dropped.
     /// </summary>
     public int MaxItems { get; init; } = 200;
+
+    /// <summary>
+    /// The time-to-live of the per-actor feed cache. Within this window, repeated feed requests for the
+    /// same actor return the cached list without re-walking every follow's outbox. A host may shorten
+    /// this for fresher timelines or lengthen it for high-fan-out actors where the rebuild is expensive.
+    /// </summary>
+    public TimeSpan CacheTtl { get; init; } = TimeSpan.FromSeconds(30);
 }

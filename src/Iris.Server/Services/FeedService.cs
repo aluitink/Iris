@@ -55,8 +55,6 @@ namespace Iris.Server.Services;
 /// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
-
     private readonly ConcurrentDictionary<Iri, (List<IObjectOrLink> Items, DateTime BuiltUtc)> _feedCache = new();
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
@@ -170,7 +168,7 @@ public sealed class FeedService : IFollowFeedService
     /// </remarks>
     /// <remarks>
     /// <strong>Server-side per-actor caching (feed load feel).</strong> The merged feed is cached per
-    /// actor IRI with a short TTL (<see cref="CacheTtl"/> = 30 s). Within the window, a repeated
+    /// actor IRI with a short TTL (<see cref="FeedOptions.CacheTtl"/> = 30 s by default). Within the window, a repeated
     /// <c>GetFeedAsync</c> call for the same actor returns the cached item list without re-walking
     /// every follow's outbox (the expensive path). The cache is keyed by the actor's IRI alone (the
     /// merge is deterministic for a given set of follows); thread-depth filtering is applied to the
@@ -190,7 +188,7 @@ public sealed class FeedService : IFollowFeedService
     {
         if (!bypassCache
             && _feedCache.TryGetValue(actorIri, out var cached)
-            && DateTime.UtcNow - cached.BuiltUtc < CacheTtl)
+            && DateTime.UtcNow - cached.BuiltUtc < _options.CacheTtl)
         {
             _logger.LogDebug("Feed cache HIT for {ActorIri} ({Age}s old, {Items} items)",
                 actorIri.Value, (int)(DateTime.UtcNow - cached.BuiltUtc).TotalSeconds, cached.Items.Count);

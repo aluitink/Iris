@@ -155,7 +155,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Phase 146 — Production hardening (ACTIVE):**
 
-- **Feed observability (DONE):** structured logging + per-follow latency in `FeedService.BuildFeedUncachedAsync` (total latency, follow counts local/remote, item count by type, slowest follow) + cache hit/miss/bypass logging in `BuildFeedAsync` (LogDebug level with cache age + item count on hit, rebuild trigger on miss/bypass). DI injects `ILogger<FeedService>`. All 1428 tests pass. Deployed + healthy. Next Phase 146 slice: performance — feed query optimization (index on outbox IRI for the `GetOutboxAsync` hot path) or cache tuning (make TTL configurable).
+- **Feed observability (DONE):** structured logging + per-follow latency in `BuildFeedUncachedAsync` + cache hit/miss/bypass logging in `BuildFeedAsync`. All 1428 tests pass.
+- **Configurable cache TTL (DONE, this turn):** `FeedOptions.CacheTtl` (default 30s) replaces the hardcoded `CacheTtl` constant in `FeedService`. A host can now tune the per-actor feed cache freshness via config. All 1428 tests pass. Deployed + healthy. **PIVOT: new S2 QA finding S39 (A-side author notifications missing — local Like/reply/follow-request all silent) takes priority over further Phase 146 slices.**
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
