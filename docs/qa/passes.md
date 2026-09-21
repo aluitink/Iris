@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 217 (2026-09-21) — build `401c08b5` / Notifications work (P212 inlined); Communities page: A has ii-a8-community, B has none; no "All known" scope on Communities page
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A notifications; A Communities page; B Communities page.
+- **Result:**
+  - **A notifications:** P212 (ii-b1 post) is inlined with full content (25m ago). P189 also inlined (2h ago). Notifications work correctly — content is inlined at store time. 242 DOM elements (nested).
+  - **A Communities page:** Tabs: Following, My communities, All on this instance. ii-a8-community present (II-A8 Test Community, "QA community test", Leave/Delete buttons, "You are the only owner"). No "All known" scope button (unlike Directory page).
+  - **B Communities page:** Tabs: Following, My communities, All on this instance. "No communities followed yet." / "No communities on this instance yet." B has no local communities and doesn't follow the remote ii-a8-community.
+  - **Note:** The Communities page does NOT have an "All known" scope toggle (unlike the Directory page). Remote community discovery is only available via the Directory page → Communities tab → "All known" scope.
+  - 0 console errors.
+- **Checkpoint:** Notifications work (content inlined). Communities page: A has local ii-a8-community, B has none. No "All known" scope on Communities page (remote discovery only via Directory). No new defects. S36 home feed still OPEN. Next: no new angles.
+
 ## Pass 216 (2026-09-21) — build `401c08b5` / Directory "All known" visible actors confirmed (6: alice, ii-a1, ii-a2, ii-b1, im-user, iris bot); "65 cards" = DOM elements, not unique actors; search + actor page work
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Directory "All known" on A (detailed card inspection); A search for ii-b1; A actor page for ii-b1 (from home feed link).
