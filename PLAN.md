@@ -123,7 +123,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
    ## Active Slice
 
-- **Phase 146 — Production hardening (ACTIVE).** **Feed observability DONE** (2 turns): structured logging + per-follow latency in `BuildFeedUncachedAsync` + cache hit/miss/bypass in `BuildFeedAsync`. All 1428 tests pass, deployed + healthy. Phase 145 (QA re-verify) remains dev-gated; S36 + S24-D1 open S2 items. Next slice: performance (outbox IRI index or configurable cache TTL).
+- **S39 local reply notification fix (ACTIVE → DONE this turn).** The Phase 136.7 reply-delivery block in `OutboxPublishHandler` skipped local parents, so a local reply produced no notification for the parent author. Fixed: local parent → `AddToInboxAsync`; remote parent → `DeliverToActorAsync`. +3 integration tests. All tests pass, deployed + healthy. S39 cross-instance legs + mention-tag resolution remain open (QA re-verify). Phase 146 (Production hardening) paused; Phase 145 (QA re-verify) dev-gated; S36 + S24-D1 open S2 items.
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
@@ -156,7 +156,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 **Phase 146 — Production hardening (ACTIVE):**
 
 - **Feed observability (DONE):** structured logging + per-follow latency in `BuildFeedUncachedAsync` + cache hit/miss/bypass logging in `BuildFeedAsync`. All 1428 tests pass.
-- **Configurable cache TTL (DONE, this turn):** `FeedOptions.CacheTtl` (default 30s) replaces the hardcoded `CacheTtl` constant in `FeedService`. A host can now tune the per-actor feed cache freshness via config. All 1428 tests pass. Deployed + healthy. **PIVOT: new S2 QA finding S39 (A-side author notifications missing — local Like/reply/follow-request all silent) takes priority over further Phase 146 slices.**
+- **Configurable cache TTL (DONE):** `FeedOptions.CacheTtl` (default 30s) replaces the hardcoded `CacheTtl` constant in `FeedService`. All 1428 tests pass. Deployed + healthy.
+- **S39 local reply notification fix (DONE, this turn):** the Phase 136.7 reply-delivery block in `OutboxPublishHandler` skipped local parents (`!IsLocalActorAsync` guard), so a local reply's Create never landed in the parent author's inbox → no notification. Fixed: local parent → `AddToInboxAsync(parentAuthor, activity)`; remote parent → `DeliverToActorAsync` (unchanged). +3 integration tests (`S39LocalLikeNotificationIntegrationTests`: local Like, local reply, local follow-request all land in the recipient's inbox). All 1428+113 tests pass. Deployed + healthy. **S39 cross-instance legs (B→A Like/reply) + mention-tag resolution remain open — need QA two-instance re-verify.**
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
