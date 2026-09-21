@@ -1,3 +1,4 @@
+using Iris.Client;
 using Iris.Core;
 using Iris.Server.Media;
 using Iris.Server.Security;
@@ -74,6 +75,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly IOptions<ActivityPubServerOptions> _options;
     private readonly IActorDocumentFetcher? _actorDocuments;
     private readonly IInboundTagNormalizer? _tagNormalizer;
+    private readonly IActivityPubClient? _objectFetcher;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -96,6 +98,9 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// <c>@mention</c>/<c>#hashtag</c> tokens in the note's content that are not already declared in its
     /// <c>tag</c> — Phase 156, Slice C). May be <see langword="null"/> (no inbound tag resolution — the
     /// note is stored as the remote server sent it).</param>
+    /// <param name="objectFetcher">The ActivityPub client (fetches the object by IRI when the Create's
+    /// object is a bare link reference rather than an embedded object — S36). May be
+    /// <see langword="null"/> (no object fetching — a bare-link Create stores nothing).</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
@@ -106,6 +111,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         IOptions<ActivityPubServerOptions> options,
         IActorDocumentFetcher? actorDocuments = null,
         IInboundTagNormalizer? tagNormalizer = null,
+        IActivityPubClient? objectFetcher = null,
         ILogger<CreateActivityHandler>? logger = null)
         : base(logger)
     {
@@ -121,6 +127,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         _options = options;
         _actorDocuments = actorDocuments;
         _tagNormalizer = tagNormalizer;
+        _objectFetcher = objectFetcher;
     }
 
     /// <inheritdoc/>
@@ -222,11 +229,29 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// <summary>
     /// Stores the <see cref="Create"/>'s embedded object in the object store under its own IRI, so it
     /// can be served by IRI and later refreshed (an <see cref="Update"/>) or tombstoned (a
-    /// <see cref="Delete"/>). A <see cref="Create"/> whose object is a bare link reference stores nothing.
+    /// <see cref="Delete"/>). When the Create's object is a bare link reference (no embedded object), the
+    /// object is fetched by IRI and stored (S36). A fetch failure leaves the object unstored (best-effort).
     /// </summary>
     private async Task StoreEmbeddedObjectAsync(Create activity, CancellationToken ct)
     {
         var embedded = activity.ExtractEmbeddedObject();
+
+        // S36: when the Create's object is a bare link (no embedded IObject), fetch the object by IRI
+        // so it is cached locally and surfaced in the feed. Without this, a cross-instance Create whose
+        // object is only referenced by IRI leaves the note uncached (404 on GET, absent from feed).
+        if (embedded is null && _objectFetcher is not null)
+        {
+            var linkIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+            if (linkIri is { } iri)
+            {
+                var fetched = await _objectFetcher.GetObjectAsync(iri, ct).ConfigureAwait(false);
+                if (fetched is not null && fetched is not Tombstone)
+                {
+                    embedded = fetched;
+                }
+            }
+        }
+
         if (embedded is not null)
         {
             // 136.19 (re-animation guard): if the object's IRI already holds a Tombstone (the object was
