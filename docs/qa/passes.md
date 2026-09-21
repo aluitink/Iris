@@ -17,6 +17,14 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 183 (2026-09-21) — build `2229b0ab` / **S39 local-reply + local-Like legs RESOLVED live** (Pass 182's silence was a transient deploy-time race)
+- **Build/Live:** `2229b0ab` (same as Pass 182; no `src/` change → no rebuild).
+- **Explored:** S39 local-reply + local-Like re-test (fresh ii-a2→ii-a1 interactions) after Pass 182's false-negative "fix not materializing".
+- **Result:**
+  - **S39 (A-side notifications) — local-reply + local-Like legs RESOLVED.** Fresh local-reply (ii-a2 (A) → ii-a1 (A) note `06GC9BK2DAFDGB3V2KJPP21E10`, **HTTP 202**, `inReplyTo` correct) → parent author `ii-a1` **immediately** received "ii-a2 replied to your post" (15:56:40Z, "just now", 26 unread). Fresh local-Like (ii-a2 (A) → ii-a1 (A) note `06GC9ADVRXM0ZXQ6W9Q1JC040W`, **HTTP 202**, `likedCount` 0→1) → parent author `ii-a1` **immediately** received "ii-a2 liked a post" (15:52:07Z, "just now", 25 unread). **Pass 182's silence was a transient deploy-time race** (stale `BoxItems`/`AddToInboxAsync` write during the 14:50Z deploy), **not** a persistent data/environment divergence like S36. The dev fix (`c28a95d1` / `2229b0ab`) works live.
+  - **S39 cross-instance + local-follow-request legs still untested** on this build — if they also work, S39 is fully closed.
+- **Checkpoint:** S39 local-reply + local-Like RESOLVED. Next pass: re-verify S39 cross-instance (B→A Like/reply) + local-follow-request legs; if all pass, mark S39 fully CLOSED. S36 (home feed) remains top priority.
+
 ## Pass 182 (2026-09-21) — build `2229b0ab` (**NEW BUILD**, dev's S39 local-reply fix) / cluster rebuilt + redeployed from the common folder. **S39 local-reply fix re-verified → deployed but does NOT materialize live; all other open items STABLE**
 - **Build/Live:** mid-pass, dev committed `2229b0ab` ("fix: S39 local reply notification — deliver reply Create to parent author's inbox"; `src/Iris.Server/ActivityPubServerExtensions.cs` +3 tests) → `src/` changed → **rebuilt + redeployed** the QA cluster from the common folder to `2229b0ab` (images `2f63f03f`/`ba587a9d`, was `eec8628c`/`09e49b6d`; A + B health 200). The fix: for a reply whose parent author is **local**, `OutboxPublishHandler` now calls `AddToInboxAsync(parentAuthor, activity)` directly (previously a local parent was a no-op, so the reply never reached the parent's inbox).
 - **Explored:** S39 local-reply fix re-test (fresh ii-a2→ii-a1 local reply) + open-item stability sweep (S36, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline).
