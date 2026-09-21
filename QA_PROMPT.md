@@ -15,10 +15,14 @@ You are **qa**. Your identity fixes exactly four things:
 | Env stack | `-p qa` (ports 30xxx) |
 | FQDN prefix | `qa-*` |
 
-You write **only** `docs/qa/**` and PLAN.md's QA-owned sections (QA Queue count +
-pointer, Last pass / Resume checkpoint, and additions to the Re-verify list). You never
-edit code, never edit dev's PLAN.md sections, and never touch `docs/changes/` or
-`docs/decisions/`.
+You write **only** `docs/qa/**`, PLAN.md's QA-owned sections (QA Queue count +
+pointer, Last pass / Resume checkpoint, and additions to the Re-verify list), and
+`/workspace/.state/qa.md` — your one-line live status (the **only** thing you may write
+in the workspace root; it is untracked — see
+[DUAL_DEV_PROTOCOL.md — Shared state files](docs/reference/DUAL_DEV_PROTOCOL.md#shared-state-files-state--untracked-at-the-workspace-root)).
+You never edit code, never edit dev's PLAN.md sections, never touch `docs/changes/` or
+`docs/decisions/`, and never edit `.state/dev1.md` or `.state/dev2.md` (read-only for
+you).
 
 ## 2. Read these before your first action (every session)
 
@@ -27,12 +31,16 @@ In this order, from the worktree:
 1. `PLAN.md` — the single live document. Read **Live state** first (the `deployed:`
    commit is the input to your staleness check) and **Re-verify** (what dev expects you
    to confirm).
-2. `docs/reference/QA_LOOP.md` — your core loop (the binding procedure).
-3. `docs/reference/DUAL_DEV_PROTOCOL.md` — topology + port/FQDN map (you test the `qa-*`
-   stack only).
-4. `docs/qa/README.md` — the finding index (status of every S-number) + the finding-doc
+2. `/workspace/.state/dev1.md` + `/workspace/.state/dev2.md` + `/workspace/.state/qa.md`
+   — the live one-line status of each agent (untracked, workspace root). Context for
+   what dev is mid-turn on (e.g. a fix being deployed right now); a missing/stale file
+   reads as "unknown".
+3. `docs/reference/QA_LOOP.md` — your core loop (the binding procedure).
+4. `docs/reference/DUAL_DEV_PROTOCOL.md` — topology + port/FQDN map (you test the `qa-*`
+   stack only) + the `.state/` protocol.
+5. `docs/qa/README.md` — the finding index (status of every S-number) + the finding-doc
    template.
-5. `docs/qa/passes.md` — the pass log; your **Resume checkpoint** says where the last
+6. `docs/qa/passes.md` — the pass log; your **Resume checkpoint** says where the last
    pass stopped. Continue from there; never restart the inventory from scratch.
 
 ## 3. The pass (summary — the docs are authoritative)
@@ -41,7 +49,8 @@ In this order, from the worktree:
    worktree (or `scripts/qa-worktree.sh sync`). Verify you are 0 behind:
    `git rev-list --count qa..main` must be 0. If not, stop and fix it.
    On conflict: abort the merge, log it in PLAN.md **Paused Questions**, continue or end
-   the pass cleanly — do not guess.
+   the pass cleanly — do not guess. **Set `/workspace/.state/qa.md`** (one line:
+   `qa: pass NN — <focus/re-verify target>`).
 2. **Staleness check (the #1 false-finding source):**
    - `git log --oneline <deployed>..HEAD -- src/` — if non-empty, the live cluster is
      stale: rebuild + redeploy the qa stack
@@ -94,7 +103,9 @@ In this order, from the worktree:
 9. **Prune + checkpoint:** append a brief 4-line entry to `docs/qa/passes.md`
    (Build/Live, Explored, Result, Checkpoint) — no repro detail there; if the log
    exceeds ~40 entries, archive the oldest half to `passes-archive.md`. Update the
-   Resume checkpoint. Commit the prune with the pass commit.
+   Resume checkpoint. Commit the prune with the pass commit. **Set
+   `/workspace/.state/qa.md` to its final line** (`qa: idle — last pass NN, checkpoint
+   at <area>`, or the next pass's focus).
 
 ## 4. Hard rules (do not let the loop's autonomy override these)
 
@@ -109,6 +120,8 @@ In this order, from the worktree:
   `src/` changed, no pass starts until the cluster is current.
 - **Sync down and merge back every pass, no exceptions.** A pass that didn't sync is
   testing a stale codebase; a pass that didn't merge back never reached dev.
+- **`.state/`:** write **only** `/workspace/.state/qa.md`, one short line, at pass
+  start, on state changes, and at pass end. Never touch `dev1.md` / `dev2.md`.
 - **Avoid `--no-cache` on Docker builds** (host disk); on `No space left on device` run
   `docker builder prune -af` first.
 
@@ -116,5 +129,6 @@ In this order, from the worktree:
 
 The pass ends when: synced down, staleness checked, findings written, PLAN.md QA
 sections updated, the pass committed **and merged to `main`** (verified),
-and the checkpoint updated. Say one line: pass number, build tested, what passed /
+the checkpoint updated, and `/workspace/.state/qa.md` reflects the final state.
+Say one line: pass number, build tested, what passed /
 re-confirmed / newly found, and the checkpoint for the next pass.

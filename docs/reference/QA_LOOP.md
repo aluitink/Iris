@@ -20,6 +20,8 @@ Dev1 works in `.worktrees/dev1` (branch `dev1`). Dev2 works in `.worktrees/dev2`
 /workspace/.worktrees/dev1  ← dev1 (worktree, branch dev1)   → dev1-* stack (10xxx)
 /workspace/.worktrees/dev2  ← dev2 (worktree, branch dev2)   → dev2-* stack (20xxx)
 /workspace/.worktrees/qa    ← QA   (worktree, branch qa)     → qa-* stack (30xxx)
+
+/workspace/.state/          ← shared untracked state: dev1.md, dev2.md, qa.md (one line each)
 ```
 
 > **Prerequisite — the shared docs must be committed.** A worktree is a checkout of a **commit**, not of the working tree. `scripts/qa-worktree.sh create` branches `qa` from the **current HEAD**, so anything that is only in the main checkout's *uncommitted* working tree (e.g. `docs/qa/` before its first commit) **will not appear in the worktree** — it looks like it vanished. Before the first QA pass, make sure `docs/qa/`, the loop docs, and PLAN.md are all committed on the main branch. (The worktree's own files are never tracked in the main repo — git records worktrees in `.git/worktrees/` metadata, not as files — so `.worktrees/` is gitignored only to keep IDE/file-watcher/backup tools from tripping over a second checkout.)
@@ -61,6 +63,7 @@ git worktree remove .worktrees/qa                     # destroy (when clean)
 
 1. **Sync `qa` DOWN onto the main branch first (mandatory).** `git -C .worktrees/qa merge <main-branch>` (or `scripts/qa-worktree.sh sync`). This pulls in dev's new commits (code + change docs + PLAN.md dev sections) so your `qa` branch is a **strict superset** of main: it contains everything dev has *plus* your committed QA docs. Verify after: `git rev-list --count <main-branch>..qa` should be **0 behind** (i.e. `git rev-list --count qa..<main-branch>` = 0). **If it's behind, you did not sync — stop and fix it before testing.** A clean merge is expected (disjoint file sets); a conflict → [Conflict policy](#conflict-policy).
    - **If `docs/qa/` is missing from the worktree, the shared docs aren't committed on the main branch yet — stop and get them committed first** (see the [prerequisite note](#isolation-model-worktrees)).
+   - **Set `/workspace/.state/qa.md`** (one line: `qa: pass NN — <focus or re-verify target>`) and **read** `.state/dev1.md` + `.state/dev2.md` for live context on what dev is mid-turn on (e.g. a fix being deployed right now). The `.state/` files are untracked and live at the workspace root — see [DUAL_DEV_PROTOCOL.md §Shared state files](DUAL_DEV_PROTOCOL.md#shared-state-files-state--untracked-at-the-workspace-root). You write **only** `qa.md`; the dev files are read-only for you.
 2. **Staleness check — the #1 false-finding source (two-part).**
    - **(a) Code staleness:** compare the **deployed build** (PLAN.md **Live state** `deployed:`, or the QA cluster's current image commit) to the synced `qa` HEAD. **If `src/` changed** since the deployed build (`git log --oneline <deployed>..HEAD -- src/` is non-empty) → the live cluster is **stale**: **rebuild + redeploy the QA cluster to HEAD** (or wait for dev to), then re-check. **Never log findings against a build you know is behind.**
    - **(b) Build unchanged:** if `src/` is unchanged since the deployed build, **no rebuild is needed** — proceed. Record the deployed commit in the pass log ("build `<commit>` (== HEAD? y/n)").
@@ -128,6 +131,7 @@ For every finding:
 - **Hard cap:** if `passes.md` exceeds ~40 entries (or ~400 lines), archive the oldest half into `docs/qa/passes-archive.md` and keep only the recent ones. Check the size at the start of every pass, not just when it feels big.
 - Update the **Resume checkpoint** (where to continue next pass).
 - Commit the prune with the pass commit.
+- **Set `/workspace/.state/qa.md` to its final line** (`qa: idle — pass NN done, checkpoint at <area>`, or the next pass's focus). One line, untracked, the only root-level file you write.
 
 ## Re-verify etiquette (the dev↔QA contract)
 
@@ -140,13 +144,14 @@ For every finding:
 | Asset | Owner | The other loop may… |
 |---|---|---|
 | `docs/qa/**` (findings, pass log) | **QA** | read; link |
+| `.state/qa.md` (untracked, workspace root) | **QA** (own file only) | read; **never write `dev1.md` / `dev2.md`** |
 | PLAN.md **QA Queue / Last pass / Resume checkpoint** | **QA** | read |
 | PLAN.md **Re-verify list** | dev clears / QA adds | — |
 | `docs/changes/**`, `docs/decisions/**`, all code | **Dev** | read |
 | PLAN.md **Now / Active Slice / Dev Queue / Inbox / Live state / Recently Completed** | **Dev** | read |
 | PLAN.md **Paused Questions** | either (whoever is blocked) | — |
 
-**File-level rule:** QA writes only `docs/qa/` + PLAN.md's QA sections. Dev writes only code + `docs/changes/` + `docs/decisions/` + PLAN.md's dev sections. **Neither edits the other's files.**
+**File-level rule:** QA writes only `docs/qa/` + PLAN.md's QA sections + its **own** `.state/qa.md`. Dev writes only code + `docs/changes/` + `docs/decisions/` + PLAN.md's dev sections + its **own** `.state/<you>.md`. **Neither edits the other's files** — in `.state/` that means each agent writes exactly one file (its own) and treats the rest as read-only.
 
 ## Conflict policy
 
@@ -174,7 +179,7 @@ A conflict is a signal the ownership rule was broken — fix the rule (or the pr
 | **Cluster not redeployed after a `src/` change → testing the old build** | Step 0.2(a): if `src/` changed since the deployed build, **rebuild + redeploy** (or wait) before logging findings |
 | **Testing a stale build → "finding" an already-fixed bug** | Step 0 staleness pre-flight: never start a pass if Live state ≠ HEAD |
 | **Worktree starts without `docs/qa/` (docs not committed yet)** | [Prerequisite note](#isolation-model-worktrees): a worktree checks out a commit, not the working tree — get the shared docs committed on the main branch before the first pass |
-| QA and dev clobber the same file | Worktree isolation + [ownership map](#ownership-map) + [conflict policy](#conflict-policy) |
+| QA and dev clobber the same file | Worktree isolation + [ownership map](#ownership-map) + [conflict policy](#conflict-policy); in `.state/` each agent writes only its own one-line file |
 | PLAN.md bloats with finding detail again | Findings live in `docs/qa/`; PLAN.md is count + pointer only |
 | A finding is marked `fixed` without proof | Step 4: clean-entry re-verify on a current build; no evidence, no `fixed` |
 | Restarting the whole page inventory every pass | Resume checkpoint in `passes.md`; continue where you stopped |

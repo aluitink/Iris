@@ -2,7 +2,7 @@
 
 > One of two parallel workstreams driven by [PLAN.md](../../PLAN.md). This is the **developer** loop: it owns **code** (source + tests) and the **Dev Queue**. The **QA** loop ([QA_LOOP.md](QA_LOOP.md)) owns the live app's behavior and the **QA Queue** (`docs/qa/`). Read both; you are the dev one.
 >
-> **Dual-dev mode:** when two dev agents work in parallel (dev1 primary + dev2 secondary in a worktree), the coordination rules are in [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md). The core loop below is unchanged; the protocol doc adds scope assignment, merge order, and deploy ownership for the two-dev case.
+> **Dual-dev mode:** when two dev agents work in parallel (dev1 primary + dev2 secondary in a worktree), the coordination rules are in [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md) — including the **shared `.state/` files** (untracked, one line per agent, at the workspace root) that each dev reads **before taking an item from the PLAN** and updates as its state changes. The core loop below is otherwise unchanged; the protocol doc adds scope assignment, merge order, and deploy ownership for the two-dev case.
 
 ## Principles
 
@@ -24,6 +24,8 @@
 - **If still failing after 2 attempts:** write a `BLOCKED` note in PLAN.md's Active Slice describing the failure, commit, and end this turn.
 
 ### 2. Select the next work item (in this order)
+
+> **Pre-flight — read the live state (dual-dev mode).** Before taking any item from the PLAN, read `/workspace/.state/dev1.md` + `/workspace/.state/dev2.md` (untracked, workspace root — see [DUAL_DEV_PROTOCOL.md §Shared state files](DUAL_DEV_PROTOCOL.md#shared-state-files-state--untracked-at-the-workspace-root)). They are the freshest signal of what each dev is working on *right now* (PLAN.md's Active Slice only catches up after a merge). A missing or stale file reads as "unknown" — PLAN.md's Active Slice is the durable tie-breaker. After you select your item, **write your pick to your own `/workspace/.state/<you>.md`** (one line) before coding.
 
 1. **Inbox first.** If PLAN.md's Inbox has an unactioned entry and no slice is in progress, action the oldest entry before pulling anything else. (If a slice *is* in progress, finish it first — the Inbox entry waits one more turn; it stays in the Inbox until actioned.)
 2. **QA re-verify debt first (after Inbox).** If PLAN.md's **Re-verify** list is non-empty, work it *before* new feature scope — these are already-committed fixes the QA loop is waiting on. Rebuild + redeploy, flip the finding's status with the QA loop, and clear the list.
@@ -78,6 +80,7 @@ The production app's web tests (`tests/Iris.Web.Tests`) are **expendable** durin
 - **Prune as you go:** if Recently Completed exceeds ~5 entries, move the oldest one-liner into [ROADMAP.md](../ROADMAP.md)'s ledger (append a line, don't rewrite) and remove it from PLAN.md. Do it every turn it applies.
 - Remove the actioned entry from Inbox if this turn worked an injected request.
 - **Update Live state** with the deployed commit + container uptime (if you deployed).
+- **Update your state file (dual-dev mode):** set `/workspace/.state/<you>.md` to its final line — the finished item + deployed commit, or `idle` if nothing more in flight. One line; untracked; the only root-level file you write.
 - **Write the detail doc:** what was built, key types, test counts, lightweight decision → a **per-change doc** in [changes/](../changes/) (one file per slice). A substantial decision (trade-offs, alternatives, spec references) → [decisions/](../decisions/), linked from the change doc. PLAN.md gets only the one-line pointer.
 - Commit doc updates with a `docs: ...` commit (separate from the implementation commit).
 
@@ -102,9 +105,10 @@ The single most common class of "mystery" finding is **stale-deploy**: QA is tes
 
 ## Ownership map (PLAN.md)
 
-| PLAN.md section | Owner | The other loop may… |
+| Asset | Owner | The other loop may… |
 |---|---|---|
-| Now / Active Slice | Dev | read |
+| Now / Active Slice (PLAN.md) | Dev | read |
+| `.state/dev1.md`, `.state/dev2.md` (untracked, workspace root) | dev1 / dev2 (own file only) | read; **never write the other's file** |
 | Dev Queue (incl. Inbox) | Dev | read (it reflects QA findings) |
 | Re-verify list | Dev (clears it) | adds to it when a fix lands |
 | QA Queue (count + top-priority) | QA | — |
@@ -113,7 +117,7 @@ The single most common class of "mystery" finding is **stale-deploy**: QA is tes
 | Recently Completed | Dev | read |
 | Paused Questions | either (whoever is blocked) | — |
 
-**File-level rule:** dev writes only PLAN.md's dev-owned sections + `docs/changes/` + `docs/decisions/` + code. QA writes only `docs/qa/` + PLAN.md's QA-owned sections. **Neither edits the other's files.** When a fix is confirmed, the *QA* loop updates the finding doc's status (it owns `docs/qa/`); dev clears the Re-verify line.
+**File-level rule:** dev writes only PLAN.md's dev-owned sections + `docs/changes/` + `docs/decisions/` + code + its **own** `.state/<you>.md`. QA writes only `docs/qa/` + PLAN.md's QA-owned sections + its own `.state/qa.md`. **Neither edits the other's files** — in `.state/` that means each agent writes exactly one file (its own) and treats the rest as read-only. When a fix is confirmed, the *QA* loop updates the finding doc's status (it owns `docs/qa/`); dev clears the Re-verify line.
 
 ## Handling mid-loop user input
 
@@ -137,6 +141,7 @@ This keeps the loop autonomous and always forward-moving: a question changes *wh
 | Information | Home |
 |---|---|
 | Now / Active Slice / Dev Queue / Inbox / Re-verify / Recently Completed | `PLAN.md` (dev-owned sections) — bounded lists only |
+| Live one-line agent status (mid-turn) | `.state/<agent>.md` (untracked, workspace root; durable record stays in PLAN.md's Active Slice) |
 | QA findings, one per defect, + pass log | `docs/qa/` (QA-owned; dev links, never inlines) |
 | What was built per slice, key types, test counts | `docs/changes/NNN-slug.md` |
 | Substantial design decisions | `docs/decisions/NNN-slug.md` |
@@ -158,6 +163,7 @@ This keeps the loop autonomous and always forward-moving: a question changes *wh
 | A 40-minute turn that hits a wall mid-migration | Step 3: bounded turn — commit progress, note `remaining:`, end |
 | **QA tests a stale build and "finds" a fixed bug** | Step 3 deploy + Live state; the [redeploy-error rule](#when-qa-reports-an-error-or-you-see-one-that-may-be-redeploy-related) resolves the ambiguity first |
 | Dev and QA both edit the same PLAN.md section | [Ownership map](#ownership-map): each owns distinct sections; neither edits the other's files |
+| dev2 picks dev1's in-flight item (Active Slice not yet merged) | Step 2 pre-flight: read `.state/` before taking an item; the other dev's live one-line status is the freshest claim on an item |
 | Stalling on undecided design questions | Step 3: decide, record in the change doc, continue |
 | A mid-loop user request gets dropped or derails work | "Handling mid-loop user input": Inbox, finish current, action next turn |
 | Loop stalls waiting on a user answer | [Blocking without stopping](#blocking-without-stopping): log in Paused Questions, stash, move to another item — never ask-and-wait |
