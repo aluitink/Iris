@@ -118,15 +118,27 @@ public sealed class GlobalSearchService : IGlobalSearchService
             else
             {
                 // The mixed path (the Search page, localOnly=false) scans the whole stored actor surface
-                // (local + cached remote). Drop local actors whose IRI does NOT originate on this
+                // (local + cached remote). Drop stale LOCAL actors whose IRI does NOT originate on this
                 // instance (S5): a row persisted under a stale/dev base (e.g. http://localhost:8088, the
                 // dev default when Iris:AdvertiseBase is unset) would otherwise surface as a ghost
                 // duplicate next to the same handle's canonical public-base row. Remote actors (a
                 // different origin) are kept — only same-handle local IRIs on a foreign base are the
-                // defect. When the instance base is unavailable there is no origin to compare against,
-                // so the store's heuristic result is returned as-is.
-                rawActors = (await _persistence.Actors.SearchActorsAsync(normalized, int.MaxValue, 0, ct, localOnly).ConfigureAwait(false))
-                    .Where(a => IsSameInstanceActor(a))
+                // defect. A stale local row is identified by a preferredUsername that matches a LOCAL
+                // actor's handle (its canonical row); a remote actor's handle is not local. When the
+                // instance base is unavailable there is no origin to compare against, so the store's
+                // heuristic result is returned as-is.
+                var allActors = await _persistence.Actors.SearchActorsAsync(normalized, int.MaxValue, 0, ct, localOnly).ConfigureAwait(false);
+                var baseValue = _instanceBase?.Value.TrimEnd('/');
+                var localHandles = new HashSet<string>(
+                    allActors
+                        .Where(a => a.Id is { Length: > 0 } id
+                            && baseValue is { Length: > 0 } bv
+                            && id.StartsWith(bv, StringComparison.OrdinalIgnoreCase))
+                        .Where(a => a.PreferredUsername is { Length: > 0 })
+                        .Select(a => a.PreferredUsername!),
+                    StringComparer.OrdinalIgnoreCase);
+                rawActors = allActors
+                    .Where(a => IsSameInstanceActor(a, localHandles))
                     .ToList();
             }
 
@@ -285,8 +297,8 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// document) or a LOCAL actor persisted under a stale/dev base (S5 — e.g.
     /// <c>http://localhost:8088/ap/v1/u/x</c> on an instance advertised as
     /// <c>https://iris.example</c>). The two are distinguished by handle: a stale local actor has a
-    /// <c>preferredUsername</c> that matches a LOCAL actor in the store (its canonical row); a remote
-    /// actor's handle is not a local handle.
+    /// <c>preferredUsername</c> that matches a LOCAL actor in <paramref name="localHandles"/> (its
+    /// canonical row); a remote actor's handle is not in <paramref name="localHandles"/>.
     /// </para>
     /// <para>
     /// When the instance base IRI is unavailable there is no canonical IRI to compare against, so every
@@ -294,7 +306,12 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// layer).
     /// </para>
     /// </summary>
-    private bool IsSameInstanceActor(Actor actor)
+    /// <param name="actor">The actor to check.</param>
+    /// <param name="localHandles">The set of preferredUsernames for all LOCAL actors on this instance
+    /// (IRI on the instance base). A non-canonical actor whose handle is in this set is a stale local
+    /// row (S5) and is dropped; a non-canonical actor whose handle is NOT in this set is a remote peer
+    /// and is kept.</param>
+    private bool IsSameInstanceActor(Actor actor, HashSet<string> localHandles)
     {
         if (_instanceBase is not { } baseIri || actor.Id is not { Length: > 0 } id)
         {
@@ -309,10 +326,17 @@ public sealed class GlobalSearchService : IGlobalSearchService
             return true;
         }
 
-        // A remote actor (IRI on a different base) is kept, even if it carries a preferredUsername
-        // (a remote Iris actor from another instance also has a handle). The previous logic dropped any
-        // actor with a preferredUsername whose IRI was not on the local instance base, which incorrectly
-        // excluded remote Iris actors from the directory's "All known" scope.
+        // A non-canonical actor (IRI not on the instance base): if it carries a preferredUsername that
+        // matches a LOCAL handle, it is a stale local row (S5 — a ghost duplicate of the canonical row)
+        // and is dropped. If it carries no preferredUsername or a handle that is not local, it is a
+        // remote peer (a cached actor from another instance, including remote Iris actors that also
+        // carry a handle) and is kept.
+        if (actor.PreferredUsername is { Length: > 0 } handle
+            && localHandles.Contains(handle))
+        {
+            return false;
+        }
+
         return true;
     }
 
