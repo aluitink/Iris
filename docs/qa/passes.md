@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 256 (2026-09-21) — build `401c08b5` / Actor collections: followers (2), following (2), outbox (86 Creates, paginated 20/page, 5 pages), liked (4) — all 200 OK; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A actor collections (followers, following, outbox, liked) via authenticated fetch.
+- **Result:**
+  - **Followers:** 200, totalItems=2.
+  - **Following:** 200, totalItems=2.
+  - **Outbox:** 200, totalItems=86, 20 items per page, 5 pages (last page has 6 items). All items are `Create,Activity` type.
+  - **Liked:** 200, totalItems=4.
+  - All collections paginate correctly. No new defects.
+- **Checkpoint:** Actor collections all working. Next: waiting for dev to fix S40 (private key leak) and S36 (home feed).
+
 ## Pass 255 (2026-09-21) — build `401c08b5` / CRITICAL: Actor document leaks PRIVATE KEY to any authenticated user (ii-a1 GET /ap/v1/u/ii-a1 → privateKey field present in JSON response); S34-class security defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A actor document (authenticated GET /ap/v1/u/ii-a1).
