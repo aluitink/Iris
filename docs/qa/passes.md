@@ -17,6 +17,25 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 228 (2026-09-21) — build `401c08b5` / P227 (Followers-only): search + object-detail + profile all show it; home feed omits (59th consecutive); 7/8 surfaces work, home feed is the only broken one
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A search for P227; A object-detail for P227; A home feed (re-check all recent posts).
+- **Result:**
+  - **A search for "II-S36-P227":** 1 result (P227, 1m ago). Search works for Followers-only posts.
+  - **A object-detail for P227:** Renders correctly ("I ii-a1 2m ago II-S36-P227 fresh A Followers-only post..."). Object-detail works.
+  - **A profile:** P227 visible in "Your posts" (from Pass 227).
+  - **A home feed:** P227, P226, P225 ALL NOT present (2 unique items: duplicate "Content unavailable" Tombstone-Announce + empty). **59th consecutive S36.**
+  - **Summary for P227 (Followers-only post):**
+    | Surface | P227 visible? |
+    |---------|--------------|
+    | Search | ✓ |
+    | Object-detail | ✓ |
+    | Profile (Your posts) | ✓ |
+    | Home feed | **✗** |
+  - **Content-source map (Pass 224) holds:** 7/8 surfaces work, home feed is the ONLY broken surface.
+  - 0 console errors.
+- **Checkpoint:** P227 confirmed across all surfaces: search ✓, object-detail ✓, profile ✓, home feed ✗. S36 59th consecutive. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 227 (2026-09-21) — build `401c08b5` / P227 (A Followers-only): visibility select works (to: Public, cc: followers), in profile, NOT in home feed (58th consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A Followers-only post II-S36-P227 (note `06GCAYZD0RBSXSQFSNC2PV05J8`, to: Public, cc: followers); A home feed + profile for P227.
