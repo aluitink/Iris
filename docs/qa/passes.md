@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 185 (2026-09-21) — build `2229b0ab` / open-item stability sweep — all open items STABLE (S39 CLOSED holding)
+- **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change since deployed build → no rebuild).
+- **Explored:** Open-item stability sweep: S36 home feed, S24 D2 foreign outbox, S24 D4 remote collections, S38 webfinger, S32 Tombstone, S37/S28 button-UI, follow-graph baseline, S39 CLOSED holding.
+- **Result:** All open items STABLE (21st consecutive for S36; S24 D2 grew 63/11→67/11 foreign; S24 D4 doc 200/collections 404 both directions; S38 webfinger 404 cross-instance, 200 own; S32 Tombstone 404 both sides [data loss]; S37/S28 wire counts correct [likedCount=1, repliedCount=1, score=1] but button-UI "0" residual holds; follow-graph intact [ii-a1 followers=2, following=2]; S39 CLOSED holding [28 unread, no regression]). No new defects. S30/S26/S31/S29/S34/S27/S33 hold.
+- **Checkpoint:** Next pass: S36 remains top priority (home feed, data/environment-specific, awaiting dev code pass). S24 D2 continues to accumulate (67/11). S24 D4 + S38 + S37/S28 button-UI + S32 data-loss all stable.
+
 ## Pass 184 (2026-09-21) — build `2229b0ab` / **S39 cross-instance-reply + cross-instance-Like legs RESOLVED live; S39 fully CLOSED** (all 4 testable legs verified)
 - **Build/Live:** `2229b0ab` (same as Pass 183; no `src/` change → no rebuild).
 - **Explored:** S39 cross-instance re-test (fresh ii-b1→ii-a1 reply + Like) + local-follow-request leg check (UI gating toggle not present).
