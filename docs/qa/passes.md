@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 155 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Re-verified S32 (cross-instance Delete + Update propagation) on `38ae87c` → LARGELY FIXED holds (no regression)
+- **Build/Live:** No new dev commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
+- **Explored:** Re-verified **S32** (cross-instance Delete + Update propagation) on `38ae87c` — a FIXED item not re-checked since the Pass 142 `38ae87c` rebuild. Re-tested the Pass 142 test notes (II-S32-3 deleted note `06GC5QJW`, II-S32-4 edited note `06GC5RXZ`) on A + B.
+- **Result:** **S32 LARGELY FIXED — re-confirmed, no regression.**
+  - **Delete (II-S32-3, `06GC5QJW`):** `GET A <note>` → **Tombstone** (`formerType` Note, `deleted`=`07:32:19Z`); `GET B <note>` (via B proxy) → **Tombstone** (`formerType` Note, `deleted`=`07:32:19Z` — **same** ts as A). B's cached copy is a Tombstone (no stale live copy). **Delete propagation HOLDS.**
+  - **Update (II-S32-4, `06GC5RXZ`):** `GET A <note>` → Note, content `II-S32-4 EDITED…`, `updated`=`07:36:07Z`, `published`=`07:35:00Z`; `GET B <note>` (via B proxy) → Note, **same edited content** + **same `updated` ts** (`07:36:07Z`). B's cached copy is refreshed (no stale copy). **Update propagation HOLDS.**
+  - **Residual (mechanism, unchanged):** B's shared inbox shows `no local recipient; accepting and dropping` for the A→B activity — the peer tombstone/refresh may be a **lazy refetch** rather than an applied shared-inbox `Delete`/`Update`; the **observable behavior is correct** (peer copy tombstoned on Delete, refreshed on Update). Mechanism to confirm with dev.
+- **Checkpoint:** **S32 cross-instance Delete + Update propagation re-confirmed LARGELY FIXED on `38ae87c` (no regression).** No new defect; no build change. Open items unchanged: S36 (home feed — top priority), S24 D2 (foreign outbox items), S38 (webfinger), S37/S28 (count/button residual). S30 fully FIXED (Pass 153); S26 (Pass 154) + S33 + S31 + S29 + S32 still hold. **M2–M12 + L2–L12 blocked** (operator accounts).
+
 ## Pass 154 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Focused re-verify of open items (S36, S24 D2, S38, S37/S28, S26) on `38ae87c`
 - **Build/Live:** No new dev commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
 - **Explored:** Focused re-verification of the key **open** items on `38ae87c` (no build change): S36 (home feed), S24 D2 (foreign activities in local outbox), S38 (cross-instance webfinger), S37/S28 (Like/Boost counts), S26 (cross-instance reply threading).
