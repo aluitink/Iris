@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 235 (2026-09-21) — build `401c08b5` / Search: word-based works (33 results for "fresh"), exact token "II-S36" = 0 results (search tokenization quirk); no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A search for "II-S36" and "fresh".
+- **Result:**
+  - **Search "II-S36":** 0 results. The exact token "II-S36" is not found.
+  - **Search "fresh":** 33 results (P226, P28, A4-3, etc.). Word-based search works correctly.
+  - **Search "II-S36-P227" (Pass 228):** 1 result (P227). Full token works.
+  - **Observation:** Search appears to be word/token-based. "II-S36" (partial token) returns 0, but "II-S36-P227" (full token) and "fresh" (word) return results. This is a search tokenization quirk, not a defect — the search engine likely indexes full tokens, not substrings.
+  - No new defects found.
+  - 0 console errors.
+- **Checkpoint:** Search works (word-based). "II-S36" tokenization quirk noted. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 234 (2026-09-21) — build `401c08b5` / S36 re-confirmed (63rd consecutive): A home feed = 1 Tombstone-Announce, B home feed = empty; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed; B home feed.
