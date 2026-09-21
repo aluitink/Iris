@@ -131,3 +131,13 @@ Dev's in-process code pass (commit `0ec58d3`) proved the server (`FeedService` �
 - **B `/home` UI:** "Your timeline is empty. Follow people to see their posts here." (despite ii-b1 following ii-a1 and having their own posts).
 - **Significance:** this is the first explicit **B-side own-post** confirmation. Prior passes focused on A-side (ii-a1) + B-side remote (A posts not in B feed). Now: **B's own posts are also omitted from B's own feed** — the feed-query defect is symmetric across both instances.
 - **Verdict:** S36 **STILL OPEN (S2, top priority)**. 25th consecutive pass. The defect is confirmed on **both instances** (A: ii-a1 own posts omitted; B: ii-b1 own posts omitted) — not an A-side-specific or cross-instance delivery issue, but a **fundamental feed-query defect** that drops all content `Create`s from the home feed on both peers.
+
+## Re-verification (Pass 190, 2026-09-21, build `8243361c`) — fresh A post II-S36-P190 + full feed type histograms (26th consecutive)
+
+- **Fresh ii-a1 post `II-S36-P190`** (posted 17:00Z, A-side). In A outbox (10 Creates) but **NOT in A feed** (20 items, 0 Creates, 0 S36). UI: 1 stale "Content unavailable" item (boosted by ii-b1, 14h ago), no S36 items.
+- **Full feed type histograms (new data):**
+  - A feed: `Delete`×3, `unknown`×12, `Follow`×4, `Like`×1 → **0 Create**.
+  - B feed: `Like`×6, `Follow`×9, `Undo`×5 → **0 Create**.
+  - **Zero content `Create`s on both instances.** The feed contains only actor-document noise (Follow/Undo/Like/Delete) and unresolvable "unknown" items. No posts, no boosts with content, nothing.
+- **Significance:** The type histogram confirms S36 is **total** — not just missing the latest post, but **all** content is absent from both feeds. The 12 "unknown" items in A's feed are likely actor documents or other non-activity objects that the feed query erroneously includes.
+- **Verdict:** S36 **STILL OPEN (S2, top priority)**. 26th consecutive pass. Feed type histograms confirm the defect is total on both instances.
