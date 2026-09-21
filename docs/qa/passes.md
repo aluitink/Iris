@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 247 (2026-09-21) — build `401c08b5` / Health check: both A and B /ap/v1/healthy (delivery queue empty, workers running); no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A /ap/v1/health; B /ap/v1/health.
+- **Result:**
+  - **A health:** healthy (delivery queue empty, delivery worker running, instance up).
+  - **B health:** healthy (delivery queue empty, delivery worker running, instance up).
+  - Both instances are healthy. The S36 home feed defect is NOT caused by infrastructure issues — it's a code-level feed query defect.
+  - No new defects found.
+- **Checkpoint:** Both instances healthy. S36 is a code-level defect, not infrastructure. Next: waiting for dev to fix home feed query.
+
 ## Pass 246 (2026-09-21) — build `401c08b5` / S36 re-confirmed (67th consecutive): A home feed = 1 Tombstone-Announce, B home feed = empty; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed; B home feed.
