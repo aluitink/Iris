@@ -4,7 +4,7 @@
 
 ## Principles
 
-- **You test the live app, not the code.** Every pass is **Playwright-driven** against `https://iris.luit.ink` — no code-first slices, no reading the source to "guess" behavior.
+- **You test the live app, not the code.** Every pass is **Playwright-driven** against the QA cluster, primarily `https://qa-iris-a.luit.ink` (with QA peers `https://qa-lemmy.luit.ink` and `https://qa-mastodon.luit.ink`). `https://iris.luit.ink` is the production FQDN and is not used for dev/test work; the dev cluster uses `https://dev-iris-a.luit.ink` / `https://dev-iris-b.luit.ink` (legacy `iris-dev1` / `iris-dev2` names still map to the same ports).
 - **You work in an isolated worktree.** All your doc writes (`docs/qa/` + your PLAN.md sections) happen in a git worktree on a `qa/` branch, then **merge back**. This means dev and QA never write the same file at the same time — the two-person conflict problem is solved at the filesystem layer, not by politeness.
 - **A finding is a document, not a PLAN.md paragraph.** One doc per finding in `docs/qa/` (template in its [README](../qa/README.md)). PLAN.md carries only a count + top-priority pointer.
 - **You verify fixes, you don't just trust them.** A finding flips to `fixed` only after you re-confirm it **from a clean entry** on a container whose **deployed commit is current**. No evidence, no `fixed`.
@@ -67,8 +67,9 @@ git worktree remove .worktrees/qa                     # destroy (when clean)
 - Pick the area: continue from the **Resume checkpoint** in `docs/qa/passes.md` (never restart from scratch), or target a specific open finding to **re-verify** if dev just deployed a fix.
 - **Clean entry (every pass, every re-verification):** close the browser entirely, clear cookies + storage, reopen, enter the app fresh. Never carry state between passes or between a defect and its re-verification.
 
-### 2. Drive the app (MCP Playwright) at `https://iris.luit.ink`
+### 2. Drive the app (MCP Playwright) on the QA cluster
 
+- **Primary QA app:** `https://qa-iris-a.luit.ink` (use `https://qa-lemmy.luit.ink` and `https://qa-mastodon.luit.ink` for peer tests). Do not use `https://iris.luit.ink` for development or QA, as it is the production/public FQDN.
 - **Primary account: `andrew` / `Password1`** (real content + external contacts — use it to evaluate every page).
 - **Secondary accounts:** `bob`, `carol`, `dave` (register as needed) for multi-account flows (follows, communities, moderation, notifications).
 - **Authless pass:** every page visited signed-out — verify gating (302 to login), no data leaks, no console errors, sensible signed-out UI.
