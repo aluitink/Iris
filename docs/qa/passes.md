@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 194 (2026-09-21) — build `8243361c` / P193 delivery timing + object-cache gap persistence
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** II-S36-P193 delivery timing (B outbox scan at 1min, 2min, 3min); B cache re-check.
+- **Result:**
+  - **P193 delivery timing (NEW DATA):** B outbox scan at ~1min: P193 NOT present (64 items). At ~2min: still not present (65 items). At ~3min: **P193 NOW PRESENT** (65 items). Delivery lag ≈ 2–3 minutes for the Create activity to appear in the peer's outbox.
+  - **Object-cache gap persists:** Even after the Create is in B's outbox (3min), B cache for the note is STILL 404. The activity is stored but the object is never fetched/cached — consistent with Pass 192 root cause.
+  - **S24 D2 growing:** B outbox total now 65 (was 64 in Pass 192). Foreign activities continue to accumulate.
+  - S36 30th consecutive. 0 console errors.
+- **Checkpoint:** Delivery lag (2–3 min) characterized. Object-cache gap independent of delivery timing. S36+S24 D2 root cause (Pass 192) holds. Next: new exploration.
+
 ## Pass 193 (2026-09-21) — build `8243361c` / object-cache gap re-confirmation (stability)
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post (II-S36-P193) → B cache/proxy check (30s wait); prior P192 B-cache re-check; A+B feed checks.
