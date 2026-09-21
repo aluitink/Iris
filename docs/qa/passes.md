@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 108 (2026-09-21) — Confirmed S37 (likedCount not materialized) reproduces on a 2nd note → filed as a new S3 finding
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
+- **Explored:** To decide whether the Pass 107 count-materialization facet was a one-off or a stable defect, reproduced it on a **second, unrelated** cross-instance Like (A `ii-a1` → B note `…/ii-b1/notes/06GC41BA17…`).
+- **Result:** **Reproduces.** B note `06GC41BA17`: after A's Like — `Inbox accepted: Like … targeting …/06GC41BA17` + `LikeActivityHandler processed — ok` ✓; `GET <note>/likes` `totalItems: 1` ✓; but `GET <note>` **`likedCount` = None** + embedded **`likes.totalItems` = 0** (re-checked after delay — stable, not transient). Same pattern as the first note. → **Filed as NEW S37 (S3, low severity): "Remote Like stored + `/likes` correct, but the Note's `likedCount`/inline Like-count not materialized"** — the count-analog of the S28 `shares`-count gap (S28's Announce is dropped entirely; S37's Like is stored, only the count is stale).
+- **Checkpoint:** **S37 filed** (new S3, open). S36 still top priority (home feed empty; dev code pass on `FeedService.BuildFeedUncachedAsync`). S24 D1/D2 + S28 + S32 still open. M2–M12 + L2–L12 blocked on operator accounts. **Merge blocked** on dev's uncommitted WIP.
+
 ## Pass 107 (2026-09-21) — Re-verified A2/S27 (remote Like) → PASS, but found a likedCount-materialization discrepancy
 
 - **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
