@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 118 (2026-09-21) — No new commit / no build change; S28 count facet re-confirmed (stable); S30 A8.4 characterized — remote-community /feed 404s on B (owner A has /feed 200 + /members 1 + /outbox 200)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
+- **Explored:** Re-confirmed the **S28 count facet** on the current build + characterized **S30 A8.4** (remote-community feed) — community `/feed`/`/members`/`/outbox` on A (owner) vs B (peer).
+- **Result:** **(1) S28 count facet re-confirmed (stable):** note `06GC4RR4` (remote Boost by ii-b1) — wire `sharedCount`=None + `shares.totalItems`=0 (count not materialized), while `GET A <note>/shares` totalItems=1 (the boost IS stored) + author `ii-a1` `shares`/`sharedCount`=None. Consistent with Pass 112/117 (delivery+surfacing fixed; count not materialized). **(2) S30 A8.4 characterized (still OPEN):** for the remote community `ii-a8-community` — on **A (owner)** `/c/ii-a8-community/feed` → **200**, `/members` totalItems=1, `/outbox` → **200** (local community endpoints work); on **B (peer)** `/ap/v1/c/ii-a8-community/feed` → **404** — dev's S30 fix (`11fbec6`/`aebe420`) served the `/c/{name}` community **doc** on B but **not** the `/feed` endpoint for a remote (cached) community. So A8.4 (view a remote community's post feed from a peer) is the remaining S30 facet.
+- **Checkpoint:** S28 count facet stable; S30 A8.4 = remote-community `/feed` 404 on the peer (owner endpoints fine). S36 still top priority (dev fix in progress — 2 WIP tests). S24 (D2), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 117 (2026-09-21) — No new commit / no build change; count-materialization (S37/S28) broadened — affects LOCAL Like/Boost too (wire likedCount/sharedCount None even for a local like; /likes+/shares correct; UI Like button shows count but Boost button 0)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
 - **Explored:** Tested whether the **count-materialization** theme (S37/S28) is remote-only or general — did a **local Like** (ii-a1 on A) on a note that also had a **remote Boost** (ii-b1).

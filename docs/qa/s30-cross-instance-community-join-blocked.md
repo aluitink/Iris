@@ -66,6 +66,17 @@ Net: the **follow** path is fixed (remote Group resolvable via S29 + followable 
 
 **A8.4 (community feed) — STILL OPEN.** The community page's Feed tab shows "No posts in this community yet" and the **community feed endpoint 404s**: `GET B /ap/v1/c/ii-a8-community/feed` → **404** (1 console error on the page). Dev's `11fbec6` fixed only the `/c/{name}` direct-view, **not** the `/feed` endpoint for a remote community — so the community's post feed is not yet viewable on the peer. (Community-post federation A8.4 is a separate, larger gap.)
 
+**A8.4 endpoint detail (Pass 118):** for the remote community `ii-a8-community`, the community sub-endpoints work on **A (owner)** but 404 on **B (peer)**:
+
+| endpoint | A (owner) | B (peer) |
+|---|---|---|
+| `/c/ii-a8-community` (doc) | 200 | **200** (S30 fix) |
+| `/c/ii-a8-community/feed` | 200 | **404** |
+| `/c/ii-a8-community/members` | 200 (totalItems 1) | n/a |
+| `/c/ii-a8-community/outbox` | 200 | n/a |
+
+So dev's S30 fix served the remote community **doc** on B, but the **`/feed`** (and likely other community sub-endpoints) still 404 for a remote (cached) community on the peer. **Suggested dev follow-up:** make the community `/feed` (and sub-endpoints) resolve a remote (cached) community the same way the `/c/{name}` route now does.
+
 **A8.3 (follow) — already working** (via the actor page, per the 2026-09-21 re-test above).
 
 **Verdict (build `11fbec6`): S30 PARTIALLY FIXED — A8.2 (direct-view) + A8.3 (follow) now work; A8.4 (community feed) still OPEN** (`/ap/v1/c/{name}/feed` 404s for a remote community). **Suggested dev follow-up:** make the community `/feed` endpoint resolve a remote (cached) community the same way the `/c/{name}` route now does. **Status: OPEN (narrowed) — A8.4 community feed.**
