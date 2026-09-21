@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 203 (2026-09-21) — build `8243361c` / community feed shows own posts (contrast with home-feed)
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Communities page (A + B); community detail page (A8 test community).
+- **Result:**
+  - **NEW — community feed shows own posts:** A's A8 test community feed shows **ii-a1's posts** (P200, P193, P192, P191, P190, etc.) with content. The community feed uses a different query path than the home feed — it filters by `attributedTo` (community membership) and finds the local actor's posts directly from the outbox/object store.
+  - **B has no communities:** B "All on this instance" = "No communities on this instance yet." No cross-instance community following tested (no remote community to follow).
+  - **Community feed vs home-feed contrast:** The community feed finds local posts via `attributedTo` (community membership → actor's outbox). The home feed finds posts via the follow graph (followers' outbox → object store). The home-feed gap is specifically in the object-store lookup for remote notes, not in the outbox scan.
+  - S36 38th consecutive. 0 console errors.
+- **Checkpoint:** Community feed works for own posts (different query path than home feed). Confirms the S36 gap is specific to the home-feed object-store lookup, not a general content-surfacing failure. Next: new exploration.
+
 ## Pass 202 (2026-09-21) — build `8243361c` / directory "All known" omits remote actors; search includes them
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Directory "All known" tab on A + B; search for remote actors.
