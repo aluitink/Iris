@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 210 (2026-09-21) — build `863f22c8` / Directory "All known" omits remote actors despite actor doc being cached
+- **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A directory "All known" tab; A search for ii-b1; A AP route for ii-b1 actor doc.
+- **Result:**
+  - **A directory "All known" tab:** 55 cards, **NO ii-b1** (no remote B actors listed). Only local A actors + `im-user` + `iris` bot.
+  - **A search for ii-b1:** **2 results** — ii-b1 actor + P184 reply note. Search DOES find remote actors.
+  - **A AP route `GET /ap/v1/u/ii-b1`:** **200**, `type: Person` — the actor doc IS cached on A (from the follow relationship).
+  - **Discrepancy:** The directory "All known" tab omits ii-b1 (a cached remote actor), while search finds ii-b1, and the AP route serves the cached actor doc. The directory "All known" query does NOT include all cached actors — it only includes actors from a specific source (likely the local actor store + communities, NOT the full AP actor cache).
+  - **Related to S24 D2:** The directory "All known" omission is the UI-level manifestation of the same store-separation issue as S36 (actor doc cached in AP store, but directory reads from a different store that doesn't include remote actors).
+  - **Not a new defect** — this was noted in Pass 202 (directory "All known" omits remote actors bidirectionally; search includes them). Re-confirmed on current build.
+  - S36 44th consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** Directory "All known" omission re-confirmed (55 cards, no ii-b1). Search + AP route both work. Same store-separation family as S36. Next: no new angles on S36 (waiting for dev to handle embedded-object case); directory "All known" is a lower-priority known issue.
+
 ## Pass 209 (2026-09-21) — build `863f22c8` / S36 diag logging deployed: no S36 log lines in Production; P209 confirms pattern (3rd post)
 - **Build/Live:** `863f22c8` (diag logging added to S36 fetch+store path; QA cluster rebuilt).
 - **Explored:** Fresh A post II-S36-P209 (note `06GCAFQ2CAZBWZ4GCFD4F6NWW8`); B logs for S36 diag lines; B notification/outbox/AP route/object-detail/home feed for P209.
