@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 255 (2026-09-21) — build `401c08b5` / CRITICAL: Actor document leaks PRIVATE KEY to any authenticated user (ii-a1 GET /ap/v1/u/ii-a1 → privateKey field present in JSON response); S34-class security defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A actor document (authenticated GET /ap/v1/u/ii-a1).
+- **Result:**
+  - **CRITICAL SECURITY DEFECT:** The actor document JSON response contains a `privateKey` field with the full PEM-encoded RSA private key (`-----BEGIN PRIVATE KEY-----...`). Any authenticated user can read this.
+  - **Response keys:** outbox, inbox, followers, following, liked, preferredUsername, endpoints, published, @context, id, type, name, publicKey, postsCount, followersCount, followingCount, blocks, flags, mutes, star, capabilities, feed, **privateKey**, keyAlgorithm.
+  - **privateKey value:** Full RSA private key (2048-bit, `-----BEGIN PRIVATE KEY-----\nMIIEvQIB...`).
+  - **keyAlgorithm:** "rsa".
+  - **Impact:** An attacker who compromises any account (or registers a new one, since openRegistrations is not enforced) can read the instance's private key and sign activities as any actor on the instance. This completely breaks the trust model.
+  - **Root cause:** The actor document serializer includes the `privateKey` field (likely for internal use) in the HTTP response. It should be stripped before sending.
+  - **Action:** This is a new S34-class (or S39+) finding. Needs immediate dev attention.
+- **Checkpoint:** CRITICAL: Private key leak in actor document. New finding created. Next: write finding doc + alert dev.
+
 ## Pass 254 (2026-09-21) — build `401c08b5` / Change password: wrong current → "Current password is incorrect"; correct current + same new → "Password changed successfully"; re-login works; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A settings → Change password; wrong current password; correct current + same new password; re-login.
