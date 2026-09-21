@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 193 (2026-09-21) — build `8243361c` / object-cache gap re-confirmation (stability)
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post (II-S36-P193) → B cache/proxy check (30s wait); prior P192 B-cache re-check; A+B feed checks.
+- **Result:**
+  - **Object-cache gap re-confirmed:** II-S36-P193 (note `06GC9YPBK8CV4TQZHWS9SBW4SC`): A cache 200, B cache 404, B proxy 404 (30s). P192 (note `06GC9XE65ZH6295FT5GF7K03KG`): B cache still 404 (~7 min later). The gap is persistent, not transient.
+  - **Feeds:** A feed 20 items, 0 Creates, 0 S36. B feed 20 items, 0 Creates, 0 S36. Unchanged.
+  - S36 29th consecutive. 0 console errors.
+- **Checkpoint:** Object-cache gap stable (persistent, not a timing issue). S36+S24 D2 root cause (Pass 192) holds. Next: new exploration.
+
 ## Pass 192 (2026-09-21) — build `8243361c` / S36+S24 D2 root cause linkage
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post (II-S36-P192) → B cache/proxy check (30s wait); B outbox full scan (4 pages, 64 items); S24 D2 quantification.
