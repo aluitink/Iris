@@ -48,6 +48,9 @@ Thumbs.db
 
 ## Secrets
 .env
+!environments/dev1/.env
+!environments/dev2/.env
+!environments/qa/.env
 
 ## Scratch / local tooling
 .scratch/
