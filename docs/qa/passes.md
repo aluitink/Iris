@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 216 (2026-09-21) — build `401c08b5` / Directory "All known" visible actors confirmed (6: alice, ii-a1, ii-a2, ii-b1, im-user, iris bot); "65 cards" = DOM elements, not unique actors; search + actor page work
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Directory "All known" on A (detailed card inspection); A search for ii-b1; A actor page for ii-b1 (from home feed link).
+- **Result:**
+  - **Directory "All known" — 6 unique actors visible:**
+    - alice, ii-a1, ii-a2, **ii-b1** (Unfollow), im-user, iris bot
+    - The "65 cards" from previous passes was a DOM element count (nested divs), not unique actor count. The actual unique actors are **6**.
+    - ii-b1 is present (remote B actor, with "Unfollow" button — ii-a1 follows ii-b1).
+    - The directory fix (48a3b3eb + 401c08b5) is confirmed working: remote actors are listed in "All known".
+  - **Search for ii-b1:** 3 results (ii-b1 actor + P184 note + another). Search works.
+  - **Actor page for ii-b1 (from home feed link):** Renders correctly — Posts tab shows P212 (22m ago), P189 (2h ago), P184 (3h ago), etc. (8 items). Unfollow button present. Tabs: Posts, Followers, Following.
+  - **Home feed:** Still 3 items (2 "Content unavailable" Announces + 1 empty). S36 still OPEN.
+  - 0 console errors.
+- **Checkpoint:** Directory "All known" confirmed working (6 unique actors incl ii-b1). Search + actor page work. S36 home feed still OPEN. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 215 (2026-09-21) — build `401c08b5` / Directory "All known" still FIXED (401c08b5 refine); S36 home feed still OPEN (49th consecutive; P215 own post NOT in feed)
 - **Build/Live:** `401c08b5` (NEW — dev committed directory refine: "refine IsSameInstanceActor to distinguish stale local rows from remote peers"). Rebuilt + redeployed the QA cluster (containers recreated; A + B health 200).
 - **Explored:** Directory "All known" on A + B (post-rebuild); A home feed for P215 (fresh own post).
