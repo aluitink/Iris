@@ -1742,6 +1742,194 @@ public sealed class FeedServiceTests
         Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-own-2");
     }
 
+    /// <summary>
+    /// S36 regression: the home feed must surface the actor's own content <c>Create</c>s (Notes) even
+    /// when the outbox is dominated by actor-document noise (Follow/Update/Like/Undo/Delete/Add/Remove)
+    /// and the posts carry the standard public-post audience shape (<c>to</c>=Public,
+    /// <c>cc</c>=[followers]). Before the S36 fix, <c>IsFollowReply</c>'s audience fallback inspected
+    /// both <c>to</c> and <c>cc</c> (via <c>GetAudienceIris</c>), so a top-level post with
+    /// <c>cc=[followers]</c> was mistaken for a directed reply and dropped from the home timeline.
+    /// </summary>
+    [Fact]
+    public async Task S36_OwnPostsWithCcFollowers_SurfaceInHomeFeed_AmongActorDocNoise()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var bob = Actor(LocalHost, "bob");
+        var (service, persistence) = Build(
+            persistence: SeedLocal(p =>
+            {
+                SeedActor(p, alice, "Alice");
+                SeedActor(p, bob, "Bob");
+                p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+                // Content Creates with the live wire shape (to=Public, cc=followers).
+                for (var i = 1; i <= 5; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Create
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/creates/c-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Note
+                        {
+                            Id = $"https://{LocalHost}/ap/v1/u/alice/notes/n-{i}",
+                            Content = [$"S36 post {i}"],
+                            AttributedTo = [new Link { Href = new Uri(alice.Value) }],
+                            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                            Cc = [new Link { Href = new Uri($"{alice.Value}/followers") }],
+                        }],
+                    }).GetAwaiter().GetResult();
+                }
+
+                // Actor-document noise (the live outbox is dominated by these).
+                for (var i = 1; i <= 8; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Follow
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/follows/f-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri(bob.Value) }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 5; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Update
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/updates/u-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri(alice.Value) }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 3; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Like
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/likes/l-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri($"https://{LocalHost}/notes/lk-{i}") }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 3; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Undo
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/undos/und-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri($"https://{LocalHost}/ap/v1/follows/f-{i}") }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 3; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Delete
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/deletes/d-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri($"https://{LocalHost}/notes/del-{i}") }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 2; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Add
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/adds/a-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri(alice.Value) }],
+                    }).GetAwaiter().GetResult();
+                }
+                for (var i = 1; i <= 2; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Remove
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/removes/r-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Link { Href = new Uri(alice.Value) }],
+                    }).GetAwaiter().GetResult();
+                }
+
+                // A local follow with one post (no cc — the simple shape).
+                AddPost(p, bob, "b-1", "bob post 1");
+            }),
+            options: new FeedOptions { MaxItems = 200, PagesPerActor = 1 });
+
+        // The owner's home feed (the endpoint's path: requesterIri = owner, default threadDepth).
+        var feed = await service.GetFeedAsync(alice, requesterIri: alice);
+
+        // All 5 of alice's own content Creates (to=Public, cc=followers) must be in the feed.
+        for (var i = 1; i <= 5; i++)
+        {
+            var noteIri = $"https://{LocalHost}/ap/v1/u/alice/notes/n-{i}";
+            var found = feed.Any(item =>
+                item is Create c && c.Object?.FirstOrDefault() is IObject obj && obj.Id == noteIri);
+            Assert.True(found, $"alice's own post {i} (to=Public, cc=followers) must be in the home feed");
+        }
+
+        // The followed actor's post is also present.
+        Assert.Contains(feed, item =>
+            item is Create c2 && c2.Object?.FirstOrDefault() is IObject obj2
+            && obj2.Id == $"https://{LocalHost}/notes/b-1");
+    }
+
+    /// <summary>
+    /// S36 regression (follow-replies still filtered): a followed actor's reply (a <c>Create</c> whose
+    /// note has a named <c>to</c> audience — the parent's author) is still excluded from the home feed
+    /// at default depth, while the same actor's top-level post (<c>to</c>=Public, <c>cc</c>=followers)
+    /// is included. This confirms the S36 fix (inspect only <c>to</c>, not <c>cc</c>) does not
+    /// over-include directed replies.
+    /// </summary>
+    [Fact]
+    public async Task S36_FollowReplyWithToNamed_IsStillFiltered_TopLevelWithCcFollowers_IsIncluded()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var bob = Actor(LocalHost, "bob");
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                SeedActor(p, alice, "Alice");
+                SeedActor(p, bob, "Bob");
+                p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+                // Bob's top-level post (to=Public, cc=followers) — must be in the feed.
+                p.Activities.AddToOutboxAsync(bob, new Create
+                {
+                    Id = $"https://{LocalHost}/ap/v1/creates/b-top",
+                    Actor = [new Link { Href = new Uri(bob.Value) }],
+                    Object = [new Note
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/u/bob/notes/b-top",
+                        Content = ["bob top-level post"],
+                        AttributedTo = [new Link { Href = new Uri(bob.Value) }],
+                        To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                        Cc = [new Link { Href = new Uri($"{bob.Value}/followers") }],
+                    }],
+                }).GetAwaiter().GetResult();
+
+                // Bob's reply to alice (to=[alice] — a named, non-public audience, no inReplyTo) —
+                // must be filtered from the home feed at default depth.
+                p.Activities.AddToOutboxAsync(bob, new Create
+                {
+                    Id = $"https://{LocalHost}/ap/v1/creates/b-reply",
+                    Actor = [new Link { Href = new Uri(bob.Value) }],
+                    Object = [new Note
+                    {
+                        Id = $"https://{LocalHost}/ap/v1/u/bob/notes/b-reply",
+                        Content = ["bob reply to alice"],
+                        AttributedTo = [new Link { Href = new Uri(bob.Value) }],
+                        To = [new Link { Href = new Uri(alice.Value) }],
+                    }],
+                }).GetAwaiter().GetResult();
+            }),
+            options: new FeedOptions { MaxItems = 200, PagesPerActor = 1 });
+
+        var feed = await service.GetFeedAsync(alice, requesterIri: alice);
+
+        // Bob's top-level post (cc=followers) is included.
+        Assert.Contains(feed, item =>
+            item is Create c && c.Object?.FirstOrDefault() is IObject o && o.Id == $"https://{LocalHost}/ap/v1/u/bob/notes/b-top");
+
+        // Bob's directed reply (to=[alice]) is filtered.
+        Assert.DoesNotContain(feed, item =>
+            item is Create c && c.Object?.FirstOrDefault() is IObject o && o.Id == $"https://{LocalHost}/ap/v1/u/bob/notes/b-reply");
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(

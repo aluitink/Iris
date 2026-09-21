@@ -358,11 +358,18 @@ public sealed class FeedService : IFollowFeedService
     /// Reports whether a feed item is a reply made by a followed actor (not a top-level post).
     /// A reply is a <c>Create</c> activity whose content object has an <c>inReplyTo</c> field
     /// (the deterministic primary signal). When <c>inReplyTo</c> is absent, the audience heuristic is
-    /// used as a fallback: a non-public audience (the <c>to</c>/<c>cc</c> field contains a specific
-    /// actor IRI, not just the public sentinel) indicates a directed reply. Top-level posts
-    /// (no <c>inReplyTo</c>, public-only audience) and non-<c>Create</c> activities (Announce, Like, etc.)
-    /// return <see langword="false"/>.
+    /// used as a fallback: a <c>to</c> field that names a specific actor IRI (not just the public
+    /// sentinel) indicates a directed reply. Top-level posts (no <c>inReplyTo</c>, public-only <c>to</c>)
+    /// and non-<c>Create</c> activities (Announce, Like, etc.) return <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// The fallback inspects only the <c>to</c> field (not <c>cc</c>): a top-level post's
+    /// <c>cc=[followers]</c> (the standard public-post shape) must not be mistaken for a directed
+    /// reply. A true reply addresses its parent's author in <c>to</c> (the ActivityPub reply
+    /// convention); a top-level post's <c>to</c> is the public sentinel (or absent). S36: the prior
+    /// heuristic (any non-public <c>to</c>/<c>cc</c> entry) dropped every top-level post carrying
+    /// <c>cc=[followers]</c> — the dominant live wire shape — from the home timeline.
+    /// </remarks>
     private static bool IsFollowReply(IObjectOrLink item)
     {
         if (item is not Create create)
@@ -382,8 +389,22 @@ public sealed class FeedService : IFollowFeedService
             return true;
         }
 
-        // Fallback: non-public audience indicates a directed reply (Phase 101 heuristic).
-        return contentObj.GetAudienceIris().Count > 0;
+        // Fallback: a named (non-public) `to` audience indicates a directed reply (Phase 101
+        // heuristic, S36-corrected). Only `to` is inspected: a top-level post's `cc=[followers]`
+        // is a public-carbon-copy, not a directed recipient. A `to` of just the public sentinel
+        // (or an absent `to`) is a top-level post, not a reply.
+        if (contentObj.To is { } toEntries)
+        {
+            foreach (var entry in toEntries)
+            {
+                if (entry.ResolveObjectIri() is { } iri && !iri.IsPublicAudience())
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
