@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 103 (2026-09-21) — No build change; re-confirmed S36 (UI) + S24 D1 (wire) still open
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (built 03:04Z, **unchanged since Pass 101**). Dev's S28 fix still in **uncommitted WIP** (not deployed) → nothing new to re-verify; merge still blocked on that WIP.
+- **Explored:** Clean-entry re-confirm of the two top-priority open items: **S36** (home feed, UI) + **S24 D1** (Following-tab / `following`-edge sync, wire).
+- **Result:** **S36 re-confirmed** — B (ii-b1) `/home` (fresh sign-in) = "Your timeline is empty. Follow people to see their posts here." despite posts + follows. **S24 D1 re-confirmed (wire):** A `ii-a1/following` = `[c/ii-a8-community]` **only** (ii-b1 missing) while A `ii-a1/followers` = `[ii-a2, ii-b1]` — the follow edge is out of sync after the unfollow/re-follow cycle, so the Following tab omits the remote actor. No new defects; state is stable.
+- **Checkpoint:** **S36 top priority** (dev code pass on `FeedService.BuildFeedUncachedAsync`). **S28 re-verify deferred** until the dev WIP fix (`AnnounceActivityHandler` + `/shares` + shared-inbox Announce→author routing) is **committed + deployed** (current build is pre-fix; the Announce is dropped). S24 D1/D2 + S32 open. M2–M12 + L2–L12 blocked on operator accounts. **Merge blocked** on dev's uncommitted WIP (same files QA writes).
+
 ## Pass 102 (2026-09-21) — Re-verify S28 (remote Boost → shares) on current build → REGRESSED; S36 re-confirmed
 
 - **Build/Live:** QA cluster `== HEAD` `27b1ba6` (built 03:04Z, unchanged since Pass 101). Dev's S28 fix (`AnnounceActivityHandler` + `/shares`) is in **uncommitted WIP**, not deployed → re-verify is against the **pre-fix** build.
