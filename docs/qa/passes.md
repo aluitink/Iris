@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 117 (2026-09-21) — No new commit / no build change; count-materialization (S37/S28) broadened — affects LOCAL Like/Boost too (wire likedCount/sharedCount None even for a local like; /likes+/shares correct; UI Like button shows count but Boost button 0)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
+- **Explored:** Tested whether the **count-materialization** theme (S37/S28) is remote-only or general — did a **local Like** (ii-a1 on A) on a note that also had a **remote Boost** (ii-b1).
+- **Result:** **S37 broadened — the count gap is GENERAL (local + remote).** Note `06GC4RR4` (ii-a1's own note on A; local Like by ii-a1 + remote Boost by ii-b1): **wire** `likedCount`=None, `likes.totalItems`=0, `sharedCount`=None (NOT materialized even for a local Like + the remote Boost), while `GET A <note>/likes` totalItems=1 + `/shares` totalItems=1 (correct). **UI (mixed):** the **Like button shows "1"** (derived client-side) but the **Boost button count is 0** (despite "1 boost" + "Shares (1)" tab). So the denormalized wire counts (`likedCount`/`sharedCount`) and the Boost button count are not materialized for local OR remote actions; the `/likes`+`/shares` collections are correct. **Suggested dev fix:** materialize `likedCount`/`sharedCount` whenever a Like/Announce is recorded (local or remote) and reflect in the object doc + Boost button.
+- **Checkpoint:** S37 broadened to local+remote (count materialization is the shared S28/S37 gap). S36 still top priority (dev fix in progress). S24 narrowed to D2. S30 (A8.4), S32 (sending-side) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 116 (2026-09-21) — No new commit / no build change; S24 D1 (Following-tab omits remote actor) re-verified → FIXED (tab now renders remote ii-b1 + wire /following totalItems=2); S24 narrows to D2 (foreign activities in outbox)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
 - **Explored:** Re-verified **S24 D1** (the Following-tab remote-actor rendering defect) on the current build — A profile (ii-a1) Following tab + the wire `following` collection.

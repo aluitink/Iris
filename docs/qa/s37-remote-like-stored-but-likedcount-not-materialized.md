@@ -1,7 +1,7 @@
 # S37 — Remote Like is stored + rendered, but the note's `likedCount` / inline Like-count is not materialized
 
 - **Severity:** S3 (low)
-- **Status:** OPEN (reproduced on 2 notes, build `27b1ba6`)
+- **Status:** OPEN — **broadened (Pass 117, current build): the count-materialization gap is GENERAL — it affects LOCAL Like/Boost too, not just remote.** The wire `likedCount`/`sharedCount`/embedded `likes.totalItems`/`shares.totalItems` are not materialized even for a local action (see Pass 117). The UI derives some counts client-side (Like button shows the count), but the **wire counts** and the **Boost button count** lag.
 - **Test:** A2 (remote Like) — count-materialization facet
 - **Component:** Server (like-count materialization on the Note object) — dev-owned; QA documents only.
 
@@ -74,3 +74,13 @@ Handler LikeActivityHandler processed Like ... (actor .../ii-a1, recipient .../i
 GET <note>/likes -> totalItems: 1
 GET <note>       -> likedCount: None, likes.totalItems: 0
 ```
+
+## Re-test (Pass 117, 2026-09-21, current build) — broadened: LOCAL Like/Boost too
+
+**The count-materialization gap is GENERAL — it is not limited to remote actions.** On note `06GC4RR4` (ii-a1's own note on A), `ii-a1` performed a **local Like** (and the note already had a **remote Boost** from ii-b1, S28). Afterward:
+
+- **Wire (`GET A <note>`):** `likedCount` = **None**, `likes.totalItems` = **0**, `sharedCount` = **None** — the denormalized counts are **not materialized even for a local Like + the remote Boost**.
+- **Collections (correct):** `GET A <note>/likes` → `totalItems` = **1** (the local Like); `GET A <note>/shares` → `totalItems` = **1** (the remote Boost).
+- **UI (mixed):** the **Like button shows "1"** (pressed) — the UI derives the like count client-side — but the **Boost button count is still 0** (the boost count is NOT shown on the button) even though the note shows a **"1 boost"** line + a **"Shares (1)"** tab. So the UI partially materializes counts (Like button), but the Boost button count and all the **wire** counts lag.
+
+**Verdict (current build): S37 broadened — the note's `likedCount`/`sharedCount`/embedded `likes.totalItems`/`shares.totalItems` are not materialized for BOTH local and remote Like/Boost; the `/likes` + `/shares` collections are correct, and the UI derives the Like count but not the Boost button count.** The fix is to **materialize the denormalized counts (`likedCount`/`sharedCount`) whenever a Like/Announce is recorded (local or remote)**, and reflect them in the object document + the Boost button. **Status: OPEN (broadened to local + remote).**
