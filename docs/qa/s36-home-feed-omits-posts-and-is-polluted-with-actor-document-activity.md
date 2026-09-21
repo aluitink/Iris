@@ -141,3 +141,18 @@ Dev's in-process code pass (commit `0ec58d3`) proved the server (`FeedService` �
   - **Zero content `Create`s on both instances.** The feed contains only actor-document noise (Follow/Undo/Like/Delete) and unresolvable "unknown" items. No posts, no boosts with content, nothing.
 - **Significance:** The type histogram confirms S36 is **total** — not just missing the latest post, but **all** content is absent from both feeds. The 12 "unknown" items in A's feed are likely actor documents or other non-activity objects that the feed query erroneously includes.
 - **Verdict:** S36 **STILL OPEN (S2, top priority)**. 26th consecutive pass. Feed type histograms confirm the defect is total on both instances.
+
+## Re-verification (Pass 191, 2026-09-21, build `8243361c`) — cross-instance note cache gap quantified (27th consecutive)
+
+- **Fresh ii-a1 post `II-S36-P191`** (note `06GC9WB0RRG2VBH2ZAF75Y3Y4G`, posted 17:09Z, A-side). In A outbox as a clean `Create` (to=Public, cc=followers). **B cached copy: 404** (checked ~15s after post). B proxy: 404. B feed: 20 items, 0 Creates, 0 S36.
+- **Prior fresh B post `II-S36-P189`** (note `06GC9RFVB4BRXGCYYMVGHWX0XM`, posted 16:52Z, B-side). B cached copy: 200 (Note, content correct). **A cached copy: 404** (checked ~20 min after post). A proxy: 404. A feed: 20 items, 0 Creates, 0 S36.
+- **Cross-instance note cache gap quantified (new data):**
+  | Direction | Note | Source cached | Peer cached | Peer proxy |
+  |-----------|------|---------------|-------------|------------|
+  | B→A | II-S36-P189 (B) | B: 200 | A: 404 | A: 404 |
+  | A→B | II-S36-P191 (A) | A: 200 | B: 404 | B: 404 |
+  | A→B | II-S36-P190 (A) | A: 200 | B: 404 | B: 404 |
+  - **Both directions: the peer instance never caches the content note.** The source instance serves the note (200), but the peer returns 404 for both the cached route AND the proxy route. The Create activity is delivered to the peer's inbox (evidenced by the peer's feed containing Follow/Like/Undo noise from the same interaction window) but the **content object is never fetched and cached**.
+  - **Health check:** Both A and B `/ap/v1/health` = healthy (delivery queue empty, workers running, no dead letters). The delivery system is functional — the gap is in the **object-fetch/caching path**, not the activity-delivery path.
+- **Significance:** This narrows the S36 root cause: the feed-query defect is NOT (only) about the feed query omitting Creates — it's that **content objects are never cached on the peer instance**, so there's nothing for the feed query to return. The activity is delivered (inbox), but the object fetch (which would populate the peer's object store) never happens or fails silently. The 12 "unknown" items in A's feed may be partially-fetched or reference-only entries from activities whose objects were never cached.
+- **Verdict:** S36 **STILL OPEN (S2, top priority)**. 27th consecutive pass. Cross-instance note cache gap confirmed bidirectional with proxy also 404 — the content object is never cached on the peer, not just omitted from the feed query.
