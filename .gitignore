@@ -90,3 +90,6 @@ backups/
 
 ## QA worktree (second checkout for the QA loop — never commit; see docs/reference/QA_LOOP.md)
 .worktrees/
+.tmp_deser/
+.tmp_seedfeed/
+.tmp_test/
