@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 156 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Re-verified S34 (gated follow) on `38ae87c` → FIXED holds (no regression)
+- **Build/Live:** No new dev commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
+- **Explored:** Performed a **fresh gated-follow test** of **S34** (gated follow) on `38ae87c` — a FIXED item not re-checked on the current build. Enabled gated follow on ii-a1, had ii-a2 unfollow + re-follow (fresh pending request), checked the public followers collection pre-accept, accepted, and cleaned up.
+- **Result:** **S34 FIXED — re-confirmed, no regression.**
+  - **Setup:** ii-a1 (A) enabled "Require approval for follow requests" → `GET A /ap/v1/u/ii-a1` → `manuallyApprovesFollowers` = **true**.
+  - **Fresh follow:** ii-a2 (A) unfollowed + re-followed ii-a1 → created a pending request.
+  - **Pending (before accept):** `GET A /ap/v1/u/ii-a1/followers` (public, curl + clean authenticated read as ii-a1) = **`[ii-b1]` only (count 1)** — **ii-a2 withheld** while pending; `GET A /ap/v1/u/ii-a2/following` = **count 0**; `GET A /local/v1/u/ii-a1/requests` (authenticated) = **`[ii-a2]`** (pending). ii-a1 Requests tab shows "ii-a2 wants to follow you" (A3.1 ✓). (An earlier confused-tab browser read transiently showed ii-a2 in followers — a stale client-side read; the wire is correct.)
+  - **After Accept:** `requests` = **`[]`**; `followers` = **`[ii-b1, ii-a2]`** (count 2); `ii-a2/following` = **`[ii-a1]`** (count 1) (A3.3 ✓). (Accept took a few seconds to persist.)
+  - **Cleanup:** disabled gated follow on ii-a1 (`manuallyApprovesFollowers` back to false/None); ii-a2→ii-a1 follow edge restored (followers = `[ii-b1, ii-a2]`, ii-a2 following = `[ii-a1]`).
+- **Checkpoint:** **S34 (gated follow) re-confirmed FIXED on `38ae87c` (pending follower withheld from public followers pre-accept; requests = [ii-a2] pre-accept, followers = [ii-b1] only; post-accept followers = [ii-b1, ii-a2], ii-a2 following = [ii-a1]). No regression; state restored.** No new defect; no build change. Open items unchanged: S36 (home feed — top priority), S24 D2 (foreign outbox items), S38 (webfinger), S37/S28 (count/button residual). S30/S26/S33/S31/S29/S32/S34 all hold. **M2–M12 + L2–L12 blocked** (operator accounts).
+
 ## Pass 155 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Re-verified S32 (cross-instance Delete + Update propagation) on `38ae87c` → LARGELY FIXED holds (no regression)
 - **Build/Live:** No new dev commit (HEAD `e07faa5`, PLAN-only since `38ae87c`); no `src/` change since `38ae87c` → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200).
 - **Explored:** Re-verified **S32** (cross-instance Delete + Update propagation) on `38ae87c` — a FIXED item not re-checked since the Pass 142 `38ae87c` rebuild. Re-tested the Pass 142 test notes (II-S32-3 deleted note `06GC5QJW`, II-S32-4 edited note `06GC5RXZ`) on A + B.

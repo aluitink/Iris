@@ -53,3 +53,17 @@ S34 OPEN (reproduces on a fresh build). (A3.1 pending-request + A3.3 post-accept
 - **After Accept:** `GET A /ap/v1/u/ii-a1/followers` = `[ii-b1@B, ii-a2]` (count 2); `ii-a2/following` = `[ii-a1]` (A3.3 ✓). (Note: the accept took a few seconds to persist — an immediate re-read right after Accept still showed count 1; a re-read ~5 s later showed count 2.)
 
 The pending/gated follower is now correctly excluded from the public `followers` collection until the owner accepts. **S34: FIXED (not reproduced on the 2026-09-21 fresh cluster).**
+
+## Re-test (Pass 156, 2026-09-21, build `38ae87c`) — S34 re-confirmed FIXED (gated follower withheld pre-accept)
+
+Performed a **fresh gated-follow test** on the current build (`38ae87c`):
+
+1. **Enabled gated follow** on ii-a1 (A) via profile edit ("Require approval for follow requests"); `GET A /ap/v1/u/ii-a1` → `manuallyApprovesFollowers` = **true**.
+2. **ii-a2 unfollowed + re-followed** ii-a1 (a fresh follow while gated follow is ON) → created a pending request.
+3. **Pending (before accept):** `GET A /ap/v1/u/ii-a1/followers` (public, curl + clean authenticated read as ii-a1) = **`[ii-b1]` only (count 1)** — **`ii-a2` withheld** while pending. `GET A /ap/v1/u/ii-a2/following` = **count 0** (empty). `GET A /local/v1/u/ii-a1/requests` (authenticated) = **`[ii-a2]`** (the fresh follow is correctly pending). ii-a1's profile **Requests tab** shows "ii-a2 wants to follow you" with Accept/Reject (A3.1 ✓).
+   - Note: an earlier browser-context read of the followers collection (from a confused tab session) transiently showed ii-a2 — a **stale/incorrect client-side read**; the wire (curl + clean authenticated read as ii-a1) is correct (ii-a2 withheld).
+4. **After Accept:** `GET A /local/v1/u/ii-a1/requests` = **`[]`**; `GET A /ap/v1/u/ii-a1/followers` = **`[ii-b1, ii-a2]`** (count 2); `GET A /ap/v1/u/ii-a2/following` = **`[ii-a1]`** (count 1) (A3.3 ✓). (The accept took a few seconds to persist — an immediate re-read right after Accept briefly showed count 1 / following 0; a re-read ~5 s later showed the restored edge.)
+
+**Cleanup:** disabled gated follow on ii-a1 (`manuallyApprovesFollowers` back to false/None); the ii-a2→ii-a1 follow edge is restored (followers = `[ii-b1, ii-a2]`, ii-a2 following = `[ii-a1]`).
+
+**Verdict (build `38ae87c`): S34 FIXED — the pending/gated follower (ii-a2) is correctly withheld from the public `followers` collection until the owner accepts (requests = `[ii-a2]` pre-accept, followers = `[ii-b1]` only; post-accept followers = `[ii-b1, ii-a2]`, ii-a2 following = `[ii-a1]`). No regression.**
