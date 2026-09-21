@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 232 (2026-09-21) — build `401c08b5` / Directory Paging (new inbox item): NOT reproducible on QA cluster (7 total items, no pagination needed); no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Directory "All known" tab (People + Communities) on A.
+- **Result:**
+  - **People tab "All known":** 6 unique actors (alice, ii-a1, ii-a2, ii-b1, im-user, iris). API: `GET /ap/v1/search?q=&limit=100&offset=0&type=Actor` → `totalItems: 7`. No "Load more" button, no infinite scroll.
+  - **Communities tab "All known":** 1 community (ii-a8-community). No "Load more" button.
+  - **Directory Paging (new inbox item from dev):** "We are showing only the first 100, we should continue to page out all of the records with infinity scroll." **NOT reproducible on QA cluster** — totalItems=7 (well under the 100 limit). No pagination needed. The inbox item is likely for production-scale instances.
+  - No new defects found.
+  - 0 console errors.
+- **Checkpoint:** Directory Paging not reproducible (7 items < 100 limit). No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 231 (2026-09-21) — build `401c08b5` / S36 finding doc updated with full content-source map (8 surfaces) + outbox contrast + dev hint; 61st consecutive
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** S36 finding doc update (content-source map, outbox contrast, dev hint).
