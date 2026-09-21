@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 119 (2026-09-21) — No new commit / no build change; dev S36 WIP grew (296 lines of tests across FeedServiceTests + EfPersistenceContractTests, incl. an EF persistence integration test); still no src/ fix → S36 OPEN
+- **Build/Live:** No new commit (HEAD `aebe420`); QA cluster unchanged. **Dev S36 WIP grew to 296 lines of tests** across **two files** — `FeedServiceTests.cs` (2 tests: `Feed_OwnPostPlusActorDocNoise_KeepsOwnCreate`, `Feed_OwnPostBuries_UnderCapOfActorDocNoise_StillKeepsOwnCreate`) + `EfPersistenceContractTests.cs` (new EF persistence integration test `S36_FeedService_OverEfStore_SurfacesOwnNoteCreate_AmongActorDocNoise` + test harness). **No `src/` changes yet** — the S36 fix itself is not written (tests only) → S36 still open.
+- **Explored:** Checked the dev S36 WIP state (commit / WIP / build staleness) — confirmed the fix is still in the test-writing phase.
+- **Result:** **S36 remains OPEN (top priority).** Dev is building the S36 repro/contract tests (feed service + EF persistence) but has not yet changed the `FeedService` source. The fix (filter the feed to content `Create`s / exclude actor-doc activity in `FeedService.BuildFeedUncachedAsync`, and/or the EF persistence query) is the unblock. No live re-verify possible until dev commits + the cluster is redeployed.
+- **Checkpoint:** S36 dev fix in progress (tests written, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 118 (2026-09-21) — No new commit / no build change; S28 count facet re-confirmed (stable); S30 A8.4 characterized — remote-community /feed 404s on B (owner A has /feed 200 + /members 1 + /outbox 200)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
 - **Explored:** Re-confirmed the **S28 count facet** on the current build + characterized **S30 A8.4** (remote-community feed) — community `/feed`/`/members`/`/outbox` on A (owner) vs B (peer).
