@@ -16,8 +16,9 @@ namespace Iris.Server.Tests.Inbox;
 /// content is replaced and the Update is propagated to the remote follower), updating an object this
 /// instance does not store (no-op, no propagation), a reference-only update (no content to apply →
 /// no-op, no propagation), a remote (non-local) updating actor (no-op — the owner guard), an update
-/// with no embedded object, an update with only local followers (no propagation), and the null-guard
-/// contract.
+/// with no embedded object, an update with only local followers (no propagation), the null-guard
+/// contract, and S31 — an edit preserves the Note's original `published` timestamp (the edit's embedded
+/// object carries none) while stamping `updated`.
 /// </summary>
 public sealed class UpdateActivityHandlerTests
 {
@@ -476,9 +477,45 @@ public sealed class UpdateActivityHandlerTests
         Assert.True(await persistence.Objects.TryGetObjectAsync(NoteIri, out var stored));
         var note = Assert.IsType<Note>(stored);
         Assert.Equal("edited body", note.Content?.FirstOrDefault());
+        // S31: the original creation time must be preserved across the edit (the edit's embedded object
+        // carries no `published`, so the stored object's value is carried over).
+        Assert.Equal(originalNote.Published, note.Published);
         Assert.NotNull(note.Updated);
         Assert.True(note.Updated! >= beforeEdit, $"Updated ({note.Updated}) should be >= {beforeEdit}");
         Assert.True(note.Updated! >= originalNote.Published!, $"Updated ({note.Updated}) should be >= published ({originalNote.Published})");
+    }
+
+    /// <summary>
+    /// S31: editing a Note must not clear its `published` timestamp. The client builds the edit's
+    /// embedded object without `published` (only id/content/audience), so the handler must carry the
+    /// stored object's `published` onto the incoming object before storing it — otherwise the original
+    /// creation time is lost (and the cleared value propagates to peers on the federated half).
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_LocalOwnerEditsNote_PreservesPublishedAndStampsUpdated()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        var originalNote = BuildNote("original body");
+        originalNote.Published = DateTime.UtcNow.AddDays(-2);
+        await persistence.Objects.PutObjectAsync(originalNote);
+
+        var beforeEdit = DateTime.UtcNow;
+        // The edit's embedded object carries NO published (the client sends a bare object).
+        var update = BuildUpdate(LocalPerson, BuildNote("edited body"));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.True(await persistence.Objects.TryGetObjectAsync(NoteIri, out var stored));
+        var note = Assert.IsType<Note>(stored);
+        Assert.Equal("edited body", note.Content?.FirstOrDefault());
+        // The creation time is preserved (not cleared to null).
+        Assert.Equal(originalNote.Published, note.Published);
+        // The edit time is stamped and is after the creation time.
+        Assert.NotNull(note.Updated);
+        Assert.True(note.Updated! >= beforeEdit);
+        Assert.True(note.Updated! > originalNote.Published!);
     }
 
     /// <summary>

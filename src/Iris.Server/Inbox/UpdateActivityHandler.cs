@@ -157,12 +157,19 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
-        // Stamp `updated` on content objects (non-actor) so remote clients can detect edits.
-        // Actor profile updates go through HandleActorUpdateAsync which uses field-merge semantics
-        // and does not set `updated`. The `updated` timestamp is meaningful for content objects
-        // (Notes, Articles) that carry a `published` timestamp.
+        // S31 (edit clears `published`): an edit's embedded object carries the new content but not the
+        // object's original `published` (the client builds a bare object — only id/content/audience — and
+        // AP treats `published` as immutable after creation). Storing the incoming object directly would
+        // therefore drop the creation time (and the cleared value would propagate to peers). Preserve the
+        // stored object's `published` on the incoming object, then stamp `updated` to the edit time so
+        // remote clients can detect the edit (and so the `updated` field is present on the stored Note and
+        // on the `Update` activity's object, which is the same instance). Actor profile updates go through
+        // HandleActorUpdateAsync (field-merge) and do not set `updated` — the timestamp is meaningful for
+        // content objects (Notes, Articles) that carry a `published` timestamp.
         if (updated is ActivityObject contentObj && contentObj is not Actor)
         {
+            contentObj.Published ??= (stored as ActivityObject)?.Published;
+
             var now = DateTime.UtcNow;
             var published = contentObj.Published;
             contentObj.Updated = published is { } pub && now < pub ? pub : now;
