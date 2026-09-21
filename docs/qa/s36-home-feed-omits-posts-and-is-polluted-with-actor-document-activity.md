@@ -180,3 +180,24 @@ Dev's in-process code pass (commit `0ec58d3`) proved the server (`FeedService` �
   - **Absent** in the outbox path (foreign Creates are stored in the outbox but the object is not cached — S24 D2).
 - **Fix direction refined:** The simplest fix is to **inline the object content** in the feed query results (like the notification path does), OR to **fetch + cache the Note** when the Create is processed (like the notification path implicitly does by inlining). Either approach would make the home feed surface content without requiring a separate object-fetch step.
 - **Verdict:** S36 **STILL OPEN (S2, top priority)**. 29th consecutive pass. Root cause refined: the notification path inlines content at store time (bypassing the object-cache gap), while the home-feed and outbox paths do not — the fix is to inline or fetch+cache the object in the feed path.
+
+## Re-verification (Pass 230, 2026-09-21, build `401c08b5`) — 61st consecutive; content-source map complete; home feed is the ONLY broken surface
+
+- **Content-source map (Pass 224, 8 surfaces) — all re-confirmed on `401c08b5`:**
+  | Surface | Posts visible? | Notes |
+  |---------|---------------|-------|
+  | Notifications | ✓ | Inlines content at store time |
+  | Actor page (Posts tab) | ✓ | Shows P227/P226/P225 (16 items) |
+  | Object-detail | ✓ | Renders P227 correctly |
+  | Profile (Your posts) | ✓ | P227 visible |
+  | Community feed | ✓ | Member posts visible |
+  | Directory (All known) | ✓ | Remote actors listed bidirectionally |
+  | Search | ✓ | P227 found (1 result) |
+  | **Home feed** | **✗** | **ONLY broken surface** |
+- **Outbox vs home feed contrast (Pass 229):** A outbox has 46 Creates (43 Notes + 1 Article), actor page shows them all, home feed shows **0** content posts. The data is there, the feed query doesn't retrieve it.
+- **S36 is visibility-agnostic (Pass 227):** Public + Followers-only posts both omitted from home feed.
+- **S36 affects all content types (Pass 226):** Notes + Articles both omitted.
+- **S36 is bidirectional (Pass 212/213/223):** A→B and B→A both affected. Own posts (Pass 213) and remote posts both omitted.
+- **KEY INSIGHT (Pass 219):** Community feed WORKS (member posts visible) but home feed is empty — different query paths. Posts ARE stored (visible in 7 of 8 surfaces) — the home feed query just doesn't retrieve them.
+- **Dev hint:** Compare the community feed query (works) vs the home feed query (broken). The outbox has 46 Creates but the home feed shows 0. The S36 fix (`adf65b84`) only handles bare-link Creates, but the live wire shape delivers embedded objects — the fix is a no-op.
+- **Verdict:** S36 **STILL OPEN (S2, top priority)**. 61st consecutive pass. Content-source map complete: home feed is the ONLY broken surface of 8. Awaiting dev fix to the home feed query.

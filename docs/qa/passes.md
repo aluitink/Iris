@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 231 (2026-09-21) — build `401c08b5` / S36 finding doc updated with full content-source map (8 surfaces) + outbox contrast + dev hint; 61st consecutive
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** S36 finding doc update (content-source map, outbox contrast, dev hint).
+- **Result:** S36 finding doc updated with: (1) full 8-surface content-source map (7 work, home feed is the ONLY broken one), (2) outbox vs home feed contrast (46 Creates in outbox, 0 in home feed), (3) dev hint (compare community feed query vs home feed query). S36 61st consecutive. No new angles.
+- **Checkpoint:** S36 finding doc fully updated. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 230 (2026-09-21) — build `401c08b5` / S36 stable at 61st consecutive: A home feed = 1 unique item (Tombstone-Announce), B home feed = completely empty; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed (re-check); B home feed (re-check).
