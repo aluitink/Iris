@@ -1,7 +1,7 @@
 # S28 — Remote Announce (Boost) delivered+stored on the author, but NOT surfaced in the note's `shares`
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open
+- **Status:** **PARTIALLY FIXED (Pass 112, current build)** — the Pass-102 **regression (Announce dropped at the shared inbox "no local recipient") is RESOLVED**: the remote Announce is now **delivered + accepted + stored** (`AnnounceActivityHandler processed … ok`, `Inbox accepted`), and it's **surfaced** — `GET A <note>/shares` → 200 (contains the boost) + the **Shares tab lists the booster (ii-b1)**. **Remaining (count facet):** the author's `shares`/`sharedCount` are still **None** and the note `shares.totalItems` = **0** (the **count is not materialized** — the same count-materialization pattern as [S37](s37-remote-like-stored-but-likedcount-not-materialized.md) for Likes); the author's `/shares` endpoint 404s. **Status: OPEN (narrowed) — count materialization only.**
 - **Found:** Interop suite A7 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S25](s25-remote-post-not-in-followers-home-feed.md) (delivered+stored, not surfaced), [S26](s26-remote-reply-not-threaded-under-parent.md) (stored, not threaded) — same family. **Distinct from [S27](s27-like-dropped-at-shared-inbox-no-local-recipient.md):** the Announce is **received + accepted** by A (not dropped at the shared inbox as the Like is).
 
@@ -64,3 +64,25 @@ So the remote Boost now reaches the author (Shares tab populated), but the **but
 - **A object-detail UI (as ii-a1):** Boost button count **0**, Shares tab = **"No boosts yet."**
 
 **Verdict (build `27b1ba6`): S28 OPEN — REGRESSED.** The remote Boost is now **dropped at the shared inbox** ("no local recipient"), so the author's `shares` / `sharedCount` / Shares tab are all empty. This is the same class as S27 (Like dropped at the shared inbox) — the shared-inbox recipient resolution does not route an inbound `Announce` (or `Like`) to the **local note author**. The earlier "partially improved" state (Shares tab populated, 2026-09-20 fresh cluster) is **gone** on the current build. The S28 fix in dev's uncommitted WIP (`AnnounceActivityHandler` + `/shares`) has **not** been deployed to the QA cluster, so this re-verify is against the pre-fix build `27b1ba6`.
+
+## Re-verify (Pass 112, 2026-09-21, current build `11fbec6`/`aebe420`)
+
+**The Pass-102 REGRESSION is RESOLVED — the remote Announce is delivered + accepted + stored, and now surfaced (Shares tab + `/shares` endpoint). Only the count is not materialized.** (The S28 fix — shared-inbox routing of an inbound `Announce` to the local note author + the `/shares` endpoint — is now **deployed**; it was the uncommitted WIP in Pass 102.)
+
+- `ii-a1` (A) posted a fresh Public note `II-S28 reverify remote boost shares (fresh, Pass 112)` (Note `…/ii-a1/notes/06GC4RR4CN76NCSW2WJKQ3BPZW`).
+- `ii-b1` (B) pressed **Boost** from B (B outbox → `Announce`, `actor`=ii-b1, `object`=the Note IRI).
+- **A (author's instance) log (decisive — NOT dropped, the Pass-102 failure mode is gone):**
+  - `Inbox received Announce …/ii-b1/announces/06GC4RXBM9… from …/ii-b1 to …/ii-a1`
+  - `Handler AnnounceActivityHandler processed Announce … — ok`
+  - `Inbox accepted: Announce from …/ii-b1 targeting …/notes/06GC4RR4…. Recipient: …/ii-a1, Peer: qa-iris-b.luit.ink`
+  - (a `re-delivery … skipping dispatch` line follows — idempotency working)
+- **Surfaced (the original S28 "not in shares" gap is FIXED):**
+  - `GET A <note>/shares` → **200**, body contains the boost (`actor`=ii-b1, `object`=the Note IRI, `id`=…/ii-b1/announces/06GC4RXBM9…) ✓
+  - **A object-detail UI Shares tab → lists ii-b1** (the booster) ✓
+- **Still NOT materialized (the remaining count facet):**
+  - `GET A /u/ii-a1` → `shares` = **None**, `sharedCount` = **None** (the actor's shares collection + count are absent)
+  - `GET A <note>` → `shares.totalItems` = **0** (the note's embedded count is 0 despite the stored boost)
+  - **Boost button count = 0** (not pressed)
+  - `GET A /u/ii-a1/shares` (author-level) → **404**
+
+**Verdict (current build): S28 PARTIALLY FIXED.** The shared-inbox drop (Pass-102 regression) is resolved and the boost is now delivered + stored + surfaced in the note's `shares`/Shares tab. **Remaining:** the **count** is not materialized — author `shares`/`sharedCount`=None, note `shares.totalItems`=0, Boost button 0 (and the author-level `/shares` 404s). This is the **same count-materialization pattern as S37** (remote Like stored + `/likes` correct, but `likedCount`=0). **Suggested dev follow-up:** when a remote `Announce` is accepted for a local Note, **increment the note's `shares.totalItems` + the actor's `sharedCount`** (and expose the author's `/shares` collection) so the counts match the stored boost. **Status: OPEN (narrowed) — count materialization only.**

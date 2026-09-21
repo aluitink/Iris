@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 112 (2026-09-21) — Re-verified S28 → PARTIALLY FIXED: Announce no longer dropped (delivered+accepted+stored, surfaced in Shares tab + /shares); only the count not materialized
+- **Build/Live:** No new S28 fix commit — HEAD `aebe420` is a **rebase of `11fbec6`** (identical source; only `PLAN.md` differs). The QA cluster is already on the latest code (redeploy not needed); the S28 shared-inbox fix is **deployed**.
+- **Explored:** Re-verified **S28 (remote Announce/Boost)** with a fresh A note + a fresh B boost.
+- **Result:** **S28 PARTIALLY FIXED.** The Pass-102 **regression (Announce dropped at the shared inbox "no local recipient") is RESOLVED**: A log shows `Inbox received Announce …/ii-b1 → …/ii-a1`, `Handler AnnounceActivityHandler processed … ok`, `Inbox accepted: Announce … Recipient: ii-a1` (NOT dropped). The boost is **surfaced**: `GET A <note>/shares` → **200** (contains the boost) + the **Shares tab lists ii-b1**. **Remaining (count facet):** author `shares`/`sharedCount` = **None**, note `shares.totalItems` = **0**, Boost button = **0**, author-level `/shares` 404s — the **count is not materialized** (same pattern as S37 for Likes). **Suggested dev follow-up:** on an accepted remote `Announce` for a local Note, increment the note's `shares.totalItems` + the actor's `sharedCount` (and expose author `/shares`).
+- **Checkpoint:** S28 narrowed to **count materialization** (delivery + surfacing fixed). S36 still top priority (home feed empty; needs `FeedService` pass). S30 narrowed to A8.4 community feed. S24 D1/D2 + S32 (sending-side, Delete+Update) + S37 open. M2–M12 + L2–L12 blocked on operator accounts.
+
 ## Pass 111 (2026-09-21) — Dev committed S30 direct-view fix; rebuilt cluster; S30 A8.2 direct-view FIXED, A8.4 community feed still 404
 - **Build/Live:** dev committed **`11fbec6`** — "serve cached remote Group at `/ap/v1/c/{name}` (direct-view facet)" (the `/c/{name}` route now falls back to a stored remote community whose IRI's last path segment matches the name, serving the doc AS-IS; +2 tests). **Rebuilt + redeployed** `qa-iris-a`/`qa-iris-b` to `11fbec6` (healthy; accounts intact).
 - **Explored:** Re-verified **S30** on the new build — A8.2 (direct-view `/c/{name}`) + A8.4 (community feed) on the peer (B).
