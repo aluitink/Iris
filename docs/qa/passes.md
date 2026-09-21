@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 214 (2026-09-21) — build `48a3b3eb` / Directory "All known" FIXED (48a3b3eb): remote actors now listed bidirectionally (A: 65 cards incl ii-b1; B: 54 cards incl ii-a1+ii-a2); home feed still empty (P214 own post NOT in feed)
+- **Build/Live:** `48a3b3eb` (NEW — dev committed directory fix: "keep remote actors with preferredUsername in 'All known' scope"). Rebuilt + redeployed the QA cluster (containers recreated; A + B health 200).
+- **Explored:** Directory "All known" on A + B (post-rebuild); A home feed for P214 (fresh own post).
+- **Result:**
+  - **Directory "All known" FIXED (48a3b3eb):**
+    - **A directory "All known":** **65 cards** (was 55), **ii-b1 NOW PRESENT** (remote B actor, with "Unfollow" button — ii-a1 already follows ii-b1). Also: alice, ii-a1, ii-a2, im-user, iris bot + other remote actors.
+    - **B directory "All known":** **54 cards** (was 55), **ii-a1 + ii-a2 NOW PRESENT** (remote A actors, with "Unfollow" for ii-a1 — ii-b1 follows ii-a1). Also: alice, ii-b1, iris bot.
+    - **Fix confirmed bidirectional:** Remote actors with a `preferredUsername` are now included in the "All known" scope. The previous omission (Pass 202, Pass 210) is resolved.
+  - **Home feed STILL EMPTY (S36, 48th consecutive):**
+    - P214 (A's own post, note `06GCAP9SE9ASHP9YQFRPAT5PFG`) posted.
+    - A home feed: 3 items — 2 "Content unavailable" Announces (ii-b1 boosting old A notes) + 1 empty. **P214 NOT in A's home feed.**
+    - The directory fix (`48a3b3eb`) did NOT address the home feed query. S36 remains OPEN (home feed empty for own + remote posts).
+  - 0 console errors.
+- **Checkpoint:** **Directory "All known" FIXED (48a3b3eb)** — remote actors now listed bidirectionally. S36 (home feed) still OPEN (48th consecutive; P214 own post not in feed). The directory fix is a separate store query (`GlobalSearchService`), not the feed query (`FeedService`). Dev still needs to fix the home feed query. Next: no new S36 angles until dev ships a feed fix.
+
 ## Pass 213 (2026-09-21) — build `863f22c8` / CRITICAL: local home feed ALSO empty (own post P212 in outbox + AP 200 but NOT in own feed)
 - **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** P212 (B's own post) on B: AP route, home feed, actor page.
