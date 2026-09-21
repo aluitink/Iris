@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 227 (2026-09-21) — build `401c08b5` / P227 (A Followers-only): visibility select works (to: Public, cc: followers), in profile, NOT in home feed (58th consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A Followers-only post II-S36-P227 (note `06GCAYZD0RBSXSQFSNC2PV05J8`, to: Public, cc: followers); A home feed + profile for P227.
+- **Result:**
+  - **P227 posted:** A outbox has the Create. Note IRI uses `/notes/` path. Type: Note. **Visibility: to: Public, cc: followers** (Followers-only visibility correctly set in the wire).
+  - **A profile:** P227 visible in "Your posts" tab (3m ago).
+  - **A home feed:** P227 NOT present (2 unique items: duplicate "Content unavailable" Tombstone-Announce + empty). **58th consecutive S36.**
+  - **Key insight:** The visibility select works correctly (Followers-only sets `to: Public, cc: followers` in the wire). The home feed omits Followers-only posts too (same as Public posts). The home feed bug is visibility-agnostic.
+  - 0 console errors.
+- **Checkpoint:** P227 (Followers-only) confirms S36 is visibility-agnostic (Public + Followers-only both omitted). Visibility select works correctly. S36 58th consecutive. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 226 (2026-09-21) — build `401c08b5` / P226 (A Article): Article posted (type: Article, IRI /articles/...), in profile, NOT in home feed (57th consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A Article II-S36-P226 (IRI `https://qa-iris-a.luit.ink/ap/v1/u/ii-a1/articles/06GCAYBA2NCC1X5FBT1R5CG7GG`, type: Article); A home feed + profile for P226.
