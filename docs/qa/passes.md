@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 212 (2026-09-21) — build `863f22c8` / P212 B→A direction: same S36 pattern (notification inlines, AP 404, object-detail renders, feed missing)
+- **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh B post II-S36-P212 (note `06GCAKBA2Q1DNDV2VGQ15NP2KR`); A notification/outbox/AP route/object-detail/home feed for P212.
+- **Result:**
+  - **A notification:** P212 inlined (totalItems=31, 1 P212 notification).
+  - **A outbox:** P212 NOT in A's outbox (totalItems=80, 0 P212). B's posts don't go into A's outbox (expected — outbox is per-actor).
+  - **A AP note route:** `GET /ap/v1/u/ii-b1/notes/06GCAKBA2Q1DNDV2VGQ15NP2KR` → **404** (object NOT in A's actor-keyed note store).
+  - **A object-detail:** renders P212 content (reads from notification store).
+  - **A home feed:** 3 items — 2 "Content unavailable" Announces (ii-b1 boosting old A notes) + 1 empty. **P212 NOT in A's home feed** (46th consecutive S36).
+  - **B→A direction confirmed:** The S36 pattern is identical in both directions (A→B and B→A). Notification inlines content, AP note route 404s, object-detail renders, home feed omits the post.
+  - S36 46th consecutive (home feed empty, both directions). 0 console errors.
+- **Checkpoint:** S36 confirmed bidirectional (A→B: P206/P208/P209/P211; B→A: P212). Same pattern in both directions. No new angles — waiting for dev to handle the embedded-object case. Next: no new S36 test possible until dev ships a new fix.
+
 ## Pass 211 (2026-09-21) — build `863f22c8` / P211 confirms S36 pattern (4th post): outbox embeds, AP 404, object-detail renders, feed empty
 - **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post II-S36-P211 (note `06GCAJ05A5CBG2R7P0DTHRC70W`); B outbox/AP route/object-detail/home feed for P211.
