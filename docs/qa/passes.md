@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 245 (2026-09-21) — build `401c08b5` / Community actor page: 3 tabs (Posts, Followers, Following); Posts="No posts yet", Followers=ii-b1, Following=ii-b1; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A community actor page for ii-a8-community (all tabs).
+- **Result:**
+  - **Tabs:** Posts, Followers, Following.
+  - **Posts:** "No posts yet." (correct — no one has posted in the community).
+  - **Followers:** ii-b1 (Unfollow button).
+  - **Following:** ii-b1 (Unfollow button).
+  - All tabs render correctly. No new defects.
+  - 0 console errors.
+- **Checkpoint:** Community actor page all tabs work. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 243 (2026-09-21) — build `401c08b5` / Compose page: all controls present (editor, Note/Article/Poll, Public/Followers/Direct, CW, attachments, char count, Post button); no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A Compose page (all controls).
