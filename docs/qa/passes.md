@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 170 (2026-09-21) — No `src/` change / cluster unchanged (`38ae87c`, healthy). Open-item stability sweep + S29 re-verify — all open items STABLE (12th consecutive stable pass)
+- **Build/Live:** No `src/` change since `38ae87c` (dev's latest commit `0ec58d3` is PLAN-only) → no rebuild. QA cluster unchanged (build `38ae87c`; A + B health 200; follow edges intact: ii-a1 followers=2, ii-b1 followers=2).
+- **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28) + **S29 re-verify** (community webfinger).
+- **Result (all STABLE — 12th consecutive stable pass; no regression, no new defect, no fix landed):**
+  - **S36 (home feed) STILL OPEN (top priority).** Home feed (ii-a2 session, A) still renders **only the boost wrapper** (target `06GC3AWSHG` = Tombstone) with **no own content** — unchanged from Passes 129–169.
+  - **S39 (A-side notifications) STILL OPEN.** `ii-a1` (A) `/local/v1/notifications` → `totalItems=0` (unchanged).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN + accumulating.** `GET A /u/ii-a1/outbox` → `totalItems`=**57** (was 56 in Pass 169); page 1 = **8 foreign (ii-b1)** items (was 7) → **continues to accumulate** (now 57 total / 8 foreign).
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN (both directions).** `GET A /u/ii-b1` doc = **200**; `/outbox` = **404**; `/followers` = **404** (own-instance control = 200).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (own-instance control = 200).
+  - **S37/S28 (wire counts / button-UI residual):** the II-S37-6 probe note (`06GC6BCF`) now **404s** (deleted — S32 noise accumulated) → wire-count re-verify not applicable this pass; the count-materialization fix from `38ae87c` is unchanged and was confirmed holding in Passes 141–166.
+  - **S29 (community webfinger) re-verified → FIXED (holding):** A `wf(ii-a8-community)` → **200** + `rel=self` → `https://qa-iris-a.luit.ink/ap/v1/c/ii-a8-community` (type `application/activity+json`).
+- **Checkpoint:** **No build change; open-item sweep + S29 re-verify on `38ae87c` — all open items STABLE (12th consecutive stable pass).** S24 D2 **continues to accumulate** (total 57, 8 foreign page 1 — was 56/7 in Pass 169). S36 (home feed, top priority) + S39 + S24 D2 + S24 D4 + S38 + S37/S28 (button-UI residual) all STILL OPEN. S29 re-verified FIXED (holding). S30/S26/S33/S31/S32/S34/S27 hold. **M2–M12 + L2–L12 blocked** (operator accounts). Awaiting dev's decision on S36 + S39 + S24 D4 + S24 D2.
+
 ## Pass 169 (2026-09-21) — No `src/` change / cluster unchanged (`38ae87c`, healthy; dev commit `0ec58d3` is PLAN-only). Open-item sweep + S24 D1 re-verify (closed non-reproducible) + S36 deep re-test with the signed `/feed` + outbox capture dev requested — all open items STABLE (11th consecutive)
 - **Build/Live:** New dev commit `0ec58d3` is **PLAN-only (no `src/` change)** → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200; follow edges intact: ii-a1 followers=2, ii-b1 followers=2). Dev's `0ec58d3` closed **S24 Defect 1** (Following tab omits remote actors) as **non-reproducible** (full code pass: Following + Followers tabs share the identical `ActorListPanel`, no local/remote host filter, symmetric server build) and **S36** in-process (server + client provably correct for a fresh owner content `Create`), handing both back to QA with wire+DOM+console capture steps.
 - **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38) + **S24 D1 re-verify** (wire `following` body + Following-tab DOM + console, per dev's steps) + **S36 deep re-test** (captured the exact signed `/feed` response body + the actor's outbox IRIs/types dev requested).
