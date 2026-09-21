@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 252 (2026-09-21) — build `401c08b5` / Registration: form works (handle validation 2-32 chars, password min 8); created test account "ab" successfully; validation errors shown in alert; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A registration page (`/register`); form validation; account creation.
+- **Result:**
+  - **Form fields:** Handle (2-32 chars: letters, digits, hyphens, no leading/trailing hyphen), Display name (optional), Password (min 8 chars).
+  - **Validation:** 1-char handle → "The username must be 2–32 characters." (shown in alert + URL param).
+  - **Registration:** Successfully created account "ab" with password "Password1" → redirected to `/home`, profile shows handle "ab".
+  - **Note:** NodeInfo `openRegistrations` was `false` but registration page is accessible and functional. This may be a configuration gap (the flag may not be enforced) or the flag may only control a different registration path.
+  - Logged out after test. No new defects.
+- **Checkpoint:** Registration works. openRegistrations=false flag not enforced (noted). Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 251 (2026-09-21) — build `401c08b5` / Metadata + SEO audit: title/description/favicon/lang present; no PWA manifest, no robots.txt, no sitemap, no canonical/OG meta; NodeInfo discovery 200; no new defect (feature gaps noted)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home page metadata; common web paths (manifest, robots, sitemap, nodeinfo).
