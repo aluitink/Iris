@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 187 (2026-09-21) — build `8243361c` / cluster rebuild + S39 local-reply re-verify + S36 persistence (23rd consecutive)
+- **Build/Live:** rebuilt + redeployed QA cluster to `8243361c` (S39 local-reply dial-base fix). == HEAD? y.
+- **Explored:** S39 local-reply re-verify on new build (ii-a2 → ii-a1), S36 home feed after rebuild (own post in feed? + B-side), S24 D2 bidirectional outbox, S39 CLOSED holding (mark all read).
+- **Result:**
+  - **S39 local-reply — CONFIRMED on `8243361c`.** Fresh ii-a1 note `II-S39-P187` (`06GC9KGVPK2…`); ii-a2 local reply → ii-a1 notifications shows "ii-a2 replied to your post" (New, just now). The dial-base fix is holding.
+  - **S36 (home feed) — STILL OPEN, 23rd consecutive.** Fresh `II-S39-P187` post is in ii-a1's outbox (clean `Create`) but **absent from own feed** (`/feed?refresh=true` totalItems=46, **0 Create items**, all Delete/Update/Remove/Activity/Follow/Like noise). UI `/home` = "Content unavailable" only. B-side feed (ii-b1) = 20 items, 0 Creates (A→B delivery gap persists). The S39 fix did not affect the feed path (expected).
+  - **S24 D2 — bidirectional, stable.** A: 28 creates / 8 foreign. B: 34 creates / 24 foreign.
+  - **S39 CLOSED holding.** A: 29→0 unread (marked all read). B: 27→0 unread (marked all read).
+- **Checkpoint:** S36 remains #1 blocker (own content Creates in outbox but omitted from feed query; dev's in-process repro passes). Next: stability sweep or new exploration.
+
 ## Pass 186 (2026-09-21) — build `2229b0ab` / S36 deep-dive: fresh own post NOT in own feed (strongest repro yet); S24 D2 bidirectional; S32 B-cache 404s; S39 CLOSED holding
 - **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** S36 deep-dive (fresh ii-a1 post → own feed check + B-side delivery check), S24 D2 bidirectional outbox, S32 B-cache note 404, S39 CLOSED holding.
