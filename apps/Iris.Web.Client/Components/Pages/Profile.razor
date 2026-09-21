@@ -67,7 +67,6 @@ else
     {
         <div role="tabpanel" id="panel-posts" aria-labelledby="tab-posts">
         <PagedCollection
-            @key="@PostsKey"
             Client="@OutboxClient"
             CollectionIri="@OutboxIri"
             PageSize="5"
@@ -81,7 +80,6 @@ else
     {
         <div role="tabpanel" id="panel-replies" aria-labelledby="tab-replies">
         <PagedCollection
-            @key="@RepliesKey"
             Client="@OutboxClient"
             CollectionIri="@OutboxIri"
             PageSize="10"
@@ -95,7 +93,6 @@ else
     {
         <div role="tabpanel" id="panel-likes" aria-labelledby="tab-likes">
         <PagedCollection
-            @key="@LikesKey"
             Client="@OutboxClient"
             CollectionIri="@OutboxIri"
             PageSize="10"

@@ -328,9 +328,12 @@
     /// The cap on how many *extra* pages <see cref="TopUpFilteredPagesAsync"/> will pull beyond the
     /// first page during the initial load. Bounds the worst-case round-trips when a filter matches
     /// few items (a very active user's outbox can be deep) while still reaching the user's own
-    /// content in the common case.
+    /// content in the common case. S17: reduced from 12 to 3 — the old cap caused a 13-page fan-out
+    /// on every profile tab switch (3 tabs × 13 pages = 39 outbox requests for a single visit).
+    /// 3 extra pages (4 total) is enough to find matching items in the common case while bounding
+    /// the worst-case to 4 requests per tab load.
     /// </summary>
-    private const int FilteredTopUpMaxPages = 12;
+    private const int FilteredTopUpMaxPages = 3;
 
     /// <summary>
     /// For a filtered view, keeps pulling additional pages (up to <see cref="FilteredTopUpMaxPages"/>)
