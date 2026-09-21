@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 160 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). Open-item sweep — all open items STABLE (no regression, no fix)
+- **Build/Live:** No new dev commit (HEAD `553746e` = QA Pass 159 docs; dev commits since `38ae87c` are PLAN-only `069fd7f` + `e07faa5`, no `src/` change) → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a1 following=2, ii-b1 followers=2).
+- **Explored:** **Open-item stability sweep** on `38ae87c` — S36 (home feed), S39 (A-side notifications), S24 D2 (foreign outbox), S24 D4 (remote-actor collections), S38 (webfinger), S37/S28 (counts).
+- **Result (all STABLE — no regression, no fix):**
+  - **S36 (home feed) STILL OPEN (top priority).** `ii-a1` (A) `/home` → **boost wrapper only** ("Boosted by ii-b1", target note `06GC3AWSHG` which is a **Tombstone** → "Content unavailable — view original post", Boost=1), **no own content posts** (unchanged from Passes 129/144/146/152/154/158/159).
+  - **S39 (A-side notifications) STILL OPEN.** `ii-a1` (A) `/local/v1/notifications` → `totalItems=0`, items 0 (unchanged from Pass 157/159; the local-Like + cross-instance-reply + local-reply legs all produce no author notification).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN.** `GET A /ap/v1/u/ii-a1/outbox` → `totalItems` = **55** (stable); page 1 = **6 foreign (ii-b1)** items.
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN (both directions).** `GET A /u/ii-b1` doc = **200**; `/outbox`, `/followers` = **404**; symmetric on B (`GET B /u/ii-a1` doc 200, `/outbox` 404).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (both directions); own-instance `wf(ii-a1@A)` = 200 (control).
+  - **S37/S28 (counts) — wire fix HOLDS; button-UI residual unchanged.** Note `06GC5MR7`: `likedCount=2`, `score=2`, `sharedCount=1`, `repliedCount=2` (all materialized). **Residual (S3, low):** the object-detail Like/Boost buttons still render "0"/"1" (the Like button "0" while wire likedCount=2 — client button count doesn't read the denormalized counts).
+- **Checkpoint:** **No build change; open-item sweep on `38ae87c` — all open items STABLE (no regression, no new defect, no fix landed).** S36 (home feed, top priority) + S39 (A-side notifications) + S24 D2 (foreign outbox, total 55) + S24 D4 (remote-collection 404) + S38 (webfinger) + S37/S28 (button-UI residual) all STILL OPEN. S30/S26/S33/S31/S29/S32/S34/S27 hold (no regression). **M2–M12 + L2–L12 blocked** (operator accounts). Awaiting a dev commit + rebuild to re-verify any fix (top priority: S36 home feed; then S39 A-side notification delivery + S24 D4 remote-collection proxy + S24 D2 outbox integrity).
+
 ## Pass 159 (2026-09-21) — No new commit / cluster unchanged (`38ae87c`, healthy; no `src/` change since `38ae87c`, no rebuild needed). S39 re-confirmed with a FRESH local Like (ii-a2 → ii-a1): likedCount 1→2 materialized immediately, but ii-a1 notifications STILL 0
 - **Build/Live:** No new dev commit (HEAD `3a14468` = QA Pass 158 docs; no dev `src/` change since `38ae87c`) → no cluster rebuild needed. QA cluster unchanged (build `38ae87c`, recreated 07:16:12Z; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a1 following=2, ii-b1 followers=2).
 - **Explored:** **S39 fresh-Like repro** (local, same-instance) + open-item stability re-check (S36, S24 D2, S24 D4, S37/S28 counts).
