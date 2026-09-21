@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 209 (2026-09-21) — build `863f22c8` / S36 diag logging deployed: no S36 log lines in Production; P209 confirms pattern (3rd post)
+- **Build/Live:** `863f22c8` (diag logging added to S36 fetch+store path; QA cluster rebuilt).
+- **Explored:** Fresh A post II-S36-P209 (note `06GCAFQ2CAZBWZ4GCFD4F6NWW8`); B logs for S36 diag lines; B notification/outbox/AP route/object-detail/home feed for P209.
+- **Result:**
+  - **No S36 diag log lines in B logs:** `docker logs iris-b --since 10m | grep S36` → 0 matches. The diag logging (added in `863f22c8`) uses `LogInformation`/`LogDebug`/`LogWarning` but **no S36-prefixed lines appear** in the Production logs. This means either: (a) the S36 bare-link code path is NOT being executed (the Create's object is already embedded, so the bare-link branch is skipped), or (b) the log level filters out the S36 lines.
+  - **B logs show:** `Inbox received Create ... from ii-a1 to ii-b1` → `Handler CreateActivityHandler processed Create ... ok` → `Inbox accepted: Create from ii-a1 targeting .../notes/06GCAFQ2CAZBWZ4GCFD4F6NWW8`. The Create was received, processed, and accepted. But NO S36 fetch/store log lines.
+  - **P209 B-side:** notification inlines content (totalItems=36); AP note route 404; object-detail renders P209 content; home feed **EMPTY** (44th consecutive S36).
+  - **Key insight:** The S36 bare-link code path (`if (linkIri is { } iri)`) is likely NOT being executed because the Create's object is **already embedded** (not a bare link) when it arrives at B. The `activity.Object` is already the full Note object (with content), not a bare IRI. So the S36 fix (fetch+cache bare-link) is a **no-op** for this wire shape — the object is embedded, not a bare link.
+  - **Root cause refined:** The Create activity arrives at B with the object **already embedded** (not a bare link). The S36 fix only handles the bare-link case. Since the object is already embedded, the fix doesn't fetch+store it. The embedded object is stored in the outbox/notification store (which is why object-detail works) but NOT in the actor-keyed note store (which is why the AP route 404s and the home feed is empty).
+  - **Dev action needed:** The fix needs to handle the **embedded object** case, not just the bare-link case. When the Create arrives with an embedded object, the handler should ALSO store the object in the actor-keyed note store (so the AP route can serve it and the home feed can find it).
+  - S36 44th consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** S36 diag logging reveals the bare-link path is NOT executed (object is already embedded). The fix needs to handle the embedded-object case: store the embedded object in the actor-keyed note store. Next: dev needs to update the fix to handle embedded objects, not just bare links.
+
 ## Pass 208 (2026-09-21) — build `adf65b84` / P208 confirms S36 pattern: notification inlines, outbox stores embedded, AP route 404, home feed empty
 - **Build/Live:** `adf65b84` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post II-S36-P208 (note `06GCADRQ67GKYP0RZ1RB237YD4`); B notification/outbox/AP route/object-detail/home feed for P208.
