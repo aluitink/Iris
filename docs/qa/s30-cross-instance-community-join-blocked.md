@@ -1,7 +1,7 @@
 # S30 — Cross-instance community join/view is blocked (remote community unreachable from a peer instance)
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** open (blocks Interop A8.2 + A8.3)
+- **Status:** **PARTIALLY FIXED (Pass 111, build `11fbec6`)** — the **direct-view facet (A8.2)** is fixed: `GET B /ap/v1/c/{name}` now serves the cached remote Group (200, remote IRIs) + B's UI renders the community page (Join / "Post to this community" / Feed / Members). The **community-feed facet (A8.4) is still OPEN**: `GET B /ap/v1/c/ii-a8-community/feed` → **404** (dev's `11fbec6` only fixed the `/c/{name}` direct-view, not the `/feed` endpoint). A8.3 (follow) was already working via the actor page.
 - **Found:** Interop suite A8 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S29](s29-community-webfinger-404.md) (community WebFinger 404) — S30 is the downstream consequence for **join/view** from a peer instance.
 
@@ -57,3 +57,15 @@ No remote-community follow entry point, no federated community discovery, `/c/{n
 - **A8.4 (community post → follower feed): BLOCKED.** There is **no UI to post into a community** (compose offers only Public/Followers/Direct, no community selector). A plain-public note posted by ii-a1 was **not** community-addressed (`to`=Public, `cc`=ii-a1/followers, no community IRI) and did **not** appear in ii-b1's B home feed (which is empty — also S25). Community-post federation is not exercisable.
 
 Net: the **follow** path is fixed (remote Group resolvable via S29 + followable via the actor page), but **discovery** (directory/search/`/c/{name}`) and **community-post federation** remain broken. **S30: partially improved (A8.3 fixed) — OPEN on discovery + community-post (A8.2/A8.4).**
+
+## Re-test (Pass 111, 2026-09-21, build `11fbec6` — dev's S30 direct-view fix deployed)
+
+**Dev committed `11fbec6`: "serve cached remote Group at `/ap/v1/c/{name}` (direct-view facet)"** — the `/c/{name}` route now falls back to a stored remote community whose IRI's last path segment matches the name (and whose origin differs from this instance), serving the doc AS-IS (mirrors the S24 remote-actor fallback). Rebuilt + redeployed the QA cluster to `11fbec6`.
+
+**A8.2 (direct-view) — FIXED.** `GET B /ap/v1/c/ii-a8-community` → **200** (was 404), serving the **remote** community doc: `type`=Group, `name`="II-A8 Test Community", `id`=`https://qa-iris-a.luit.ink/ap/v1/c/ii-a8-community`, `inbox`=`…/qa-iris-a…/c/ii-a8-community/inbox` (remote IRIs preserved, as the fix intends). **B UI** (`/c/ii-a8-community` → `/community?iri=…`): renders the community page — name "II-A8 Test Community" + "Community" badge + "QA community test" summary, a **Join** button, a **"＋ Post to this community"** link, and **Feed** + **Members (1)** tabs. (No more "Community not found.")
+
+**A8.4 (community feed) — STILL OPEN.** The community page's Feed tab shows "No posts in this community yet" and the **community feed endpoint 404s**: `GET B /ap/v1/c/ii-a8-community/feed` → **404** (1 console error on the page). Dev's `11fbec6` fixed only the `/c/{name}` direct-view, **not** the `/feed` endpoint for a remote community — so the community's post feed is not yet viewable on the peer. (Community-post federation A8.4 is a separate, larger gap.)
+
+**A8.3 (follow) — already working** (via the actor page, per the 2026-09-21 re-test above).
+
+**Verdict (build `11fbec6`): S30 PARTIALLY FIXED — A8.2 (direct-view) + A8.3 (follow) now work; A8.4 (community feed) still OPEN** (`/ap/v1/c/{name}/feed` 404s for a remote community). **Suggested dev follow-up:** make the community `/feed` endpoint resolve a remote (cached) community the same way the `/c/{name}` route now does. **Status: OPEN (narrowed) — A8.4 community feed.**

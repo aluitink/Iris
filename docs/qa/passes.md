@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 111 (2026-09-21) — Dev committed S30 direct-view fix; rebuilt cluster; S30 A8.2 direct-view FIXED, A8.4 community feed still 404
+- **Build/Live:** dev committed **`11fbec6`** — "serve cached remote Group at `/ap/v1/c/{name}` (direct-view facet)" (the `/c/{name}` route now falls back to a stored remote community whose IRI's last path segment matches the name, serving the doc AS-IS; +2 tests). **Rebuilt + redeployed** `qa-iris-a`/`qa-iris-b` to `11fbec6` (healthy; accounts intact).
+- **Explored:** Re-verified **S30** on the new build — A8.2 (direct-view `/c/{name}`) + A8.4 (community feed) on the peer (B).
+- **Result:** **S30 PARTIALLY FIXED.** **A8.2 direct-view FIXED:** `GET B /ap/v1/c/ii-a8-community` → **200** (was 404) serving the **remote** Group (`id`/`inbox` point to A); **B UI** (`/c/ii-a8-community` → `/community?iri=…`) renders the community page — name "II-A8 Test Community" + "Community" badge, **Join** button, **"＋ Post to this community"**, Feed + **Members (1)** tabs (no more "Community not found"). **A8.4 community feed STILL OPEN:** the page's Feed shows "No posts in this community yet" and `GET B /ap/v1/c/ii-a8-community/feed` → **404** (1 console error) — dev's `11fbec6` fixed only the `/c/{name}` direct-view, not the `/feed` endpoint. A8.3 (follow) already works (actor page). **Suggested dev follow-up:** resolve the community `/feed` endpoint for a remote (cached) community the same way `/c/{name}` now does.
+- **Checkpoint:** S30 narrowed to **A8.4 community feed** (direct-view + follow now work). S36 still top priority (home feed empty; needs `FeedService` pass). S28 re-verify still pending dev's S28 fix (not yet committed). S24 D1/D2 + S32 (sending-side, Delete+Update) + S37 open. M2–M12 + L2–L12 blocked on operator accounts.
+
 ## Pass 110 (2026-09-21) — No new commit; re-confirmed S30 A8.2 (community `/c/{name}` 404) OPEN; dev's S30 fix is uncommitted WIP
 
 - **Build/Live:** QA cluster still on `6b11799` (Pass 109 deploy). `interop-testing` HEAD unchanged (`3924b59` merge). **Dev has NEW uncommitted WIP**: an **S30 fix** in `ActivityPubServerExtensions.cs` (the `/c/{name}` community route now falls back to a **cached remote community by name** when no local community matches — serving the stored remote Group doc as-is; mirrors the S24 remote-actor fallback) + `CommunityEndpointIntegrationTests.cs`. **Not committed/deployed** → the S30 fix is not live.
