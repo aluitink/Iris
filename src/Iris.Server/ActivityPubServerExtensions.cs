@@ -369,9 +369,10 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri));
         // S39 (local-reply facet): the reply-side dial-base IRI normalization probes the object store for
         // the canonical (advertised-base) form of a reply's inReplyTo reference. The probe is a minimal
-        // seam in Iris.Core (ILocalObjectProbe); this adapter delegates to the IObjectStore.
+        // seam in Iris.Core (ILocalObjectProbe); this adapter delegates to the IPersistenceProvider's
+        // IObjectStore (registered by the host's persistence wiring, not by AddActivityPubServer).
         services.TryAddSingleton<ILocalObjectProbe>(sp =>
-            new ObjectStoreLocalProbe(sp.GetRequiredService<IObjectStore>()));
+            new ObjectStoreLocalProbe(sp.GetRequiredService<IPersistenceProvider>().Objects));
         // The activity handlers are an OPEN list: each is a distinct implementation registered under
         // the same service type (IActivityHandler), so AddSingleton (not TryAddSingleton) is required —
         // TryAddSingleton would treat the second and later registrations as duplicates of the first
@@ -4205,6 +4206,14 @@ public static class ActivityPubServerExtensions
         // and attempts a cross-instance delivery that cannot route.
         await NormalizeLocalActorObjectIriAsync(activity, baseUrl, context.Request.Host.Value ?? string.Empty, persistence, ct).ConfigureAwait(false);
 
+        // Decision 055: the server is the sole authority for the id of an object/activity it creates.
+        // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
+        // the server mints a collision-resistant, unguessable ULID in a fixed per-type namespace and
+        // assigns it to the activity — and to any embedded object (a Note/Group inside a Create), whose
+        // id the client no longer sends either. The minted id is returned to the authoring client in the
+        // 202 body so it can reference the object later (an Undo, a delete, an Accept of this follow).
+        MintActivityIds(idMinter, actorIri, activity);
+
         // S39 (local-reply facet): the SAME dial-base mismatch on the REPLY side. A reply's embedded
         // object carries its parent in inReplyTo (a Link to the parent object); when the client dialed
         // via the host-published base, that reference carries the dial base, but the instance stores
@@ -4213,26 +4222,27 @@ public static class ActivityPubServerExtensions
         // author cannot be resolved and the reply never lands in the parent author's inbox — no
         // notification, exactly the S39 live divergence (in-process tests use one consistent base and
         // pass). Rewrite the inReplyTo reference to the advertised base (store-checked, host-guarded,
-        // local /ap/v1/… paths only — see ReplyIriNormalization) so the parent author resolves.
+        // local /ap/v1/… paths only — see ReplyIriNormalization) so the parent author resolves. Runs
+        // AFTER MintActivityIds (the embedded object's id is minted there) so the object is stored
+        // under the canonical parent reference.
         if (activity is Create createActivity && createActivity.Object is { } createObjects)
         {
+            var rewrittenItems = new List<IObjectOrLink>();
             foreach (var item in createObjects)
             {
-                if (item is IObject embeddedCreateObject)
+                if (item is IObject embeddedCreateObject
+                    && await embeddedCreateObject.RewriteInReplyToToAdvertisedBaseAsync(
+                        baseUrl, context.Request.Host.Value ?? string.Empty, localObjectProbe, ct).ConfigureAwait(false) is { } rewritten)
                 {
-                    await embeddedCreateObject.RewriteInReplyToToAdvertisedBaseAsync(
-                        baseUrl, context.Request.Host.Value ?? string.Empty, localObjectProbe, ct).ConfigureAwait(false);
+                    rewrittenItems.Add(rewritten);
+                }
+                else
+                {
+                    rewrittenItems.Add(item);
                 }
             }
+            createActivity.Object = rewrittenItems;
         }
-
-        // Decision 055: the server is the sole authority for the id of an object/activity it creates.
-        // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
-        // the server mints a collision-resistant, unguessable ULID in a fixed per-type namespace and
-        // assigns it to the activity — and to any embedded object (a Note/Group inside a Create), whose
-        // id the client no longer sends either. The minted id is returned to the authoring client in the
-        // 202 body so it can reference the object later (an Undo, a delete, an Accept of this follow).
-        MintActivityIds(idMinter, actorIri, activity);
 
         // 19.6.5 audience metadata: rewrite the on-the-wire audience (to/cc) of an outbound Create/Announce
         // to enumerate the actual distribution list (the remote, non-blocked follower set — and, for a

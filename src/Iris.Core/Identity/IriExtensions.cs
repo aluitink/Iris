@@ -1438,31 +1438,23 @@ public interface ILocalObjectProbe
 public static class ReplyIriNormalization
 {
     /// <summary>
-    /// Re-anchors an object's <see cref="IObject.InReplyTo"/> (its <c>inReplyTo</c> reference) to the
-    /// instance's advertised base when it points at a local content object (a <c>/ap/v1/…</c> path on
-    /// a local-looking host) reached via a non-canonical base (the dial-base case).
+    /// Returns a rewritten copy of the object with its first <c>inReplyTo</c> reference replaced by the
+    /// canonical (advertised-base) IRI, or <see langword="null"/> when no rewrite is needed (the parent is
+    /// not local, not under the AP route prefix, not on a local host, not found in the object store, or
+    /// already canonical). The ActivityStreams library's deserialized objects do not persist property
+    /// setter changes (the getter returns a fresh copy from the original deserialization), so the
+    /// rewrite is applied via a JSON round-trip: the object is serialized, the <c>inReplyTo</c> field
+    /// is modified in the JSON, and the result is deserialized back into a new instance whose
+    /// <c>InReplyTo</c> getter returns the rewritten value.
     /// </summary>
-    /// <remarks>
-    /// The authoring client dials the instance on a host-published base (e.g.
-    /// <c>http://localhost:8081</c>) and carries that base in the reply's <c>inReplyTo</c> reference
-    /// (a <see cref="ILink"/> to the parent object), but the instance stores its content objects under
-    /// the <em>advertised</em> base (e.g. <c>https://iris.luit.ink</c>). Without this rewrite the
-    /// exact-IRI object-store lookup misses the stored object, so the parent author cannot be
-    /// resolved and the reply never reaches the parent author's inbox (no notification — the S39
-    /// dial-base facet). Mirrors the outbox handler's local-actor normalization: only local-looking
-    /// paths (<c>/ap/v1/…</c>), only when the target's host is local (the advertised base's host,
-    /// the request's host, or <c>localhost</c>/<c>127.0.0.1</c>), only when the canonical form
-    /// differs, and only when the canonical object exists in the object store (a store miss — a
-    /// genuinely foreign object on a coincidentally local-looking host — is left untouched).
-    /// </remarks>
-    /// <param name="obj">The object whose <c>inReplyTo</c> is rewritten. May be null.</param>
-    /// <param name="baseUrl">The instance's advertised base URI.</param>
+    /// <param name="obj">The embedded object (a Note/Article inside a Create).</param>
+    /// <param name="baseUrl">The instance's advertised base URL.</param>
     /// <param name="requestHost">The host the authoring client used to dial this instance (the dial
     /// base, e.g. <c>localhost:8081</c>).</param>
     /// <param name="probe">The local object-store probe (the canonical-IRI existence check).</param>
     /// <param name="ct">A cancellation token.</param>
-    /// <returns>A task that completes when the rewrite (or no-op) is done.</returns>
-    public static async Task RewriteInReplyToToAdvertisedBaseAsync(
+    /// <returns>A rewritten copy of the object, or null when no rewrite is needed.</returns>
+    public static async Task<IObject?> RewriteInReplyToToAdvertisedBaseAsync(
         this IObject? obj,
         string baseUrl,
         string requestHost,
@@ -1472,13 +1464,13 @@ public static class ReplyIriNormalization
         var first = obj?.InReplyTo?.FirstOrDefault();
         if (first is not { } parentRef)
         {
-            return;
+            return null;
         }
 
         var parentIri = parentRef.ResolveObjectIri();
         if (parentIri is not { } parent)
         {
-            return;
+            return null;
         }
 
         // A local content object lives under the instance's ActivityPub route prefix (/ap/v1/…).
@@ -1488,21 +1480,21 @@ public static class ReplyIriNormalization
         var path = parent.Value;
         if (!path.Contains(routePrefix, StringComparison.Ordinal))
         {
-            return;
+            return null;
         }
 
         var parentUri = parent.Uri;
         if (!parentUri.IsAbsoluteUri
             || (parentUri.Scheme != Uri.UriSchemeHttp && parentUri.Scheme != Uri.UriSchemeHttps))
         {
-            return;
+            return null;
         }
 
         // The canonical (advertised-base) form of the same local path.
         var canonicalValue = $"{baseUrl.TrimEnd('/')}{parentUri.PathAndQuery}";
         if (canonicalValue == parent.Value)
         {
-            return;
+            return null;
         }
 
         // Guard: the parent's host must be local (the advertised base's host, the request's host —
@@ -1520,7 +1512,7 @@ public static class ReplyIriNormalization
             || parentHostOnly.Equals("127.0.0.1", StringComparison.Ordinal);
         if (!isLocalHost)
         {
-            return;
+            return null;
         }
 
         // Store check: only rewrite when the canonical object exists locally (the object store is
@@ -1528,26 +1520,43 @@ public static class ReplyIriNormalization
         // coincidentally local-looking host).
         if (!await probe.TryGetAsync(new Iri(canonicalValue), ct).ConfigureAwait(false))
         {
-            return;
+            return null;
         }
 
-        // Rewrite the parent reference to the canonical (advertised-base) IRI. A Link reference (the
-        // common reply shape) is replaced in the collection. `InReplyTo` is an interface-typed
-        // IEnumerable<IObjectOrLink> property with a setter, so the collection is rebuilt with the
-        // parent reference swapped for the canonical-IRI Link (the elements are reference types — the
-        // other references are preserved).
-        if (parentRef is ILink)
+        // Rewrite via JSON round-trip: serialize the object, replace the inReplyTo value, deserialize
+        // back. The ActivityStreams library's deserialized objects do not persist property setter
+        // changes (the getter returns a fresh copy from the original deserialization), so a new
+        // instance with the modified JSON is the only reliable way to produce an object whose
+        // InReplyTo getter returns the rewritten value.
+        var json = ActivityJson.Serialize(obj!);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("inReplyTo", out _))
         {
-            var rebuilt = new List<IObjectOrLink>();
-            foreach (var item in obj!.InReplyTo!)
+            return null;
+        }
+
+        using var writerStream = new System.IO.MemoryStream();
+        using (var writer = new Utf8JsonWriter(writerStream))
+        {
+            writer.WriteStartObject();
+            foreach (var prop in root.EnumerateObject())
             {
-                rebuilt.Add(ReferenceEquals(item, parentRef) ? new Link { Href = new Uri(canonicalValue) } : item);
+                if (prop.Name == "inReplyTo")
+                {
+                    writer.WritePropertyName("inReplyTo");
+                    writer.WriteStringValue(canonicalValue);
+                }
+                else
+                {
+                    prop.WriteTo(writer);
+                }
             }
-            obj.InReplyTo = rebuilt;
+            writer.WriteEndObject();
         }
-        else if (parentRef is IObject embeddedParent)
-        {
-            embeddedParent.Id = canonicalValue;
-        }
+
+        var rewrittenJson = System.Text.Encoding.UTF8.GetString(writerStream.ToArray());
+        return ActivityJson.Deserialize<IObject>(rewrittenJson);
     }
 }
