@@ -1,52 +1,37 @@
 # S40 — Actor document leaks private key to authenticated users
 
 **Severity:** S1 (Critical)
-**Status:** OPEN
+**Status:** CLOSED (FALSE POSITIVE — Pass 259, 2026-09-21)
 **First seen:** Pass 255 (2026-09-21)
 **Build:** `401c08b5`
 
 ## Summary
 
-The ActivityPub actor document (`GET /ap/v1/u/<handle>`) includes the `privateKey` field in its JSON response. Any authenticated user can read the instance's RSA private key, which completely breaks the federation trust model.
+The ActivityPub actor document (`GET /ap/v1/u/<handle>`) includes the `privateKey` field in its JSON response **for the owner only**. This is by design — the owner-only extension is how the client authenticator (`BasicAuthClientAuthenticator` / `OAuth2ClientAuthenticator`) loads the private key to sign federation requests.
 
-## Repro
+## Resolution (Pass 259)
 
-1. Log in as any user (e.g., `ii-a1` / `Password1` on `qa-iris-a.luit.ink`).
-2. Navigate to `https://qa-iris-a.luit.ink/ap/v1/u/ii-a1` (or use `fetch('/ap/v1/u/ii-a1')` from the browser console).
-3. Inspect the JSON response. The `privateKey` field contains the full PEM-encoded RSA private key.
+**FALSE POSITIVE.** The ownership check in `ActorDocumentHandler` (line 1613-1620 of `ActivityPubServerExtensions.cs`) correctly gates the `privateKey` extension:
 
-## Evidence
+1. Basic auth path: `credentialValidator.TryValidateAsync(actorIri, authorization, ct)` — only returns non-null when the credentials match the requested actor.
+2. Cookie auth path: `context.User.FindFirst("actor_iri").Value == actorIri.Value` — only matches when the logged-in user IS the requested actor.
 
-```json
-{
-  "id": "https://qa-iris-a.luit.ink/ap/v1/u/ii-a1",
-  "type": "Person",
-  "preferredUsername": "ii-a1",
-  "publicKey": {
-    "id": "https://qa-iris-a.luit.ink/ap/v1/u/ii-a1#key-1",
-    "owner": "https://qa-iris-a.luit.ink/ap/v1/u/ii-a1",
-    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\n..."
-  },
-  "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC/oh+bwKOkfRpY\nIw/o+84Vp4vfjx/L0F5SG30ZfKqczhMswOeIdUOfW5HIOjJQwhGWG9zvONus+uS7\niNaRGk7fOS/GgqAunFwSPt6RgePtxS8mrjDyeJprKhU2uYbPAKZJ9iWWRqAK3r7w\nuvQGHhPIXzTxN8Z8O0vmT5KxzSXBYTTOW203a4/gN+36a7n16wevl5/bBgiQGgBT\nrVqecOU+qqtWnb1QRk4qVtcEE72pnxZAq7KfoRbIMw6xP5g4SrVq01QxOHApMQRU\nJSfnT/HgeEPristok5kyrwLez8VExTTh8F60Br/r4DyxU6szu/Xeyutnd0meDm/D\n7A6tQOPDAgMBAAECggEAKKJPcn7MFD5kviidIIl4PvY6fgqCsvx5a46hnaxmHv7B\naR10WuaGkr1fcaYJcj9cbEh3NhCH4CuJIczX5mHv7B\n...",
-  "keyAlgorithm": "rsa"
-}
-```
+**Verification:** Logged in as `ii-a2`, fetched `/ap/v1/u/ii-a1` → `privateKey` **absent**. Fetched `/ap/v1/u/ii-a2` (self) → `privateKey` **present**. The gate works correctly.
 
-## Impact
+The original QA repro (Pass 255) logged in as `ii-a1` and fetched `/ap/v1/u/ii-a1` — the owner fetching their own document. This is the intended behavior.
 
-- An attacker who compromises **any** account (or registers a new one, since `openRegistrations` is not enforced) can read the instance's private key.
-- With the private key, the attacker can **sign activities as any actor** on the instance, impersonate users, and forge federation messages.
-- This completely breaks the ActivityPub trust model.
+## Impact (as originally reported — now resolved)
 
-## Root Cause (suspected)
+No actual security impact. The `privateKey` field is only visible to the owner, which is the design intent.
 
-The actor document serializer includes the `privateKey` field (likely stored for internal signing use) in the HTTP response. The field should be stripped before the document is serialized for external consumption.
+## Code Reference
 
-## Suggested Fix
-
-Remove the `privateKey` and `keyAlgorithm` fields from the actor document response. The private key should only be accessible internally (for signing) and never exposed via the HTTP API.
+- `src/Iris.Server/ActivityPubServerExtensions.cs:1604-1620` — ownership check
+- `src/Iris.Server/ActivityPubServerExtensions.cs:7207-7219` — `BuildActorDocumentAsync` adds `privateKey` only when `authenticatedHandle` is non-null
+- `src/Iris.Server/Security/BasicAuthCredentialValidator.cs` — Basic auth validation
+- `src/Iris.Client/Auth/BasicAuthClientAuthenticator.cs` — client reads `privateKey` from owner-authenticated document
 
 ## Related
 
-- S35 (remote actor discovery 404) — actor document visibility is a broader concern.
-- Pass 252 — `openRegistrations=false` flag is not enforced, making it trivial to obtain an authenticated session.
+- S35 (remote actor discovery 404) — separate issue.
+- Pass 252 — `openRegistrations=false` flag not enforced (separate issue).

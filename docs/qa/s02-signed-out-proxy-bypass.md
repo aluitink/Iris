@@ -1,7 +1,7 @@
 # S2 — Signed-out remote reads bypass the proxy (CORS/blank avatars)
 
 - **Class:** bug (console-noise + broken avatars) — **Severity:** S2
-- **Status:** open (re-confirmed Pass 36, 2026-09-20, on deployed `bb28dcf` — proxy still 401s unsigned GETs)
+- **Status:** FIXED (Pass 259, 2026-09-21, build `401c08b5` — signed-out `/` → 0 console errors; proxy GET works for unsigned reads)
 - **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20, 23, 24, 25, 27, 32, 36
 - **Related:** [S14](s14-signed-out-actor-detail-csp.md) (same root, actor-detail facet)
 
