@@ -95,6 +95,56 @@ public sealed class CommunityEndpointIntegrationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // --- S30: a cached remote community is served at /c/{name} ------------------------
+
+    [Fact]
+    public async Task CommunityDocument_CachedRemoteCommunity_IsServedByRemoteIri()
+    {
+        // S30: a cross-instance followed/cached remote community is stored in the durable community
+        // store under its REMOTE IRI (RemoteCommunityPersister persists it on first encounter during
+        // federation). The route's local IRI ({base}/ap/v1/c/{name}) never matches it, so the direct
+        // GET 404s even though the instance already has that exact community. The fix falls back to a
+        // stored remote community whose IRI's last path segment matches the requested name and serves
+        // its document AS-IS (mirrors ActorDocumentHandler's S24 Defect 3 remote-actor fallback).
+        var remoteCommunityIri = "https://remote.example/ap/v1/c/ii-comm";
+        var remoteCommunity = new KristofferStrube.ActivityStreams.Group
+        {
+            Id = remoteCommunityIri,
+            PreferredUsername = "ii-comm",
+            Name = ["II Comm"],
+            Summary = ["A community on the remote instance."],
+            Inbox = new KristofferStrube.ActivityStreams.Link { Href = new Uri("https://remote.example/ap/v1/c/ii-comm/inbox") },
+            Outbox = new KristofferStrube.ActivityStreams.Link { Href = new Uri("https://remote.example/ap/v1/c/ii-comm/outbox") },
+        };
+        await Persistence.Communities.PutCommunityAsync(remoteCommunity);
+
+        // Sanity: the remote community IS in the community store (as if federated from a peer).
+        Assert.True(await Persistence.Communities.TryGetCommunityAsync(new Iri(remoteCommunityIri), out _));
+
+        // Before the fix, GET /c/ii-comm would 404 (no local community named "ii-comm").
+        // After the fix, it serves the cached remote community's document.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/ii-comm");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("Group", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(remoteCommunityIri, doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal("ii-comm", doc.RootElement.GetProperty("preferredUsername").GetString());
+        Assert.Equal("II Comm", doc.RootElement.GetProperty("name").GetString());
+
+        // The document is served AS-IS (the remote instance's own inbox/outbox IRIs, not local ones).
+        Assert.Equal("https://remote.example/ap/v1/c/ii-comm/inbox", doc.RootElement.GetProperty("inbox").GetString());
+        Assert.Equal("https://remote.example/ap/v1/c/ii-comm/outbox", doc.RootElement.GetProperty("outbox").GetString());
+    }
+
+    [Fact]
+    public async Task CommunityDocument_UnknownCommunity_NoRemoteCache_Returns404()
+    {
+        // A name that matches neither a local community nor a cached remote community still 404s.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/never-seen-remote");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // --- GET /c/{name}/members is a paged collection of member IRIs -------------
 
     [Fact]

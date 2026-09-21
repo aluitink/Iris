@@ -9893,6 +9893,44 @@ public static class ActivityPubServerExtensions
         if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
             || community is null)
         {
+            // S30: a cross-instance followed/cached remote community (e.g. !ii-comm from instance A,
+            // cached on instance B during federation) is stored in the durable community store under
+            // its REMOTE IRI (RemoteCommunityPersister persists it on first encounter), but the route's
+            // local IRI ({base}/ap/v1/c/{name}) never matches it, so the direct GET 404s even though
+            // the instance already has that exact community. Fall back to a stored remote community
+            // whose IRI's last path segment matches the requested name and serve its document AS-IS
+            // (the stored document already carries the remote instance's own inbox/outbox/followers/
+            // following IRIs — no Iris-local collection extensions, which are only valid for local
+            // communities). Mirrors ActorDocumentHandler's S24 Defect 3 remote-actor fallback.
+            var baseUri = new Uri(baseUrl);
+            var baseOrigin = $"{baseUri.Scheme}://{baseUri.Authority}";
+            var allCommunityIris = await persistence.Communities.GetAllCommunityIrisAsync(ct).ConfigureAwait(false);
+            foreach (var candidateIri in allCommunityIris)
+            {
+                if (candidateIri.Equals(communityIri))
+                {
+                    continue;
+                }
+                var candidateStr = candidateIri.Value;
+                if (candidateStr.StartsWith(baseOrigin, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                var lastSegment = candidateStr.TrimEnd('/').Split('/').LastOrDefault();
+                if (!string.Equals(lastSegment, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (await persistence.Communities.TryGetCommunityAsync(candidateIri, out var remoteCommunity, ct).ConfigureAwait(false)
+                    && remoteCommunity is not null)
+                {
+                    var remoteDoc = ActivityJson.Deserialize<Group>(ActivityJson.Serialize(remoteCommunity))!;
+                    context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+                        ActivityPubServerConstants.ActorCacheControl;
+                    return Results.Text(ActivityJson.Serialize(remoteDoc), NegotiateContentType(context));
+                }
+            }
+
             return Results.NotFound();
         }
 
