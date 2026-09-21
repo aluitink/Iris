@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 188 (2026-09-21) — build `8243361c` / page-inventory sweep (signed-in + authless)
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Page-inventory sweep: /profile (posts, Following, Followers), /search (content search), /communities, /directory, /settings (Account/Content/Danger tabs), /notifications, /home, /compose. Authless pass: all routes 302→login (no data leak), / and /register render signed-out UI, 0 console errors.
+- **Result:** 0 new findings. /profile "Your posts" shows 6 own notes (correct); Following tab = 3 (ii-a1 self, ii-a8-community, ii-b1); Followers = 3 (ii-a1 self, ii-b1, ii-a2). /search "II-S39-P187" = 2 results (ii-a1 note + ii-a2 reply). /directory "This instance" = 55 actor cards. /communities "Following" = ii-a8-community. Authless: /home, /profile, /notifications, /communities, /settings all → login (correct). 0 console errors across all routes. S36 24th consecutive (stability, no new data).
+- **Checkpoint:** Page inventory complete for A. Next: new exploration (B-side pages, Lemmy/Mastodon interop, or deep-dive on a specific open item).
+
 ## Pass 187 (2026-09-21) — build `8243361c` / cluster rebuild + S39 local-reply re-verify + S36 persistence (23rd consecutive)
 - **Build/Live:** rebuilt + redeployed QA cluster to `8243361c` (S39 local-reply dial-base fix). == HEAD? y.
 - **Explored:** S39 local-reply re-verify on new build (ii-a2 → ii-a1), S36 home feed after rebuild (own post in feed? + B-side), S24 D2 bidirectional outbox, S39 CLOSED holding (mark all read).
