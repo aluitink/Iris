@@ -67,3 +67,15 @@ Performed a **fresh gated-follow test** on the current build (`38ae87c`):
 **Cleanup:** disabled gated follow on ii-a1 (`manuallyApprovesFollowers` back to false/None); the ii-a2→ii-a1 follow edge is restored (followers = `[ii-b1, ii-a2]`, ii-a2 following = `[ii-a1]`).
 
 **Verdict (build `38ae87c`): S34 FIXED — the pending/gated follower (ii-a2) is correctly withheld from the public `followers` collection until the owner accepts (requests = `[ii-a2]` pre-accept, followers = `[ii-b1]` only; post-accept followers = `[ii-b1, ii-a2]`, ii-a2 following = `[ii-a1]`). No regression.**
+
+## Re-test (Pass 172, 2026-09-21, build `38ae87c`) — S34 re-confirmed FIXED (holding)
+
+A **fresh gated-follow test** on the current build (`38ae87c`), end-to-end (enable → pending → accept → cleanup):
+
+1. **Enabled gated follow** on ii-a1 (A) via Edit-profile → "Require approval for follow requests" checkbox → Save. `GET A /ap/v1/u/ii-a1` → `manuallyApprovesFollowers` = **True**. (Existing ii-a2 follow still listed — gating affects *new* follows only.)
+2. **ii-a2 (A) unfollowed then re-followed** ii-a1 → a fresh pending request.
+3. **Pending (before accept) — wire-verified:** `GET A /ap/v1/u/ii-a1/followers` (public) = **`[ii-b1]` only (totalItems=1)** — **`ii-a2` WITHHELD** (the fix holds). `GET A /ap/v1/u/ii-a2/following` = **`[ii-b1]` only (totalItems=1)** — ii-a1 not yet promoted. `GET A /ap/v1/u/ii-a1` → `manuallyApprovesFollowers`=True.
+4. **Owner notification MISSING (NEW S39 data point — see S39 doc):** while the request was pending, owner ii-a1 `GET A /local/v1/notifications` = **`totalItems=0`** (Follows filter = "No notifications yet") → the owner sees **no "sent you a follow request" notification** even though the follow is stored as pending + withheld. This broadens **S39** to the local follow-request leg (the S34 gating/withhold works, but the owner notification leg is broken — a *separate* defect from the S34 withhold fix).
+5. **Cleanup + baseline restore:** (a) disabled gated follow on ii-a1 (uncheck + Save) → `manuallyApprovesFollowers`=**None**. (b) **The pending ii-a2→ii-a1 follow did NOT auto-promote** when gating was disabled (ii-a1 followers stayed `[ii-b1]`, ii-a2 following stayed `[ii-b1]`) — the pending request was **stranded**. (c) Manually **re-followed** ii-a1 from ii-a2 → edge restored: ii-a1 `/followers` = **`[ii-b1, ii-a2]` (totalItems=2)**, ii-a2 `/following` = **`[ii-b1, ii-a1]` (totalItems=2)**.
+
+**Verdict (build `38ae87c`, Pass 172): S34 FIXED (holding) — the pending/gated follower (ii-a2) is correctly withheld from the public `followers` collection until the owner accepts (pre-accept followers = `[ii-b1]` only, ii-a2/following = `[ii-b1]` only; baseline restored post-cleanup: followers = `[ii-b1, ii-a2]`, ii-a2/following = `[ii-b1, ii-a1]`). No regression. NEW S39 data point (owner sees no follow-request notification for a gated follow — the local A-side notification leg is also broken; cross-linked to S39 + S33).**
