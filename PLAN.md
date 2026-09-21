@@ -117,21 +117,22 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit (code):** `adf65b84` — **S36 fix: fetch + cache bare-link Create objects on inbound delivery** (+2 unit tests; 1433 tests pass). QA cluster rebuilt 2026-09-21.
-- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84`.
+- **Deployed commit (code):** `401c08b5` — **Directory fix (refined): distinguish stale local rows (S5) from remote peers in the "All known" scope.** S36 fix `adf65b84` + diagnostic `863f22c8` still in effect. Dev cluster rebuilt 2026-09-21.
+- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84` (directory fix `401c08b5` not yet on the QA cluster — QA must rebuild to re-verify).
 
     ## Active Slice
 
-- **S36 home-feed (IN PROGRESS, fix `adf65b84` deployed + partially working).** QA Passes 194–207 fully characterized the root cause: the notification path inlines content at store time (bypasses object-cache gap); the home-feed path queries the local object store (finds no cached Note → 404). The fix (`adf65b84`) fetches + caches the bare-link Create object on inbound delivery. **Live results (Passes 207-209, 3 fresh posts P206+P208+P209):** the object IS cached (object-detail page renders remote content) but the AP note route (`/ap/v1/u/{actor}/notes/{id}`) still 404s — CRITICAL (Pass 213): home feed is empty even for the actor's OWN posts (P212 in outbox + AP 200 but NOT in feed). The feed query is fundamentally broken for ALL content (local + remote). S36 scope expanded: not just cross-instance object-cache gap, but the entire home feed is non-functional. Dev needs to investigate the home feed query path.. Home feed still empty. **Dev action needed:** populate the actor-keyed note route (or make the feed query read from the same store as the object-detail page). Historical posts (pre-redeploy) are NOT backfilled. **Pass 209 diag:** no S36 log lines in Production (bare-link path not executed).
+- **Directory "All known" omits remote actors (FIXED `401c08b5`, awaiting QA re-verify).** QA Pass 202: the directory's "All known" tab omits remote actors bidirectionally (A does not show ii-b1, B does not show ii-a1), while search finds them. Root cause: `GlobalSearchService.IsSameInstanceActor` dropped any actor with a `preferredUsername` whose IRI was not on the local instance base — which incorrectly excluded remote Iris actors (they carry a handle too). Fix (refined `401c08b5`): a non-canonical actor whose handle matches a LOCAL actor's handle is a stale local row (S5) and is dropped; a non-canonical actor whose handle is NOT local is a remote peer and is kept. This preserves S5 (stale local alice is dropped) while keeping remote Iris actors. **Dev cluster rebuilt 2026-09-21 on `401c08b5`.** QA must rebuild the QA cluster to re-verify.
+- **S36 home-feed (IN PROGRESS, fix `adf65b84` + diagnostic `863f22c8` deployed; awaiting QA log capture).** **CRITICAL (Pass 213):** home feed is empty even for the actor's OWN posts (P212 in outbox + AP 200 but NOT in feed). The feed query is fundamentally broken for ALL content (local + remote). S36 scope expanded: not just cross-instance object-cache gap, but the entire home feed is non-functional. **Dev action needed:** investigate the home feed query path (why does it not return the actor's own posts from the outbox?). Historical posts (pre-redeploy) are NOT backfilled. **Pass 209 diag:** no S36 log lines in Production (bare-link path not executed).
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
 
 **Inbox (user/loop injections — action oldest first):**
 
-**Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed.
+**Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed. → **S36** (CRITICAL: feed empty even for own posts; investigating feed query path).
 
-**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs.
+**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs. → **Fix `401c08b5` deployed** (remote actors with a preferredUsername are now kept in the "All known" scope; S5 stale-local-row drop preserved). Awaiting QA re-verify.
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
@@ -160,10 +161,11 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 > **The loops never block on a question.** When either loop hits something it can't decide (a product fork, a conflict, a destructive action), it logs a short entry here and **moves on to another item** (stashing in-flight work first). A human clears this list when convenient; cleared entries fold their answer into the relevant slice/change doc. See [DEV_LOOP.md - Blocking without stopping](docs/reference/DEV_LOOP.md#blocking-without-stopping).
 
-- *(empty)*
+- **`git pull --rebase` conflict (recurring, 2026-09-21):** conflict on `PLAN.md` + `docs/qa/passes.md` when applying QA commit `9a251708` (Pass 205). This is the 3rd+ occurrence of the same conflict. The QA commits appear to be duplicates of already-merged work (the pass content is already in the local `passes.md`). Aborted the rebase; the local branch is ahead of the remote by 15+ commits. A human needs to either force-push the local branch or resolve the duplicate commits on the remote. **Blocks:** clean `git pull --rebase` (step 1 of every turn).
 
 ## Recently Completed
 
+- **Directory "All known" fix (401c08b5):** refine `IsSameInstanceActor` to distinguish stale local rows (S5) from remote peers. A non-canonical actor whose handle matches a LOCAL actor's handle is dropped (S5); a non-canonical actor whose handle is NOT local is kept (remote Iris actor). Preserves S5 while fixing the directory.
 - **S36 fix (adf65b84) deployed + partially working (Pass 207):** fetch+cache bare-link Create objects on inbound delivery. Object IS cached (object-detail renders remote content) but AP note route still 404s (cached in different store than actor-keyed note route). Home feed still empty. Historical posts NOT backfilled. Dev needs to populate the actor-keyed note route.
 - **S32, S24-D1, S37, S30, S36 (in-process investigation) — see change docs + finding docs.**
 
