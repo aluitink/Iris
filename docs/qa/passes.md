@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 253 (2026-09-21) — build `401c08b5` / Login security: wrong password + nonexistent user both return identical "Invalid username or password" (no user enumeration); valid login works; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A login page; wrong password; nonexistent user; valid login.
+- **Result:**
+  - **Wrong password (ii-a1 / wrongpassword):** "Invalid username or password." (alert + URL param).
+  - **Nonexistent user (nonexistent-user-xyz / wrongpassword):** "Invalid username or password." (identical message — no user enumeration).
+  - **Valid login (ii-a1 / Password1):** Redirected to `/home` successfully.
+  - **Security:** Generic error message prevents user enumeration. No timing-based distinction observed.
+  - No new defects.
+- **Checkpoint:** Login security verified (no user enumeration). Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 252 (2026-09-21) — build `401c08b5` / Registration: form works (handle validation 2-32 chars, password min 8); created test account "ab" successfully; validation errors shown in alert; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A registration page (`/register`); form validation; account creation.
