@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 132 (2026-09-21) — No new commit / dev S30 A8.2 WIP unchanged; re-verified S30 A8.2 direct-view (B GET /ap/v1/c/ii-a8-community → 200 cached remote Group — the `aebe420` fix holds) + A8.4 community feed (B /feed → 404 — still open); state stable; cluster unchanged (aebe420)
+- **Build/Live:** No new commit (HEAD `162159b`); dev S30 A8.2 WIP unchanged (`GlobalSearchService` fix + 3 tests, uncommitted); QA cluster unchanged (build `aebe420`).
+- **Explored:** Re-verified the **S30 A8.2 direct-view** + **A8.4 community feed** facets live on B (the current `aebe420` build, before the discovery fix).
+- **Result:** **State stable, consistent with Pass 111/118.** `GET B /ap/v1/c/ii-a8-community` → **200** serving the cached remote Group (`type`=Group, `id`=`…/ii-a8-community`, `name`=`II-A8 Test Community`, `preferredUsername`=`ii-a8-community`) — the **A8.2 direct-view fix (`aebe420`) holds**. `GET B /ap/v1/c/ii-a8-community/feed` → **404** — the **A8.4 community-feed facet is still open** (the remote community's `/feed` 404s on the peer B; the owner A's `/feed` was 200 per Pass 118). No change.
+- **Checkpoint:** S30 A8.2 direct-view re-confirmed FIXED (holding, `aebe420`); A8.4 `/feed` re-confirmed OPEN. Dev S30 A8.2 **discovery** WIP (GlobalSearchService + 3 tests) still uncommitted — re-verify once committed + deployed. S36 still OPEN (dev's `162159b` = in-process proof, no code change; live evidence captured Pass 129, handed back to dev). S27/S31/S33 re-confirmed FIXED. S37 (count) + S28 (count) open. S24 (D2), S32 (sending-side), S38 (webfinger) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 131 (2026-09-21) — No new commit; dev S30 A8.2 WIP now complete (GlobalSearchService fix + 3 unit tests: AllKnownCommunities surfaces cached remote Group not local, query-matches-remote-community-by-name, no double-counting). Still uncommitted; cluster unchanged (aebe420). Re-verify S30 A8.2 discovery once committed + deployed
 - **Build/Live:** No new commit (HEAD `162159b`); QA cluster unchanged (build `aebe420`).
 - **Explored:** Checked dev's working tree — the **S30 A8.2 WIP grew**: in addition to the `GlobalSearchService.cs` merge (Pass 130), dev added a **test file** `tests/Iris.Server.Tests/Services/GlobalSearchServiceTests.cs` with **3 new unit tests**.
