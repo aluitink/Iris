@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 122 (2026-09-21) — No new commit / no build change; cross-instance SEARCH re-verified → WORKS (B's search finds the remote A note 06GC4RR4 + the B-local reply, with author ii-a1 + Block/Mute/Report + Like/Boost/Reply); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
+- **Explored:** Checked the **cross-instance search** facet (previously untested) — signed in to B as ii-b1 and searched for (a) the B-local reply phrase and (b) the remote A-parent note's phrase.
+- **Result:** **Cross-instance search WORKS (no defect).** On B: search `"II-reply reverify S26"` → 1 result = the B-local reply (`…/ii-b1/notes/06GC51KHX46P8GTT3RXWWRYXCW`); search `"II-S28 reverify remote boost"` → 1 result = the **remote A note** (`…/ii-a1/notes/06GC4RR4CN76NCSW2WJKQ3BPZW`, "II-S28 reverify remote boost shares (fresh, Pass 112)") with author **ii-a1 (remote)** + Block/Mute/Report + Like/Boost/Reply. So B's search surfaces both local notes and **remote (federated/cached) notes** with full author + moderation + interaction controls.
+- **Checkpoint:** Cross-instance search re-verified (working — local + remote notes). S36 still top priority (dev fix in progress — 296 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 121 (2026-09-21) — No new commit / no build change; cross-instance notification delivery re-verified → WORKS (B's fresh reply (Pass 120) + earlier boost/reply/like/follow all surface in A's ii-a1 notifications); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
 - **Explored:** Checked the **cross-instance notification** facet — does a remote (B) interaction surface in the local (A) author's notifications? Signed in to A as ii-a1 and opened `/notifications`.
