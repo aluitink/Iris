@@ -566,6 +566,13 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public IAsyncEnumerable<Iris.Core.Collections.CollectionPage> SearchPagedAsync(
+            Iri instanceBase,
+            string? query = null,
+            Iris.Client.SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<Iris.Core.Collections.CollectionPage>(ct);
+
         public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
             Iri actorId,
             Iris.Client.Collections.CollectionQuery? query = null,

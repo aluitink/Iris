@@ -484,6 +484,13 @@ public class IrisActorDocumentFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public IAsyncEnumerable<ClientCollectionPage> SearchPagedAsync(
+            Iri instanceBase,
+            string? query = null,
+            SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<ClientCollectionPage>(ct);
+
         public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(0, false, ""));
 

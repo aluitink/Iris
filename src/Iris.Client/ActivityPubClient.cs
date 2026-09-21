@@ -1449,18 +1449,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // the ClientToServer profile like any other GET.
         var limit = options?.Limit ?? 100;
         var offset = options?.Offset ?? 0;
-
-        // The search endpoint is the instance base's `SearchOf` derivation (`/ap/v1/search`) with the
-        // query appended — the single source of truth for where global search lives. The q value is
-        // URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric. An optional type
-        // filter (?type, e.g. "Actor") restricts the result to a single ActivityStreams type so the
-        // directory page searches actors only (no content).
-        var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
-        var typeSegment = string.IsNullOrWhiteSpace(options?.Type) ? string.Empty : $"&type={Uri.EscapeDataString(options!.Type!)}";
-        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
-        // remote actor is excluded. Only appended when set so a default search is unchanged.
-        var localSegment = options?.LocalOnly == true ? "&local=true" : string.Empty;
-        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}{localSegment}");
+        var searchIri = BuildSearchIri(instanceBase, query, limit, offset, options);
 
         using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
         var page = await GetObjectAsync(request, ct).ConfigureAwait(false);
@@ -1486,6 +1475,144 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         {
             yield return item;
         }
+    }
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<CollectionPage> SearchPagedAsync(
+        Iri instanceBase,
+        string? query = null,
+        SearchOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Walk the search result page by page: the first page is requested at offset 0 (the offset
+        // option is deliberately ignored — a walk always starts at the first page), then each
+        // subsequent page is the previous page's `next` link, until the server stops offering one.
+        // Unlike a stable collection walk, the page links are absolute search IRIs (the server builds
+        // them from the request), so each hop is a fresh signed GET — no cache, no re-derivation.
+        var limit = options?.Limit ?? 100;
+        var searchIri = BuildSearchIri(instanceBase, query, limit, 0, options);
+
+        Iri? pageIri = searchIri;
+        while (pageIri is { } current)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, current.Value);
+            var result = await GetSearchPageAsync(request, ct).ConfigureAwait(false);
+            if (result is null)
+            {
+                yield break;
+            }
+
+            yield return result;
+            pageIri = result.NextPage;
+        }
+    }
+
+    /// <summary>
+    /// Fetches a single global-search page document and flattens it into a <see cref="CollectionPage"/>.
+    /// </summary>
+    /// <remarks>
+    /// The server serves the first page (offset 0) as an <c>OrderedCollection</c> and subsequent pages
+    /// as an <c>OrderedCollectionPage</c>. Both carry <c>items</c>; both carry a <c>next</c> link when
+    /// more pages remain — but the library's <c>OrderedCollection</c> type has no <c>Next</c> property,
+    /// so on the first page the link surfaces in the deserialized object's
+    /// <see cref="IObject.ExtensionData"/> instead. The flatten handles both shapes, producing a
+    /// uniform <see cref="CollectionPage"/> (with the first page wrapped as an
+    /// <see cref="OrderedCollectionPage"/> so <see cref="CollectionPage.Page"/> is always non-null).
+    /// Returns null when the request fails or the body is not a search page document.
+    /// </remarks>
+    private async Task<CollectionPage?> GetSearchPageAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        var objectOrLink = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (objectOrLink is not IObject page)
+        {
+            return null;
+        }
+
+        var items = page switch
+        {
+            OrderedCollection { Items: { } c } => c,
+            OrderedCollectionPage { Items: { } p } => p,
+            _ => null,
+        };
+        if (items is null)
+        {
+            return null;
+        }
+
+        // `next`: an OrderedCollectionPage deserializes it onto its own `Next`; an OrderedCollection
+        // (the first page) has no such property, so it lands in ExtensionData.
+        Iri? nextPage = (page as OrderedCollectionPage)?.Next.ResolveCollectionIri()
+            ?? ReadExtensionLink(page, "next");
+        // `totalItems`: both page shapes carry it (the base Collection type), so read it from the
+        // common property; the ExtensionData fallback covers a server that serializes it as an
+        // extension on an object the library maps to a bare Object.
+        int? totalItems = (page as Collection)?.TotalItems is { } total ? (int)total : null;
+        if (totalItems is null)
+        {
+            if (ReadExtensionValue(page, "totalItems") is { ValueKind: System.Text.Json.JsonValueKind.Number } element
+                && element.TryGetInt32(out var t))
+            {
+                totalItems = t;
+            }
+        }
+        Iri? pageId = page.Id is { Length: > 0 } id ? new Iri(id) : null;
+
+        // Uniform page wrapper: a deserialized OrderedCollectionPage is reused as-is (it already
+        // carries its own `Next`); the first page (an OrderedCollection) is wrapped in a fresh
+        // OrderedCollectionPage so CollectionPage.Page is always a page document.
+        var orderedPage = page is OrderedCollectionPage existing
+            ? existing
+            : new OrderedCollectionPage { Id = page.Id, TotalItems = totalItems is { } ti ? (uint)ti : null, Next = nextPage is { } n ? new Link { Href = new Uri(n.Value, UriKind.Absolute) } : null };
+
+        return new CollectionPage
+        {
+            Page = orderedPage,
+            Items = items.ToList(),
+            NextPage = nextPage,
+            PrevPage = null,
+            TotalItems = totalItems,
+            PageId = pageId,
+        };
+    }
+
+    private static Iri? ReadExtensionLink(IObject page, string name)
+        => page.ExtensionData is { } data
+           && data.TryGetValue(name, out var element)
+           && element.ValueKind == System.Text.Json.JsonValueKind.String
+           && element.GetString() is { Length: > 0 } value
+           ? new Iri(value)
+           : null;
+
+    private static System.Text.Json.JsonElement? ReadExtensionValue(IObject page, string name)
+        => page.ExtensionData is { } data && data.TryGetValue(name, out var element) ? element : null;
+
+    /// <summary>
+    /// Builds the global-search IRI for a single page: the instance base's <see cref="IriExtensions.SearchOf"/>
+    /// derivation (<c>/ap/v1/search</c>) with the query appended — the single source of truth for where
+    /// global search lives. The q value is URL-encoded (it may contain spaces / non-ASCII);
+    /// limit/offset are numeric. An optional type filter (?type, e.g. "Actor") restricts the result to
+    /// a single ActivityStreams type so the directory page searches actors only (no content).
+    /// </summary>
+    private static Iri BuildSearchIri(Iri instanceBase, string? query, int limit, int offset, SearchOptions? options)
+    {
+        var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
+        var typeSegment = string.IsNullOrWhiteSpace(options?.Type) ? string.Empty : $"&type={Uri.EscapeDataString(options!.Type!)}";
+        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
+        // remote actor is excluded. Only appended when set so a default search is unchanged.
+        var localSegment = options?.LocalOnly == true ? "&local=true" : string.Empty;
+        return new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}{localSegment}");
     }
 
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)

@@ -612,6 +612,19 @@ public sealed class CrossInstanceBlockedContentIntegrationTests : IAsyncLifetime
             CancellationToken ct = default)
             => EmptySequence();
 
+        public IAsyncEnumerable<Iris.Core.Collections.CollectionPage> SearchPagedAsync(
+            Iri instanceBase,
+            string? query = null,
+            SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyPagedSequence();
+
+        private static async IAsyncEnumerable<Iris.Core.Collections.CollectionPage> EmptyPagedSequence()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
         private static async IAsyncEnumerable<IObjectOrLink> EmptySequence()
         {
             await Task.CompletedTask;

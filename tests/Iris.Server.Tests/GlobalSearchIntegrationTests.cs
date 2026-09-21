@@ -320,6 +320,40 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}", Assert.Single(items));
     }
 
+    [Fact]
+    public async Task ClientSearchPagedAsync_WalksAllPages_AgainstLiveEndpoint()
+    {
+        // A real client walks the instance's /ap/v1/search endpoint page by page (Limit = 1, so the
+        // two seeded local actors span two pages) and yields every actor exactly once, in the
+        // server's ordering (actors sorted by IRI), following the server's next links.
+        var client = new ActivityPubClient(
+            new HttpClient(_server.CreateHandler(), disposeHandler: false),
+            new ActorCache(),
+            new Iris.Client.Collections.CollectionPageCache());
+
+        var pageCount = 0;
+        var ids = new List<string?>();
+        await foreach (var page in client.SearchPagedAsync(new Iri($"{_base}/ap/v1"), string.Empty, new SearchOptions { Type = "Actor", Limit = 1 }))
+        {
+            pageCount++;
+            foreach (var item in page.Items)
+            {
+                ids.Add(item is IObject o ? o.Id : null);
+            }
+        }
+
+        client.Dispose();
+
+        // At limit 1 every page holds one item, so pages == items (the shared collection may have
+        // extra actors seeded by other methods — e.g. carol — but the walk must return each stored
+        // actor exactly once, with no duplicates and no loss).
+        Assert.Equal(ids.Count, pageCount);
+        Assert.True(ids.Count >= 2);
+        Assert.DoesNotContain(ids, x => x is not null && ids.Count(y => y == x) > 1);
+        Assert.Single(ids, $"https://{AHost}/ap/v1/u/{Alice}");
+        Assert.Single(ids, $"https://{AHost}/ap/v1/u/{Bob}");
+    }
+
     // --- Cached per-actor counters on search results and the actor document (F-13) ----------
 
     [Fact]

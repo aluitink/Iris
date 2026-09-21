@@ -22,7 +22,13 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
 
     public override Task<AuthenticationState> GetAuthenticationStateAsync()
     {
-        return _cached ??= ResolveAsync();
+        // Re-resolve on every read (never cache across reads): a circuit that first rendered while
+        // signed out (e.g. a page's initial render before the sign-in cookie round-trip completes)
+        // must observe the signed-in state on the re-render that follows EnsureReadyAsync — a
+        // one-shot cache would pin the stale signed-out identity for the circuit's lifetime. The
+        // underlying session fetch is a cheap same-origin cookie-auth read.
+        _cached = ResolveAsync();
+        return _cached;
     }
 
     /// <summary>

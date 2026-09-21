@@ -2129,6 +2129,13 @@ public sealed class FeedServiceTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public IAsyncEnumerable<CollectionPage> SearchPagedAsync(
+            Iri instanceBase,
+            string? query = null,
+            SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<CollectionPage>(ct);
+
         public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(0, false, ""));
 
