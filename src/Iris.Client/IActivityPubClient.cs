@@ -1102,4 +1102,38 @@ public interface IActivityPubClient : IDisposable
         string? query = null,
         SearchOptions? options = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches an instance's local actors (the directory) and stored content objects (F-13 global
+    /// search), walking the result page by page via the server's <c>next</c> links.
+    /// </summary>
+    /// <param name="instanceBase">The instance's <c>/ap/v1</c> base IRI (e.g.
+    /// <c>https://a.domain.local/ap/v1</c>). The search IRI is derived from it as
+    /// <c>{base}/search</c> (via <see cref="IriExtensions.SearchOf(Iri)"/>).</param>
+    /// <param name="query">The search query (a case-insensitive substring). An empty/whitespace query
+    /// matches all actors and content objects (the directory / full listing).</param>
+    /// <param name="options">Optional enumeration options (<see cref="SearchOptions.Limit"/> — the page
+    /// size, default 100; <see cref="SearchOptions.BypassCache"/>; <see cref="SearchOptions.Type"/> —
+    /// restricts the result to a single ActivityStreams type, e.g. <c>"Actor"</c> for the directory
+    /// page; <see cref="SearchOptions.LocalOnly"/> — restricts the actor pass to this instance's own
+    /// actors). <see cref="SearchOptions.Offset"/> is ignored (the walk always starts at the first
+    /// page).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The matching results as <see cref="CollectionPage"/> pages (one per server page, in
+    /// order, with <see cref="CollectionPage.NextPage"/> set on every page but the last). The items of
+    /// each page follow the server's ordering (actors first, then content objects, each sorted by
+    /// IRI). Returns an empty sequence when the endpoint is unreachable (e.g. 404) or the instance
+    /// serves no global search.</returns>
+    /// <remarks>
+    /// Unlike <see cref="SearchAsync"/> (which fetches a single page at a fixed offset), this method
+    /// follows the page document's <c>next</c> link until the server stops offering one, so a caller
+    /// can page out the entire result set (e.g. the directory page's infinite scroll) while keeping
+    /// each page as a distinct unit. The response is not cached (a search is a fresh query, not a
+    /// stable collection).
+    /// </remarks>
+    IAsyncEnumerable<CollectionPage> SearchPagedAsync(
+        Iri instanceBase,
+        string? query = null,
+        SearchOptions? options = null,
+        CancellationToken ct = default);
 }

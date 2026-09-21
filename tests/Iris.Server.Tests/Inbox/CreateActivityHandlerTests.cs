@@ -817,6 +817,15 @@ public sealed class CreateActivityHandlerTests
         public IAsyncEnumerable<IObjectOrLink> SearchAsync(Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default)
             => EmptyAsync();
 
+        public IAsyncEnumerable<Iris.Core.Collections.CollectionPage> SearchPagedAsync(Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default)
+            => EmptyPagedAsync();
+
+        private static async IAsyncEnumerable<Iris.Core.Collections.CollectionPage> EmptyPagedAsync()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+
         private static async IAsyncEnumerable<IObjectOrLink> EmptyAsync()
         {
             await Task.CompletedTask;

@@ -182,6 +182,10 @@ public class PagedCollectionTests
             Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public IAsyncEnumerable<CollectionPage> SearchPagedAsync(
+            Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public void Dispose()
         {
         }

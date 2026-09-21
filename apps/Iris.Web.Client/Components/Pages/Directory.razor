@@ -1,12 +1,14 @@
 @page "/directory"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Core.Collections
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Components
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
+@using SearchPage = Iris.Core.Collections.CollectionPage
 
 <PageTitle>Directory · Iris</PageTitle>
 
@@ -98,6 +100,25 @@ else
                         <DirectoryCard Actor="person" />
                     }
                 </div>
+                @if (HasMore)
+                {
+                    <div class="directory-pagination">
+                        <div class="paged-collection-sentinel" @onclick="LoadMoreAsync" role="button" aria-label="Load more directory entries" tabindex="0"></div>
+                        @if (LoadingMore)
+                        {
+                            <div class="card-loading card-loading-inline">
+                                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                                </svg>
+                                <span class="muted">Loading…</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                        }
+                    </div>
+                }
             }
         }
         else
@@ -116,6 +137,25 @@ else
                         <CommunityCard Community="community" />
                     }
                 </div>
+                @if (HasMore)
+                {
+                    <div class="directory-pagination">
+                        <div class="paged-collection-sentinel" @onclick="LoadMoreAsync" role="button" aria-label="Load more directory entries" tabindex="0"></div>
+                        @if (LoadingMore)
+                        {
+                            <div class="card-loading card-loading-inline">
+                                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                                </svg>
+                                <span class="muted">Loading…</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                        }
+                    </div>
+                }
             }
         }
     }
@@ -140,6 +180,14 @@ else
     /// when false it shows every actor the instance stores (local + cached remote — "all known actors").
     /// </summary>
     private bool _localOnly = true;
+
+    // Paged-load state: the directory walks the /ap/v1/search result page by page (the shared
+    // sentinel + Load-more pattern). The walk (SearchPagedAsync, one page per server page) is held in
+    // _pageEnumerator; each "Load more" pulls the next page from it. HasMore is true until the server
+    // stops offering a next page.
+    private IAsyncEnumerator<SearchPage>? _pageEnumerator;
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
 
     private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
     private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
@@ -340,8 +388,16 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // EnsureReadyAsync (WASM) loads the signing key before Client becomes non-null; it is a no-op
+        // when signed out. When it does real work, the completed key load re-renders this component
+        // (the session's client factory signals a state change), so the first actual load happens on
+        // that re-render — not here, where Client would still be null and the page would be stuck on
+        // the signed-out branch.
         await Session.EnsureReadyAsync();
-        await LoadActorsAsync();
+        if (Client is not null)
+        {
+            await LoadActorsAsync();
+        }
     }
 
     private void SwitchTab(string tab)
@@ -379,8 +435,11 @@ else
         }
 
         Busy = true;
+        LoadingMore = false;
         Error = null;
-        Actors = null;
+        Actors = [];
+        HasMore = false;
+        await DisposePageEnumeratorAsync();
         try
         {
             const string marker = "/ap/v1";
@@ -394,19 +453,20 @@ else
                 return;
             }
 
-            var results = new List<IObjectOrLink>();
-            await foreach (var item in client.SearchAsync(
-                                baseIri.Value,
-                                string.Empty,
-                                new SearchOptions { Type = "Actor", LocalOnly = _localOnly }))
+            _pageEnumerator = client.SearchPagedAsync(
+                baseIri.Value,
+                string.Empty,
+                new SearchOptions { Type = "Actor", LocalOnly = _localOnly, Limit = DirectoryPageSize })
+                .GetAsyncEnumerator();
+
+            if (!await _pageEnumerator.MoveNextAsync())
             {
-                results.Add(item);
+                return;
             }
 
-            Actors = results
-                .OfType<Actor>()
-                .OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            AppendPage(_pageEnumerator.Current);
+            HasMore = _pageEnumerator.Current.NextPage is not null;
+            Actors = SortActors();
         }
         catch (Exception)
         {
@@ -417,4 +477,76 @@ else
             Busy = false;
         }
     }
+
+    /// <summary>
+    /// Loads the next page of the directory (the sentinel / "Load more" action): pulls the next page
+    /// from the search walk, appends its actors, and keeps <see cref="HasMore"/> true until the server
+    /// stops offering a next page.
+    /// </summary>
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore || _pageEnumerator is null || Actors is null)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        Error = null;
+        try
+        {
+            if (await _pageEnumerator.MoveNextAsync())
+            {
+                AppendPage(_pageEnumerator.Current);
+                if (_pageEnumerator.Current.NextPage is not null)
+                {
+                    HasMore = true;
+                }
+                else
+                {
+                    HasMore = false;
+                    await DisposePageEnumeratorAsync();
+                }
+
+                Actors = SortActors();
+            }
+            else
+            {
+                HasMore = false;
+                await DisposePageEnumeratorAsync();
+            }
+        }
+        catch (Exception)
+        {
+            Error = "We couldn't load more of the directory. Please try again.";
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    private void AppendPage(SearchPage page)
+    {
+        var actors = page.Items.OfType<Actor>().ToList();
+        if (actors.Count > 0 && Actors is not null)
+        {
+            Actors = Actors.Concat(actors).ToList();
+        }
+    }
+
+    private IReadOnlyList<Actor> SortActors()
+        => (Actors ?? [])
+            .OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private async Task DisposePageEnumeratorAsync()
+    {
+        if (_pageEnumerator is { } enumerator)
+        {
+            _pageEnumerator = null;
+            await enumerator.DisposeAsync();
+        }
+    }
+
+    private const int DirectoryPageSize = 100;
 }
