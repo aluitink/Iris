@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 186 (2026-09-21) — build `2229b0ab` / S36 deep-dive: fresh own post NOT in own feed (strongest repro yet); S24 D2 bidirectional; S32 B-cache 404s; S39 CLOSED holding
+- **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** S36 deep-dive (fresh ii-a1 post → own feed check + B-side delivery check), S24 D2 bidirectional outbox, S32 B-cache note 404, S39 CLOSED holding.
+- **Result:**
+  - **S36 (home feed) — STRONGEST REPRO YET.** Fresh ii-a1 post `II-S36-P186` (note `06GC9HM77347MWBBFZFGGB9HBR`, **in outbox** as a clean `Create`, `to`=Public, `cc`=followers) → **NOT in ii-a1's own feed** (`/ap/v1/u/ii-a1/feed?source=people` totalItems=46, 0 Create items, all noise: 8 Update+Activity, 4 Follow, 3 Delete, 2 Remove, 2 Add, 1 Like). UI `/home` = boost-wrapper only. The fresh unedited `Create` is in the outbox but **omitted from the feed** — confirms S36 is a feed-query defect (not a delivery or outbox issue).
+  - **S36 A→B delivery gap re-confirmed:** the fresh A post is **NOT cached on B** (`GET B /ap/v1/u/ii-a1/notes/06GC9HM77…` → 404) + **NOT in B's home feed** (B `/home` = "Your timeline is empty", B feed totalItems=32, 0 Create items, all Like/Follow/Undo noise). B→A delivery-to-cache gap persists.
+  - **S24 D2 (foreign outbox) — BIDIRECTIONAL.** ii-a1 (A) outbox: total 68, 11 foreign (B) page 1 (was 67/11 Pass 185). ii-b1 (B) outbox: total 58, **18 foreign (A) page 1** — foreign A activities leaking into B's local actor outbox. The outbox-integrity defect is **bidirectional** (both A and B have foreign activities in their local outboxes).
+  - **S32 (B-cache note 404) — NEW DATA POINT.** `GET B /ap/v1/u/ii-a1/notes/06GC9DE5VSXHEWVTWYQ3311D0M` (the II-S39-P184 note, created Pass 184) → **404 on B** (empty body). The B-side cached copy of an A note is 404 — the S32 "peer keeps stale copy" facet is actually "peer has no copy at all" (404, not stale). This is the same A→B delivery-to-cache gap as S36.
+  - **S39 (A-side notifications) — CLOSED holding.** ii-a1 still 28 unread (no regression). ii-b1 27 unread (no regression).
+  - **All other open items STABLE** (22nd consecutive for S36; S24 D4 + S38 + S37/S28 button-UI unchanged).
+- **Checkpoint:** S36 is the #1 blocker — the fresh own-post-not-in-own-feed repro is the strongest evidence yet for dev (the Create is in the outbox but the feed query omits it). S24 D2 is now confirmed bidirectional. S32 B-cache 404 = S36 A→B delivery gap. Next pass: stability sweep or new exploration.
+
 ## Pass 185 (2026-09-21) — build `2229b0ab` / open-item stability sweep — all open items STABLE (S39 CLOSED holding)
 - **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change since deployed build → no rebuild).
 - **Explored:** Open-item stability sweep: S36 home feed, S24 D2 foreign outbox, S24 D4 remote collections, S38 webfinger, S32 Tombstone, S37/S28 button-UI, follow-graph baseline, S39 CLOSED holding.
