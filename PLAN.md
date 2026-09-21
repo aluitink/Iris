@@ -123,7 +123,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
    ## Active Slice
 
-- **S-series interop fixes — ALL DONE + unit-verified; awaiting QA two-instance re-verify (no active dev work).** The S2-sev + S3-sev QA fixes (S24–S37) are all implemented + unit-verified and deployed; their live re-verification is deferred to the QA loop's two-instance federation stack (dev does not run it). See the **Dev Queue → QA fixes** lines for the per-item status + change docs, and **Recently Completed** for the one-line summaries. No open dev-workable slice remains in the S-series.
+- **Phase 145 — QA re-verification (dev-gated on QA results).** All S-series interop fixes (S24–S37) are DONE + unit-verified + deployed (`4431006`). The live re-verification is owned by the QA two-instance federation stack. Dev's next action: triage + fix any residual findings as QA reports them. Open S2 items: **S36** (home-feed; BLOCKED in-process, needs QA wire capture) and **S24-D1** (Following tab; CLOSED non-reproducible, needs QA two-instance repro). No new feature scope.
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
@@ -147,6 +147,10 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 **Feature scope:**
 
 - *All prior feature-scope items (① feed load feel · ②④⑤ community simplification · ③④ unified home feed · ⑤ live Lemmy/Mastodon interop) are **COMPLETE** — rolled up into [ROADMAP.md](docs/ROADMAP.md). No open feature-scope slice remains; the Dev Queue is now the S-series QA-fix re-verify surface.*
+
+**Phase 145 — QA re-verification (dev-gated on QA results):**
+
+- **Await QA two-instance re-verify results** for the deployed S-series fixes (S32 delete/update audience, S36 home-feed, S37 likedCount, S30 A8.2/A8.4, S26, S27, S28). When QA reports back: triage any residual failures, capture the wire shape, and fix in-process with a regression test. The two open S2 items are **S36** (home-feed omits posts + actor-doc noise; BLOCKED in-process, needs QA wire capture) and **S24-D1** (Following tab omits remote actors; CLOSED non-reproducible, needs QA two-instance repro). No new feature scope in this phase.
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
