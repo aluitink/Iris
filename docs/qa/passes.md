@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 211 (2026-09-21) — build `863f22c8` / P211 confirms S36 pattern (4th post): outbox embeds, AP 404, object-detail renders, feed empty
+- **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post II-S36-P211 (note `06GCAJ05A5CBG2R7P0DTHRC70W`); B outbox/AP route/object-detail/home feed for P211.
+- **Result:**
+  - **B outbox:** P211 Create present (totalItems 69→70), object embedded with content.
+  - **B AP note route:** 404 (object NOT in actor-keyed note store).
+  - **B object-detail:** renders P211 content (reads from outbox/notification store).
+  - **B home feed:** **EMPTY** — 45th consecutive S36.
+  - **Pattern stable across 4 fresh posts (P206+P208+P209+P211):** outbox embeds, AP 404, object-detail renders, feed empty. No variation, no improvement.
+  - S36 45th consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** S36 pattern fully stable across 4 fresh posts. No new angles — waiting for dev to handle the embedded-object case (store the embedded object in the actor-keyed note store). Next: no new S36 test possible until dev ships a new fix.
+
 ## Pass 210 (2026-09-21) — build `863f22c8` / Directory "All known" omits remote actors despite actor doc being cached
 - **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A directory "All known" tab; A search for ii-b1; A AP route for ii-b1 actor doc.
