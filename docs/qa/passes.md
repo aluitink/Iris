@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 116 (2026-09-21) — No new commit / no build change; S24 D1 (Following-tab omits remote actor) re-verified → FIXED (tab now renders remote ii-b1 + wire /following totalItems=2); S24 narrows to D2 (foreign activities in outbox)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (2 tests, uncommitted); QA cluster unchanged.
+- **Explored:** Re-verified **S24 D1** (the Following-tab remote-actor rendering defect) on the current build — A profile (ii-a1) Following tab + the wire `following` collection.
+- **Result:** **S24 D1 FIXED.** ii-a1 (A) follows the remote `ii-b1` (B) + the local community `ii-a8-community`. The **Following tab now renders BOTH** — `ii-a8-community` (Community badge, Unfollow) **and `ii-b1`** (remote, Unfollow). The wire `GET A /ap/v1/u/ii-a1/following` → `totalItems`=2 (community + remote ii-b1). (In Pass 104 the remote ii-b1 was omitted from the Following tab while the Followers tab rendered it — that UI rendering defect is gone.) **S24 narrows to D2** (foreign activities in the local actor's outbox, re-confirmed Pass 114). D3 (remote-actor GET) was already fixed.
+- **Checkpoint:** S24 narrowed to **D2** (Following-tab + remote-actor GET now work). S36 still top priority (dev fix in progress — 2 WIP tests). S28 (count), S30 (A8.4), S32 (sending-side), S37 (count) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 115 (2026-09-21) — No new commit / no build change; dev S36 WIP grew to 2 tests; S37 count facet re-confirmed (note likedCount/likes.totalItems None + actor likedCount None, while /likes totalItems=1)
 - **Build/Live:** No new commit (HEAD `aebe420`); QA cluster unchanged. **Dev S36 WIP grew**: `FeedServiceTests.cs` now has **2 new test methods** (+98 lines) — the S36 fix is in progress (still uncommitted).
 - **Explored:** Re-confirmed the **S37 count facet** (count-materialization theme) on an A note that B already Liked (`06GC3VAX`, from B's outbox).

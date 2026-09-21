@@ -1,7 +1,7 @@
 # S24 — Cross-instance follow: profile "Following" tab omits remote actors, spurious self-follow in outbox, remote-actor direct GET 404s
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open
+- **Status:** **PARTIALLY FIXED (Pass 116, current build)** — **D1 (Following-tab omits remote actor) FIXED**: ii-a1's Following tab now renders the **remote `ii-b1`** (with Unfollow) alongside the local community, and the wire `GET A /ap/v1/u/ii-a1/following` → `totalItems`=2 (community + remote `ii-b1`). (In Pass 104 the remote actor was omitted from the Following tab while the Followers tab rendered it.) **D2 (foreign activities in the local actor's outbox) STILL OPEN** (re-confirmed Pass 114: 3 B activities in ii-a1's outbox). D3 (remote-actor direct GET) was already fixed. **Status: OPEN (narrowed) — D2 only.**
 - **Found:** Interop suite A2 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S4](s04-communities-following-remote.md) (Communities "Following" tab drops REMOTE communities — same "Following-tab under-reports remote items" family), [S14](s14-signed-out-actor-detail-csp.md) (remote actor detail), [S18](s18-local-follow-timeline-empty.md) (local follow state), [S22](s22-follow-notification-not-created.md) (follow notifications)
 
@@ -123,3 +123,14 @@ Performed a **fresh Follow** (not relying on the prior cycle's state): as `ii-a1
 **Refined root cause (Facet 1):** this is a **UI rendering defect specific to the Following tab** — it omits **remote** actors (resolves/renders only local actors + communities), while the Followers tab handles remote actors fine. It is **not** (or not only) a wire/edge-sync problem: the wire `following` is correct after a fresh follow, yet the Following tab still drops the remote person. (The prior re-tests' "A `following` missing ii-b1" was a transient stale-state artifact from the Undo cycle — a secondary, separate state-consistency gap — but the **stable, user-visible** defect is the Following tab's failure to render remote actors.)
 
 **Verdict (build `27b1ba6`, fresh follow): Facet 3 fixed. Facet 1 OPEN — refined to a UI Following-tab rendering defect (remote actors omitted; Followers tab renders them fine) — reproduces even when the wire `following` is correct. Facet 2 (foreign activities in local outbox) persists. The `following`/`followers` out-of-sync-after-Undo is a secondary state-consistency gap (transient; a fresh follow re-syncs it).**
+
+## Re-test (Pass 116, 2026-09-21, current build `11fbec6`/`aebe420`)
+
+**D1 (Following-tab omits remote actor) is now FIXED.** ii-a1 (A) follows the remote `ii-b1` (B) + the local community `ii-a8-community`.
+
+- **UI — Following tab:** `GET /profile` → Following tab now renders **BOTH** — `ii-a8-community` (II-A8 Test Community, "Community" badge, Unfollow) **and `ii-b1`** (remote, Unfollow). (In Pass 104 the remote `ii-b1` was omitted from this tab while the Followers tab rendered it — that UI Following-tab rendering defect is gone.)
+- **Wire:** `GET A /ap/v1/u/ii-a1/following` → `totalItems` = **2**: `…/qa-iris-a…/c/ii-a8-community` + `…/qa-iris-b…/u/ii-b1` (the remote actor edge is present).
+
+**D2 (foreign activities in the local actor's outbox) STILL OPEN** (re-confirmed Pass 114): `GET A /ap/v1/u/ii-a1/outbox` contains **3 foreign (B) activities** (Announce + Create + Follow, actor `ii-b1`) — a remote actor's activities leaking into the local actor's outbox (outbox-integrity defect).
+
+**Verdict (current build): S24 PARTIALLY FIXED — D1 (Following-tab remote-actor rendering) + D3 (remote-actor GET) now work; D2 (foreign activities in local outbox) is the remaining open facet.** **Status: OPEN (narrowed) — D2 only.**
