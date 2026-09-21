@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 123 (2026-09-21) — No new commit / no build change; S24 D2 (foreign activities in local outbox) re-confirmed → OPEN (ii-a1's A outbox contains 2 foreign ii-b1 Like activities among 20 items); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
+- **Explored:** Re-verified **S24 D2** (the one remaining open facet of S24) — does ii-a1's A outbox contain foreign (actor=ii-b1) activities?
+- **Result:** **S24 D2 re-confirmed OPEN.** ii-a1's A outbox (20 items) contains **2 foreign ii-b1 `Like` activities** (`…/ii-b1/notes/06GC41BA17GFKF7SESSFYPAJXR`, `…/ii-b1/notes/06GC4CXP22T3Q8QSAPPB99HWC0`) alongside ii-a1's own activities. So the **outbox-integrity defect** persists — a local actor's outbox includes activities authored by a **remote** peer (ii-b1). Consistent with Pass 114. (S24 D1 — the Following-tab remote-actor rendering — was fixed in Pass 116, so S24 now reduces to this D2 outbox-integrity defect.)
+- **Checkpoint:** S24 D2 re-confirmed (foreign activities in local outbox). S36 still top priority (dev fix in progress — 296 test lines, src pending). S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 122 (2026-09-21) — No new commit / no build change; cross-instance SEARCH re-verified → WORKS (B's search finds the remote A note 06GC4RR4 + the B-local reply, with author ii-a1 + Block/Mute/Report + Like/Boost/Reply); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
 - **Explored:** Checked the **cross-instance search** facet (previously untested) — signed in to B as ii-b1 and searched for (a) the B-local reply phrase and (b) the remote A-parent note's phrase.
