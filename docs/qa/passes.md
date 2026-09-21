@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 248 (2026-09-21) — build `401c08b5` / NodeInfo + WebFinger: NodeInfo 200 (version 2.0, iris v1, 3 users, openRegistrations=false); WebFinger 404 for all actors (ii-a1, alice, admin) — potential S35-related issue
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A /ap/v1/nodeinfo/2.0; A /ap/v1/webfinger (multiple actors).
+- **Result:**
+  - **NodeInfo 2.0:** 200 OK. `{"version":"2.0","software":{"name":"iris","version":"1"},"protocols":["activitypub"],"usage":{"users":{"total":3}},"openRegistrations":false,"metadata":{"name":"iris-qa-iris-a.luit.ink","description":"An Iris ActivityPub instance"}}`.
+  - **WebFinger:** 404 for ii-a1, alice, admin (empty body). All webfinger lookups fail.
+  - **Observation:** WebFinger is required for ActivityPub federation (other instances use it to resolve handles to actor IRIs). A 404 on webfinger could break cross-instance federation. This may be related to S35 (Mastodon actor docs 404) or a separate defect.
+  - **Action:** Not creating a new finding yet — need to verify if webfinger 404 actually breaks federation (B can still resolve A's actors). The S35 finding already covers actor-doc 404s on remote instances. Will re-check if a new cross-instance federation issue appears.
+  - 0 new defects (webfinger 404 noted for monitoring).
+- **Checkpoint:** NodeInfo works. WebFinger 404 noted (may be S35-related). No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 247 (2026-09-21) — build `401c08b5` / Health check: both A and B /ap/v1/healthy (delivery queue empty, workers running); no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A /ap/v1/health; B /ap/v1/health.
