@@ -11,11 +11,14 @@
 
 ## 0. Environment + ground rules
 
-- **Stack**: `docker compose -f samples/docker-compose.yml up --build -d` → `iris-a` (iris-dev1, alice),
-  `iris-b` (iris-dev2, alice), `iris-ui` (the Blazor explorer). Health: `docker compose ps`.
+- **Stack**: the shared federation stack, dev environment:
+  `docker compose -f environments/stack/docker-compose.yml --env-file environments/dev/.env -p dev up -d --build`
+  → `iris-a` (dev-iris-a, alice), `iris-b` (dev-iris-b, alice), plus Mastodon + Lemmy (peer targets).
+  Health: `docker compose -f environments/stack/docker-compose.yml --env-file environments/dev/.env -p dev ps`.
 - **Public FQDNs** (external reverse proxy → our listening ports; we only need to be up):
-  - iris-a / dev1: `https://iris-dev1.luit.ink` → local 8081
-  - iris-b / dev2: `https://iris-dev2.luit.ink` → local 8082
+  - iris-a / dev1: `https://dev-iris-a.luit.ink` → local 8081
+  - iris-b / dev2: `https://dev-iris-b.luit.ink` → local 8082
+  - **Legacy aliases:** the old `iris-dev1` / `iris-dev2` names still resolve to those same ports, but the canonical dev hostnames are `dev-iris-a` / `dev-iris-b`. The QA cluster uses `qa-iris-a` / `qa-iris-b` instead.
   - UI: local 8090 / 8088 (the public UI origin is a separate host; confirm with the operator).
 - **Persistence (verified, change 161-preface)**: `Iris__PersistenceDirectory=/data` on named volumes
   `iris-a-data`/`iris-b-data`. A `down` **without** `-v` preserves state (actors, keys, follows,
@@ -34,13 +37,13 @@
   outbox** — NOT via the removed `/ap/v1/u/{handle}/follows/{followId}` Basic-auth endpoint (that
   endpoint was removed; the outbox is the sole write path, and the server records + server-delivers the
   decision).
-  - Accept: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/outbox` with an `Accept` whose `object` is
+  - Accept: `POST https://dev-iris-a.luit.ink/ap/v1/u/alice/outbox` with an `Accept` whose `object` is
     `{followIri}` (HTTP-signed as alice — the client's `AcceptAsync` does this; see F1).
-  - Reject: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/outbox` with a `Reject` whose `object` is
+  - Reject: `POST https://dev-iris-a.luit.ink/ap/v1/u/alice/outbox` with a `Reject` whose `object` is
     `{followIri}`.
   - `{followIri}` = the absolute IRI of the original `Follow` activity (read from
     `docker exec iris-a cat /data/activities.json` — the Follow's `id`, i.e.
-    `https://mastodon.world/users/RayvenMX/follows/https://iris-dev1.luit.ink/ap/v1/u/alice`).
+    `https://mastodon.world/users/RayvenMX/follows/https://dev-iris-a.luit.ink/ap/v1/u/alice`).
 - **Recording**: after each item, record the outcome in the **Findings tracker** (§6) with wire
   evidence (the relevant collection / outbox / inbox JSON + the Mastodon public URL if applicable).
   PASS / FAIL / GAP + a one-line note. Findings feed 19.4 (remediation).
