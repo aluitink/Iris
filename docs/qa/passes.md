@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 204 (2026-09-21) — build `8243361c` / community feed includes REMOTE member posts (ii-b1)
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Community detail page (A8 test community) — Members tab + Feed tab.
+- **Result:**
+  - **NEW — community feed includes remote member posts:** A8 community Members tab: **ii-b1** (B actor, remote member) with Promote/Mute/Block/Remove buttons. Feed tab: shows **both ii-a1's posts (P200, P193, P192, etc.) AND ii-b1's post (P189)** with content. The community feed resolves remote member posts via the `attributedTo` path (community membership → actor's outbox → object content), which works for remote actors.
+  - **Contrast with home-feed:** The community feed finds remote member posts (ii-b1's P189) via the outbox path. The home-feed does NOT find remote follower posts (ii-b1's P189/P200) — it queries the object store which has no cached remote Note. The `attributedTo` path (community) works; the follow-graph path (home-feed) does not.
+  - **S36 root cause further refined:** The gap is specifically in the home-feed's follow-graph query path, which relies on the object store for remote notes. The community feed's `attributedTo` path uses the outbox (which has the Create activity with inlined content) and works. The fix is to make the home-feed path use the outbox/inlined-content source like the community feed does.
+  - S36 39th consecutive. 0 console errors.
+- **Checkpoint:** Community feed includes remote member posts (ii-b1's P189) — the attributedTo path works for remote actors. Home-feed's follow-graph path does not. Root cause further refined. Next: new exploration.
+
 ## Pass 203 (2026-09-21) — build `8243361c` / community feed shows own posts (contrast with home-feed)
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Communities page (A + B); community detail page (A8 test community).
