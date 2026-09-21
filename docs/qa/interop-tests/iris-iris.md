@@ -387,3 +387,16 @@ Re-exercised the full cross-instance **reply** flow (A5 / S26) from a clean entr
 - **A object-detail UI (ii-a1):** Replies tab renders the remote reply **nested under the parent** with the **"In reply to ii-a1"** context card + the parent's quoted text. 0 console errors.
 
 Cross-instance reply threading works end-to-end on the current build — **S26 stays fixed**. No new defects.
+
+---
+
+## Re-verify pass (Pass 107, 2026-09-21, build `27b1ba6` == HEAD)
+
+Fresh cross-instance **Like** (A `ii-a1` → B's note `…/ii-b1/notes/06GC4CXP22…`, the S26 reply) to re-confirm **S27** on the current build.
+
+**A2 / S27 — PASS (delivery + registration holding), with a count-materialization discrepancy.**
+- **Delivery ✓:** B log `Inbox accepted: Like from ii-a1 targeting …/06GC4CXP22` + `LikeActivityHandler processed … — ok` (the S27 shared-inbox Like-of-Note routing fix is holding).
+- **Registered ✓:** B note `GET …/likes` collection `totalItems: 1`; B object-detail UI (ii-b1) shows **"1 like"** + **"Likes (1)"** tab.
+- **NEW low-severity facet (count materialization):** the note's wire **`likedCount` = None** and the **inline Like-button count = 0** (on both A's and B's object-detail) while `/likes` = 1 and the UI "1 like" shows. The like is **stored + rendered**, but the **denormalized `likedCount` / inline count is not materialized** on the note. This is the **count analog of the S28 `shares`-count gap** — a distinct, smaller issue than S28's dropped-Announce. (Candidate for a new low-severity finding if it reproduces across notes.)
+
+**A3 / S34 (gated follow)** — **not exercised** this pass: no account has `manuallyApprovesFollowers` set, so the gated-approval flow can't be triggered without a setup change QA won't make. Stays at the Pass 100 "fixed" state.

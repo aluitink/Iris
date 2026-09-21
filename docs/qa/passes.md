@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 107 (2026-09-21) — Re-verified A2/S27 (remote Like) → PASS, but found a likedCount-materialization discrepancy
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
+- **Explored:** Fresh cross-instance **Like** (A `ii-a1` → B's note `…/ii-b1/notes/06GC4CXP22…`, the S26 reply) to re-confirm S27 on the current build. (A3/S34 gated-follow could **not** be exercised — no account has `manuallyApprovesFollowers`; needs a setup change QA won't make. Stays at the Pass 100 "fixed" state.)
+- **Result:** **S27 PASS (delivery + registration holding), with a count-materialization discrepancy.**
+  - **Delivery ✓:** B log `Inbox accepted: Like from ii-a1 targeting …/06GC4CXP22` + `LikeActivityHandler processed … — ok`.
+  - **Registered ✓:** B's note `GET …/likes` collection `totalItems: 1`; B object-detail UI (ii-b1) shows **"1 like"** + **"Likes (1)"** tab.
+  - **Discrepancy (new facet):** the note's wire **`likedCount` = None** and the **inline Like-button count = 0** (on both A's and B's object-detail) while `/likes` shows 1 and the UI "1 like" shows. So the like is stored + rendered, but the **denormalized `likedCount`/inline-count is not materialized** on the note. (This is the **count** analog of the S28 `shares`-count gap — a distinct, smaller issue than S28's dropped-Announce.)
+- **Checkpoint:** S36 top priority (home feed empty; dev code pass on `FeedService.BuildFeedUncachedAsync`). **New (low severity):** note `likedCount`/inline Like-count not materialized after a remote Like (the like is stored + UI "N like" shows; wire `likedCount`/`/likes`-on-note lag) — candidate for a new low-severity finding if it reproduces. S24 D1/D2 + S28 + S32 still open. M2–M12 + L2–L12 blocked on operator accounts. **Merge blocked** on dev's uncommitted WIP.
+
 ## Pass 106 (2026-09-21) — Re-verified A5/S26 (remote reply threading) end-to-end → PASS (fix holding)
 
 - **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
