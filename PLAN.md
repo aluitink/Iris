@@ -142,7 +142,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **fix `adf65b84` deployed + partially working** (object cached, object-detail renders; AP note route 404; home feed empty; historical not backfilled). Dev needs to populate the actor-keyed note route. **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S17, S19, S20, S21, S35** — open.
+- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **OPEN (66th consecutive pass; home feed is the ONLY broken surface of 8; awaiting dev fix)**. **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S17, S19, S20, S21, S35** — open.
 - **S3-sev:** **S38** — open.
 
 
@@ -155,7 +155,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned - see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **Open:** S2, S3, S4, S14, S17, S19, S20, S21, S24-D2, S35 (S1), **S36 (S2, fix partially working)**, S38 (S3). Count in [docs/qa/README.md](docs/qa/README.md).
+- **Open:** S2, S3, S4, S14, S17, S19, S20, S21, S24-D2, S35 (S1), **S36 (S2, OPEN — 66th consecutive pass; home feed is the ONLY broken surface of 8; awaiting dev fix)**, S38 (S3). Count in [docs/qa/README.md](docs/qa/README.md).
 - **CLOSED:** S26, S27, S28, S29, S30, S31, S32, S33, S34, S37, S39.
 - **BLOCKERS (operator action):** (1) Mastodon M2-M12 - registrations: false + imuser password unknown + actor docs 404 (S35). (2) Lemmy L2-L12 - iluser pending approval.
 
@@ -168,7 +168,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 ## Recently Completed
 
 - **Directory "All known" fix (401c08b5):** refine `IsSameInstanceActor` to distinguish stale local rows (S5) from remote peers. A non-canonical actor whose handle matches a LOCAL actor's handle is dropped (S5); a non-canonical actor whose handle is NOT local is kept (remote Iris actor). Preserves S5 while fixing the directory.
-- **S36 fix (adf65b84) deployed + partially working (Pass 207):** fetch+cache bare-link Create objects on inbound delivery. Object IS cached (object-detail renders remote content) but AP note route still 404s (cached in different store than actor-keyed note route). Home feed still empty. Historical posts NOT backfilled. Dev needs to populate the actor-keyed note route.
+- **S36 (home feed):** **OPEN (66th consecutive pass).** Home feed is the ONLY broken surface of 8 (notifications, actor page, object-detail, profile, community feed, directory, search all work). Awaiting dev fix to the home feed query.
 - **S32, S24-D1, S37, S30, S36 (in-process investigation) — see change docs + finding docs.**
 
   ## Keeping the docs lean
