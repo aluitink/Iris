@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 207 (2026-09-21) — build `adf65b84` / P206 object-detail renders but AP route 404 (content in outbox, not object store)
+- **Build/Live:** `adf65b84` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** P206 on B: AP note route, object-detail page, local object API routes.
+- **Result:**
+  - **CORRECTION to Pass 206:** P206's AP note route `GET /ap/v1/u/ii-a1/notes/06GCA8ABTNZQDGEYX1Q6MXJG7W` on B → **404** (NOT 200 as reported in Pass 206). The object is NOT in B's object store.
+  - **Object-detail page renders P206:** `GET /object?iri=...` → 200, shows "ii-a1 9m ago II-S36-P206..." with content. The content comes from the **outbox store** (where the Create activity is stored with the embedded object), NOT the object store.
+  - **S36 fix (adf65b84) effect:** The fix fetches + caches the bare-link object on inbound Create. The object IS cached (the object-detail page can render it). But the AP note route (`/ap/v1/u/{actor}/notes/{id}`) still 404s — the cached object is stored in a different location than the AP note route reads from.
+  - **Home feed STILL empty:** The feed query uses the AP note route (or object store) which 404s. The outbox store has the content but the feed doesn't read from it.
+  - **Root cause refined:** The S36 fix caches the object (object-detail works) but the AP note route and home-feed query read from a different store (the actor-keyed note route) which is still empty. The fix needs to ALSO populate the actor-keyed note route, OR the feed query needs to read from the same store as the object-detail page.
+  - S36 42nd consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** Pass 206's "AP 200" was incorrect — the AP route is 404. The object IS cached (object-detail renders) but in a different store than the AP note route. The fix needs to populate the actor-keyed note route. Next: investigate the store mismatch.
+
 ## Pass 206 (2026-09-21) — build `adf65b84` / S36 fix deployed: NEW posts fetch+cache on inbound (AP 200), historical posts NOT backfilled, home feed STILL empty
 - **Build/Live:** `adf65b84` (S36 fix: fetch + cache bare-link Create objects on inbound delivery; rebuilt + redeployed QA cluster).
 - **Explored:** Fresh A post II-S36-P206; B cache/outbox/notifications/home-feed for P206; B object-detail + actor-page for P206; A cache for P189 (historical B post).
