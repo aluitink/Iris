@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 220 (2026-09-21) — build `401c08b5` / Settings page: Account (Profile/Security/Change password/Moderation), Content (Notifications/Muted actors/Muted Communities/Relays), Danger (Account deletion) — all tabs work
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A settings page (all 3 tabs: Account, Content, Danger).
+- **Result:**
+  - **Account tab:** Profile (Edit your profile), Security (Signing algorithm Rsa, Key IRI, JWK thumbprint), Change password (Current/New/Confirm), Moderation.
+  - **Content tab:** Notifications (Notification types: New followers, Likes, Boosts/shares, Replies; Muted actors; Muted Communities; Relays).
+  - **Danger tab:** Account deletion ("Deleting your account is permanent and irreversible... Delete my account").
+  - All 3 tabs render correctly. No console errors.
+  - No new defects.
+- **Checkpoint:** Settings page works (all 3 tabs). No new defects. S36 home feed still OPEN (51st consecutive). Next: no new angles.
+
 ## Pass 219 (2026-09-21) — build `401c08b5` / Community feed WORKS (P215/P214/P211 all visible in ii-a8-community feed); home feed still empty — different query path
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed (re-check); A community feed (ii-a8-community).
