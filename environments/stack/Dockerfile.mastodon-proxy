@@ -1,0 +1,6 @@
+# QA Mastodon nginx front (single published port: host 18092 -> container 8082). Bakes the QA
+# nginx.conf (upstream = qa-mastodon-web / qa-mastodon-streaming) into the image. No TLS certs: TLS
+# is terminated by the external reverse proxy on the other server, and X-Forwarded-Proto: https
+# makes Mastodon emit https://qa-mastodon.luit.ink IRIs.
+FROM nginx:1.27-alpine
+COPY mastodon-nginx.conf /etc/nginx/conf.d/default.conf

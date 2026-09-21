@@ -1,0 +1,437 @@
+# Shared federation stack — ONE compose template that serves BOTH the dev and the QA environments.
+#
+# dev and QA are structurally IDENTICAL; the only differences (FQDNs, host ports, container-name
+# prefix, DB passwords, Mastodon crypto keys) are supplied by a per-environment .env file:
+#
+#   dev:  docker compose -f environments/stack/docker-compose.yml --env-file environments/dev/.env -p dev  up -d --build
+#   qa:   docker compose -f environments/stack/docker-compose.yml --env-file environments/qa/.env  -p qa  up -d --build
+#
+# The `-p <project>` flag is what isolates the two: Docker Compose scopes every named volume and
+# network under the project name (dev_*, qa_*), so dev and QA never share state even though their
+# service/volume keys are identical here. `container_name` uses ${ENV_PREFIX} (dev-/qa-) purely for
+# `docker ps` clarity.
+#
+# ── What it stands up ──────────────────────────────────────────────────────────────────────────
+#   * 2x Iris.Web instances (iris-a = primary, iris-b = second) — built from apps/Iris.Web/Dockerfile
+#   * Mastodon 4.7.2 (dbinit + db + redis + web + sidekiq + streaming + proxy front)
+#   * Lemmy 0.19 (db + server + SSR ui + proxy front)
+#
+# ── FQDN / port map (provision the FQDNs on the EXTERNAL reverse proxy on the other server; TLS
+#    terminates there; each FQDN's :443 forwards to the single host port in the .env) ────────────
+#   Node        FQDN env var      host port env var    backend
+#   ──────────  ────────────────  ───────────────────  ──────────────────────────────────────────
+#   Iris A      FQDN_IRIS_A       PORT_IRIS_A          iris-a:8080        (direct — no front)
+#   Iris B      FQDN_IRIS_B       PORT_IRIS_B          iris-b:8080        (direct — no front)
+#   Mastodon    FQDN_MASTODON     PORT_MASTODON        mastodon-proxy:8082 (splits streaming vs web)
+#   Lemmy       FQDN_LEMMY        PORT_LEMMY           lemmy-proxy:8082    (splits AP/api vs UI)
+#
+#   The multi-backend nodes (Mastodon, Lemmy) each have ONE in-stack nginx front that owns the host
+#   port and does the path/Accept-header split the external proxy can't. The nginx confs bake the
+#   UNPREFIXED service names (mastodon-web / lemmy / lemmy-ui), so the SAME image serves dev + QA —
+#   the project-scoped network makes those names resolve to the right containers per environment.
+#
+# ── Per-service build notes ────────────────────────────────────────────────────────────────────
+#   * Iris: apps/Iris.Web/Dockerfile (build context = repo root `../../..` from this dir). Each
+#     instance gets its own Postgres + Data-Protection key volume + media-blob volume.
+#   * Mastodon: stock ghcr images. LOCAL_DOMAIN + RAILS_ALLOWED_HOSTS = ${FQDN_MASTODON}. The
+#     one-shot `dbinit` runs `rake db:prepare` (non-destructive: migrates a fresh DB, no-op when
+#     already migrated — `db:setup` would drop/recreate and wipe accounts). web depends on dbinit.
+#   * Lemmy: built from Dockerfile.lemmy in THIS dir, with the hostname + DB password substituted
+#     at build time from ${FQDN_LEMMY} / ${LEMMY_DB_PASS}. The SSR ui (lemmy/ui-proxy in the source
+#     tree) is a shared project artifact; the proxy fronts bake the env-neutral nginx confs here.
+#
+#   Bind-mount note: this host's Docker runtime CANNOT bind-mount a file onto a file (verified), so
+#   the fronts BAKE their nginx.conf via Dockerfile COPY (context = this directory) rather than
+#   bind-mounting it. That is why Dockerfile.mastodon-proxy / Dockerfile.lemmy-proxy exist.
+
+services:
+  # ───────────────────────────── Iris A (primary) ─────────────────────────────
+  iris-a-db:
+    image: postgres:16
+    container_name: ${ENV_PREFIX}-iris-a-db
+    environment:
+      POSTGRES_DB: iris_a
+      POSTGRES_USER: iris
+      POSTGRES_PASSWORD: ${IRIS_DB_PASS}
+    volumes:
+      - iris-a-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iris -d iris_a"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [federation-net]
+
+  iris-a:
+    build:
+      context: ${REPO_ROOT}
+      dockerfile: apps/Iris.Web/Dockerfile
+    container_name: ${ENV_PREFIX}-iris-a
+    depends_on:
+      iris-a-db:
+        condition: service_healthy
+    environment:
+      # Advertised public base = the FQDN the external proxy fronts. The app binds :8080 in-container.
+      Iris__AdvertiseBase: https://${FQDN_IRIS_A}
+      # Lemmy interop requires a sharedInbox endpoint on the actor doc (its Endpoints struct is strict).
+      Iris__SharedInboxIri: https://${FQDN_IRIS_A}/ap/v1/shared-inbox
+      ConnectionStrings__Iris: "Host=iris-a-db;Port=5432;Database=iris_a;Username=iris;Password=${IRIS_DB_PASS}"
+      # Antiforgery OFF for Playwright-driven login/register (stale Data Protection tokens across a
+      # rebuild would otherwise 400 the forms). This is a TEST/DEV stack — never run public with this off.
+      Iris__Security__EnableAntiforgery: "false"
+      # Cache-bypass so the browser never serves a stale SPA shell after a redeploy.
+      Iris__Dev__CacheBypass: "true"
+      Iris__MediaBlobDir: /data/media
+      HOME: /home/iris
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      # Reverse-proxy target for ${FQDN_IRIS_A} (443 -> host:${PORT_IRIS_A}).
+      - "${PORT_IRIS_A}:8080"
+    volumes:
+      - iris-a-media:/data/media
+      - iris-a-dp-keys:/home/iris/.aspnet/DataProtection-Keys
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 25s
+    networks: [federation-net]
+
+  # ───────────────────────────── Iris B (second instance) ─────────────────────────────
+  iris-b-db:
+    image: postgres:16
+    container_name: ${ENV_PREFIX}-iris-b-db
+    environment:
+      POSTGRES_DB: iris_b
+      POSTGRES_USER: iris
+      POSTGRES_PASSWORD: ${IRIS_DB_PASS}
+    volumes:
+      - iris-b-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iris -d iris_b"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [federation-net]
+
+  iris-b:
+    build:
+      context: ${REPO_ROOT}
+      dockerfile: apps/Iris.Web/Dockerfile
+    container_name: ${ENV_PREFIX}-iris-b
+    depends_on:
+      iris-b-db:
+        condition: service_healthy
+    environment:
+      Iris__AdvertiseBase: https://${FQDN_IRIS_B}
+      Iris__SharedInboxIri: https://${FQDN_IRIS_B}/ap/v1/shared-inbox
+      ConnectionStrings__Iris: "Host=iris-b-db;Port=5432;Database=iris_b;Username=iris;Password=${IRIS_DB_PASS}"
+      Iris__Security__EnableAntiforgery: "false"
+      Iris__Dev__CacheBypass: "true"
+      Iris__MediaBlobDir: /data/media
+      HOME: /home/iris
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      # Reverse-proxy target for ${FQDN_IRIS_B} (443 -> host:${PORT_IRIS_B}).
+      - "${PORT_IRIS_B}:8080"
+    volumes:
+      - iris-b-media:/data/media
+      - iris-b-dp-keys:/home/iris/.aspnet/DataProtection-Keys
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 25s
+    networks: [federation-net]
+
+  # ───────────────────────────── Mastodon 4.7.2 ─────────────────────────────
+  mastodon-db:
+    image: postgres:16
+    container_name: ${ENV_PREFIX}-mastodon-db
+    environment:
+      POSTGRES_DB: mastodon_production
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: ${MASTODON_DB_PASS}
+    volumes:
+      - mastodon-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mastodon -d mastodon_production"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [federation-net]
+
+  mastodon-redis:
+    image: redis:7-alpine
+    container_name: ${ENV_PREFIX}-mastodon-redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [federation-net]
+
+  # One-shot DB bootstrap: the stock Mastodon image does NOT auto-migrate a fresh DB — `puma`
+  # crashes with `relation "users" does not exist`. db:prepare creates the DB if missing, loads the
+  # schema + runs pending migrations on a fresh volume, and is a NO-OP when already migrated
+  # (db:setup would DROP and recreate the DB on every run, wiping created accounts).
+  mastodon-dbinit:
+    image: ghcr.io/mastodon/mastodon:v4.7.2
+    container_name: ${ENV_PREFIX}-mastodon-dbinit
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "${FQDN_MASTODON}"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "${MASTODON_DB_PASS}"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "${MASTODON_SECRET_KEY_BASE}"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "${MASTODON_AE_DETERMINISTIC_KEY}"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "${MASTODON_AE_KEY_DERIVATION_SALT}"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "${MASTODON_AE_PRIMARY_KEY}"
+      RAILS_ENV: "production"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+      # RAILS_ENV=production is a "protected environment"; this one-shot is allowed to load the
+      # schema against it (bootstrap only — never used by the running web/sidekiq).
+      DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+    command: bundle exec rake db:prepare
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    networks: [federation-net]
+    restart: "no"
+
+  mastodon-web:
+    image: ghcr.io/mastodon/mastodon:v4.7.2
+    container_name: ${ENV_PREFIX}-mastodon-web
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "${FQDN_MASTODON}"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "${MASTODON_DB_PASS}"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "${MASTODON_SECRET_KEY_BASE}"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "${MASTODON_AE_DETERMINISTIC_KEY}"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "${MASTODON_AE_KEY_DERIVATION_SALT}"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "${MASTODON_AE_PRIMARY_KEY}"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      # FQDN (browser + WebFinger) + container name (intra-network health/probe) + localhost (local dial).
+      RAILS_ALLOWED_HOSTS: "${FQDN_MASTODON},${ENV_PREFIX}-mastodon-web,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+      # No SMTP server in this stack. ':test' makes Action Mailer a no-op so Devise's email
+      # "reachability" check passes — required for `tootctl accounts create` (and UI signup) without
+      # a mail relay. (REGISTRATION_OPEN is NOT a stock env var in v4.7; signups are gated by the DB
+      # Setting `registrations_mode`, not an env.)
+      SMTP_DELIVERY_METHOD: ":test"
+    command: bundle exec puma -C config/puma.rb
+    depends_on:
+      mastodon-dbinit:
+        condition: service_completed_successfully
+    # Internal-only: the mastodon-proxy front (host ${PORT_MASTODON}) forwards non-streaming traffic here.
+    networks: [federation-net]
+    volumes:
+      - mastodon-system:/mastodon/public/system
+
+  mastodon-sidekiq:
+    image: ghcr.io/mastodon/mastodon:v4.7.2
+    container_name: ${ENV_PREFIX}-mastodon-sidekiq
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "${FQDN_MASTODON}"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "${MASTODON_DB_PASS}"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "${MASTODON_SECRET_KEY_BASE}"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "${MASTODON_AE_DETERMINISTIC_KEY}"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "${MASTODON_AE_KEY_DERIVATION_SALT}"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "${MASTODON_AE_PRIMARY_KEY}"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_ALLOWED_HOSTS: "${FQDN_MASTODON},${ENV_PREFIX}-mastodon-sidekiq,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+    command: bundle exec sidekiq
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    networks: [federation-net]
+    volumes:
+      - mastodon-system:/mastodon/public/system
+
+  mastodon-streaming:
+    image: ghcr.io/mastodon/mastodon-streaming:v4.7.2
+    container_name: ${ENV_PREFIX}-mastodon-streaming
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "${FQDN_MASTODON}"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "${MASTODON_DB_PASS}"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "${MASTODON_SECRET_KEY_BASE}"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "${MASTODON_AE_DETERMINISTIC_KEY}"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "${MASTODON_AE_KEY_DERIVATION_SALT}"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "${MASTODON_AE_PRIMARY_KEY}"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_ALLOWED_HOSTS: "${FQDN_MASTODON},${ENV_PREFIX}-mastodon-streaming,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+    command: node ./streaming/index.js
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    # Internal-only: the mastodon-proxy front forwards /api/v1/streaming/ here.
+    networks: [federation-net]
+
+  # Mastodon front: the ONLY Mastodon service published to the host (${PORT_MASTODON}). Splits
+  # /api/v1/streaming/ -> mastodon-streaming:4000 (WebSocket/SSE) and everything else ->
+  # mastodon-web:3000 (REST + ActivityPub + SPA). Bakes mastodon-nginx.conf (this host can't
+  # bind-mount a file). No TLS here — the external proxy on the other server terminates it.
+  mastodon-proxy:
+    container_name: ${ENV_PREFIX}-mastodon-proxy
+    platform: linux/x86_64
+    build:
+      context: .
+      dockerfile: Dockerfile.mastodon-proxy
+    ports:
+      # External-proxy target for ${FQDN_MASTODON} (443 -> host:${PORT_MASTODON}).
+      - "${PORT_MASTODON}:8082"
+    depends_on:
+      - mastodon-web
+    networks: [federation-net]
+
+  # ───────────────────────────── Lemmy 0.19 ─────────────────────────────
+  lemmy-db:
+    image: postgres:16
+    container_name: ${ENV_PREFIX}-lemmy-db
+    environment:
+      POSTGRES_DB: lemmy
+      POSTGRES_USER: lemmy
+      POSTGRES_PASSWORD: ${LEMMY_DB_PASS}
+    volumes:
+      - lemmy-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lemmy -d lemmy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [federation-net]
+
+  lemmy:
+    # Bakes the config template with ${FQDN_LEMMY} + ${LEMMY_DB_PASS} substituted at build time
+    # (Dockerfile.lemmy). The config's database.host is the unprefixed `lemmy-db` (this project's
+    # network), so the same image works for dev and QA. Baked, not bind-mounted, because this host
+    # can't bind-mount a file onto a file.
+    build:
+      context: .
+      dockerfile: Dockerfile.lemmy
+      args:
+        LEMMY_HOSTNAME: ${FQDN_LEMMY}
+        LEMMY_DB_PASS: ${LEMMY_DB_PASS}
+    container_name: ${ENV_PREFIX}-lemmy
+    platform: linux/x86_64
+    environment:
+      RUST_LOG: "warn,lemmy_server=info,lemmy_apub=debug"
+      RUST_BACKTRACE: "1"
+    depends_on:
+      lemmy-db:
+        condition: service_healthy
+    # Internal-only: the lemmy-proxy front forwards /api/ + /.well-known/ + AP docs here.
+    networks: [federation-net]
+
+  lemmy-ui:
+    # Custom SSR image (lemmy/ui-proxy in the source tree) that patches the 0.19.20 SSR backend-URL
+    # bug. We override the public origin it bakes into HTML + browser-facing IRIs to ${FQDN_LEMMY},
+    # and the internal backend URL to the `lemmy` service name (plain HTTP on the project network).
+    build:
+      # Context = the ui-proxy dir itself (the Dockerfile's COPY uses bare filenames like
+      # `patch-lemmy-ui.js`, so they must sit at the context root).
+      context: ${REPO_ROOT}/lemmy/ui-proxy
+      dockerfile: Dockerfile
+      target: ui
+    container_name: ${ENV_PREFIX}-lemmy-ui
+    platform: linux/x86_64
+    environment:
+      # Plain HTTP on the project network, by service name (the patched X() uses this verbatim).
+      LEMMY_UI_LEMMY_INTERNAL_HOST: "http://lemmy:8536"
+      # The public origin the SSR bakes into the HTML (window.isoData.lemmy_external_host).
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: "https://${FQDN_LEMMY}"
+      # true -> SSR builds https:// URLs (the me() helper appends "s"). Required: the external proxy
+      # terminates TLS, so the browser must see https IRIs for federation to work.
+      LEMMY_UI_HTTPS: "true"
+    depends_on:
+      - lemmy
+    # Internal-only: the lemmy-proxy front forwards HTML + /static/* here.
+    networks: [federation-net]
+
+  # Lemmy front: the ONLY Lemmy service published to the host (${PORT_LEMMY}). Splits by path +
+  # Accept header: /api/ + /.well-known/ + Accept:activity+json|ld+json -> lemmy:8536 (backend);
+  # /static/* + everything else -> lemmy-ui:1234 (UI SSR). Bakes lemmy-nginx.conf (this host can't
+  # bind-mount a file). No TLS here — the external proxy on the other server terminates it.
+  lemmy-proxy:
+    container_name: ${ENV_PREFIX}-lemmy-proxy
+    platform: linux/x86_64
+    build:
+      context: .
+      dockerfile: Dockerfile.lemmy-proxy
+    ports:
+      # External-proxy target for ${FQDN_LEMMY} (443 -> host:${PORT_LEMMY}).
+      - "${PORT_LEMMY}:8082"
+    depends_on:
+      - lemmy
+      - lemmy-ui
+    networks: [federation-net]
+
+networks:
+  federation-net:
+    driver: bridge
+
+# Volume keys are env-neutral; the compose PROJECT name (-p dev / -p qa) scopes them into
+# dev_<name> / qa_<name>, so `down -v` in one environment never touches the other's data.
+volumes:
+  iris-a-db-data:
+  iris-a-media:
+  iris-a-dp-keys:
+  iris-b-db-data:
+  iris-b-media:
+  iris-b-dp-keys:
+  mastodon-db-data:
+  mastodon-system:
+  lemmy-db-data:

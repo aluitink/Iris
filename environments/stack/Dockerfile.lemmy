@@ -1,0 +1,33 @@
+# Lemmy image for the shared dev/QA federation stack.
+#
+# Bakes the config.hjson template with two values substituted at build time:
+#   --build-arg LEMMY_HOSTNAME=...   the public FQDN (dev: lemmy.luit.ink, qa: qa-lemmy.luit.ink)
+#   --build-arg LEMMY_DB_PASS=...    must match LEMMY_DB_PASS in the stack .env
+# The config's database.host is the unprefixed service name `lemmy-db` (project-scoped network),
+# so it is identical for dev and QA. Baked (not bind-mounted) because this host's Docker runtime
+# cannot bind-mount a file onto a file (verified).
+#
+# The stack's docker-compose.yml passes these build args from .env:
+#   build:
+#     context: .
+#     dockerfile: Dockerfile.lemmy
+#     args:
+#       LEMMY_HOSTNAME: ${FQDN_LEMMY}
+#       LEMMY_DB_PASS: ${LEMMY_DB_PASS}
+FROM dessalines/lemmy:0.19.20
+ARG LEMMY_HOSTNAME=lemmy.luit.ink
+ARG LEMMY_DB_PASS=lemmy-dev-pw
+# The base image has NO /config dir and runs as the non-root `lemmy` user (uid 1000). The original
+# `COPY ... /config/...` created /config owned by root (COPY always runs as root), so the subsequent
+# `RUN` (as `lemmy`) got "Permission denied" writing the final config. Fix: copy the template to
+# /tmp (world-writable), then, as root, create /config owned by `lemmy` and generate the config.
+COPY lemmy-config.hjson /tmp/config.hjson.template
+USER root
+RUN set -eu; \
+    mkdir -p /config; \
+    sed -e "s|__LEMMY_HOSTNAME__|${LEMMY_HOSTNAME}|g" \
+        -e "s|__LEMMY_DB_PASS__|${LEMMY_DB_PASS}|g" \
+        /tmp/config.hjson.template > /config/config.hjson; \
+    rm -f /tmp/config.hjson.template; \
+    chown -R lemmy:lemmy /config
+USER lemmy

@@ -1,0 +1,34 @@
+# Lemmy 0.19.20 server config TEMPLATE for the shared dev/QA federation stack.
+#
+# This is baked into the Lemmy image by Dockerfile.lemmy. Two values are substituted at BUILD time
+# from --build-arg (see Dockerfile.lemmy):
+#   __LEMMY_HOSTNAME__  -> the public FQDN (dev: lemmy.luit.ink, qa: qa-lemmy.luit.ink)
+#   __LEMMY_DB_PASS__   -> the Postgres password (must match LEMMY_DB_PASS in the stack .env)
+# Everything else is fixed. The `database.host` is the unprefixed compose service name `lemmy-db`
+# (project-scoped network), so it is identical for dev and QA and needs no substitution.
+{
+  hostname: "__LEMMY_HOSTNAME__"
+  bind: "0.0.0.0"
+  port: 8536
+  tls_enabled: true
+  database: {
+    host: "lemmy-db"
+    port: 5432
+    user: "lemmy"
+    password: "__LEMMY_DB_PASS__"
+    database: "lemmy"
+    pool_size: 10
+  }
+  pictrs: {
+    url: "http://127.0.0.1:1/"
+    image_mode: "None"
+  }
+  setup: {
+    admin_username: "lemmyadmin"
+    admin_password: "lemmy-interop-admin-pw"
+    site_name: "Iris Lemmy Interop"
+  }
+  federation: {
+    concurrent_sends_per_instance: 1
+  }
+}
