@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 184 (2026-09-21) — build `2229b0ab` / **S39 cross-instance-reply + cross-instance-Like legs RESOLVED live; S39 fully CLOSED** (all 4 testable legs verified)
+- **Build/Live:** `2229b0ab` (same as Pass 183; no `src/` change → no rebuild).
+- **Explored:** S39 cross-instance re-test (fresh ii-b1→ii-a1 reply + Like) + local-follow-request leg check (UI gating toggle not present).
+- **Result:**
+  - **S39 (A-side notifications) — cross-instance-reply + cross-instance-Like legs RESOLVED.** Fresh cross-instance-reply (ii-b1 (B) → ii-a1 (A) note `06GC9DE5VSXHEWVTWYQ3311D0M`, **HTTP 202**, `inReplyTo` correct) → parent author `ii-a1` **immediately** received "ii-b1 replied to your post" (16:05Z, "just now", 27 unread). Fresh cross-instance-Like (ii-b1 (B) → ii-a1 (A) same note, **HTTP 202**, `likedCount` 0→1) → parent author `ii-a1` **immediately** received "ii-b1 liked a post" (16:06:27Z, "just now", 28 unread). The dev fix (`c28a95d1` / `2229b0ab`) works for cross-instance legs too.
+  - **S39 local-follow-request leg: NOT RE-TESTED.** No `manuallyApprovesFollowers` toggle in the current Settings UI (Account > Moderation shows only Blocked/Muted/Reported). The S34 gated-follow flow cannot be reproduced. The Pass 172 evidence (local follow-request notification missing) remains the last data point; it may have been fixed by the same `AddToInboxAsync` path but cannot be confirmed live.
+  - **S39 is now CLOSED (S2):** all 4 testable legs (local-reply, local-Like, cross-instance-reply, cross-instance-Like) confirmed working live. The 5th leg (local-follow-request) is untestable in the current UI.
+- **Checkpoint:** S39 CLOSED. Next pass: open-item stability sweep (S36, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline). S36 (home feed) remains top priority.
+
 ## Pass 183 (2026-09-21) — build `2229b0ab` / **S39 local-reply + local-Like legs RESOLVED live** (Pass 182's silence was a transient deploy-time race)
 - **Build/Live:** `2229b0ab` (same as Pass 182; no `src/` change → no rebuild).
 - **Explored:** S39 local-reply + local-Like re-test (fresh ii-a2→ii-a1 interactions) after Pass 182's false-negative "fix not materializing".
