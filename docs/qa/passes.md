@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 249 (2026-09-21) — build `401c08b5` / WebFinger CORRECTION: standard path /.well-known/webfinger works (ii-a1, alice both 200); /ap/v1/webfinger is a different (unused) endpoint that 404s; NOT a defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A /.well-known/webfinger (standard ActivityPub path) for ii-a1 and alice.
+- **Result:**
+  - **/.well-known/webfinger?resource=acct:ii-a1@qa-iris-a.luit.ink:** 200 OK. `{"subject":"acct:ii-a1@qa-iris-a.luit.ink","links":[{"rel":"self","type":"application/activity+json","href":"https://qa-iris-a.luit.ink/ap/v1/u/ii-a1"}]}`.
+  - **/.well-known/webfinger?resource=acct:alice@qa-iris-a.luit.ink:** 200 OK. `{"subject":"acct:alice@qa-iris-a.luit.ink","links":[{"rel":"self","type":"application/activity+json","href":"https://qa-iris-a.luit.ink/ap/v1/u/alice"}]}`.
+  - **CORRECTION to Pass 248:** The standard WebFinger path (`/.well-known/webfinger`) works correctly. The `/ap/v1/webfinger` path that 404'd in Pass 248 is a different (non-standard) endpoint. WebFinger is NOT broken — federation is not affected.
+  - No new defects. Pass 248 observation retracted.
+- **Checkpoint:** WebFinger works (standard path). No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 248 (2026-09-21) — build `401c08b5` / NodeInfo + WebFinger: NodeInfo 200 (version 2.0, iris v1, 3 users, openRegistrations=false); WebFinger 404 for all actors (ii-a1, alice, admin) — potential S35-related issue
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A /ap/v1/nodeinfo/2.0; A /ap/v1/webfinger (multiple actors).
