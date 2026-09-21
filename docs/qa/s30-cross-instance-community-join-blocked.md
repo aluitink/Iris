@@ -1,7 +1,7 @@
 # S30 — Cross-instance community join/view is blocked (remote community unreachable from a peer instance)
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** **PARTIALLY FIXED (Pass 111, build `11fbec6`)** — the **direct-view facet (A8.2)** is fixed: `GET B /ap/v1/c/{name}` now serves the cached remote Group (200, remote IRIs) + B's UI renders the community page (Join / "Post to this community" / Feed / Members). The **community-feed facet (A8.4) is still OPEN**: `GET B /ap/v1/c/ii-a8-community/feed` → **404** (dev's `11fbec6` only fixed the `/c/{name}` direct-view, not the `/feed` endpoint). A8.3 (follow) was already working via the actor page.
+- **Status:** **PARTIALLY FIXED (Pass 136, build `f9ca2d2`)** — the **direct-view facet (A8.2)**, the **federated-community-discovery facet (A8.2)**, and **A8.3 (follow/join)** all now work: `GET B /ap/v1/c/{name}` serves the cached remote Group (200, `aebe420`); B's **Directory "All known" Communities tab + Search page** now **list the remote community** with a **Join** button (`f9ca2d2`); and **Join federates** the Follow to the owner (A's community `/followers` = ii-b1). The **community-feed facet (A8.4) is still OPEN**: `GET B /ap/v1/c/ii-a8-community/feed` → **404**, and there is **no compose UI to post into a community** (no community selector) — so community-post federation is the only remaining facet. **S30 now reduces to A8.4 community-post federation.**
 - **Found:** Interop suite A8 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S29](s29-community-webfinger-404.md) (community WebFinger 404) — S30 is the downstream consequence for **join/view** from a peer instance.
 
@@ -80,3 +80,15 @@ So dev's S30 fix served the remote community **doc** on B, but the **`/feed`** (
 **A8.3 (follow) — already working** (via the actor page, per the 2026-09-21 re-test above).
 
 **Verdict (build `11fbec6`): S30 PARTIALLY FIXED — A8.2 (direct-view) + A8.3 (follow) now work; A8.4 (community feed) still OPEN** (`/ap/v1/c/{name}/feed` 404s for a remote community). **Suggested dev follow-up:** make the community `/feed` endpoint resolve a remote (cached) community the same way the `/c/{name}` route now does. **Status: OPEN (narrowed) — A8.4 community feed.**
+
+## Re-test (Pass 136, 2026-09-21, build `f9ca2d2` — dev's S30 A8.2 discovery fix deployed)
+
+**Dev committed `f9ca2d2`: "S30 A8.2: 'All known' directory surfaces cached remote communities"** — `GlobalSearchService`'s mixed (`localOnly=false`) actor pass now merges the community-store cached remote community Groups (local communities excluded, de-duplicated, query-filtered; `localOnly=true` unchanged; the content pass excludes stored `Group`s so a community is surfaced exactly once). +3 tests; `Iris.Server.Tests` 1424 pass / 0 fail. Rebuilt + redeployed the QA cluster to `f9ca2d2`.
+
+**A8.2 (federated community discovery) — FIXED.** On B (ii-b1), the **Directory → Communities tab → "All known"** scope now lists **`ii-a8-community` / "II-A8 Test Community"** (Community, "QA community test") with a **Join** button — the exact facet that was **empty** before (a peer instance could not discover a remote community to join it). The **Search page** (`/search?q=ii-a8-community`) also surfaces it ("1 result(s)" — `c/ii-a8-community` → "II-A8 Test Community", linking to `/community?iri=…/c/ii-a8-community`).
+
+**A8.3 (join) — FIXED (federates).** Clicking **Join** on the directory entry federated the Follow to A — A's log: `Inbox received Follow …/ii-b1/follows/06GC5EPV… from …/ii-b1 to …/c/ii-a8-community` + `FollowActivityHandler processed … ok` + `Inbox accepted: Follow from …/ii-b1 targeting …/c/ii-a8-community`; and `GET A /ap/v1/c/ii-a8-community/followers` → totalItems=1, **ii-b1 present**. (A8.3 also works via the full-IRI actor page, per the 2026-09-21 re-test.)
+
+**A8.4 (community feed / post federation) — STILL OPEN.** `GET B /ap/v1/c/ii-a8-community/feed` → **404** (unchanged from Pass 111/118 — `f9ca2d2` fixed the *discovery* path, not the `/feed` endpoint), and there is **no compose UI to post into a community** (compose offers only Public/Followers/Direct, no community selector). So community-post federation remains the only unaddressed facet (a separate, larger surface, per dev's scope note in change doc 14827).
+
+**Verdict (build `f9ca2d2`): S30 PARTIALLY FIXED — A8.2 (direct-view + **federated discovery**) + A8.3 (follow/join) now work; A8.4 (community feed + post federation) still OPEN.** **S30 now reduces to A8.4 community-post federation.** **Status: OPEN (narrowed) — A8.4 community feed / post federation.**
