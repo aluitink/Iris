@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 121 (2026-09-21) — No new commit / no build change; cross-instance notification delivery re-verified → WORKS (B's fresh reply (Pass 120) + earlier boost/reply/like/follow all surface in A's ii-a1 notifications); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
+- **Explored:** Checked the **cross-instance notification** facet — does a remote (B) interaction surface in the local (A) author's notifications? Signed in to A as ii-a1 and opened `/notifications`.
+- **Result:** **Cross-instance notification delivery WORKS (no defect).** ii-a1's A notifications show the **fresh B reply from Pass 120** — "ii-b1 replied to your post — II-reply reverify S26 cross-instance threading (Pass 120, from B)" (with the parent context) — **plus** the earlier ii-b1 interactions: "boosted a post" (Pass-112 boost, "Boosted by ii-b1"), "replied to your post" (II-A5-3 / II-A5-1), "liked a post" (note `06GC3VAX`, Like button showing 1), "sent you a follow request". So the S26 reply fix **extends to notifications** (the reply Create is delivered + stored + surfaced in the author's notifications), and boost/reply/like/follow notifications from the remote peer all render correctly. **No new defect.**
+- **Checkpoint:** Cross-instance notification delivery re-verified (working) — S26 fix holds through to notifications. S36 still top priority (dev fix in progress — 296 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 120 (2026-09-21) — No new commit / no build change; re-verified S26 cross-instance reply threading → PASS (B reply federated to A with inReplyTo=A parent, A /replies totalItems=1); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
 - **Explored:** Ran a fresh **cross-instance reply** (S26) on the current build — B (ii-b1) replied to a live A note (`06GC4RR4`), then verified federation + threading.
