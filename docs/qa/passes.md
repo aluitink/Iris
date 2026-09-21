@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 222 (2026-09-21) — build `401c08b5` / Home feed "Content unavailable" = Tombstone (deleted note 06GC3AWS...); outbox has 5 Deletes, 4 references to the tombstoned note
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed "Content unavailable" Announce — traced the underlying note (06GC3AWSHG64NJHJ24EM27HZSW); A outbox Deletes.
+- **Result:**
+  - **Home feed "Content unavailable" Announce:** The Announce references note `06GC3AWSHG64NJHJ24EM27HZSW`. `GET /ap/v1/u/ii-a1/notes/06GC3AWS...` → **200, type: Tombstone** (no content). The note was **deleted** — the Announce is a "boost" of a deleted note, hence "Content unavailable".
+  - **A outbox:** 82 total items, **5 Delete activities**, **4 references** to the tombstoned note. The note was deleted (and the Delete federated).
+  - **S36 context:** The home feed shows **only** this Tombstone-Announce (no content Creates). The feed is not just "missing posts" — it's showing a boost of a deleted note. The actual content Creates (P211, P214, P215) are still absent from the feed.
+  - **S36 53rd consecutive** (home feed has no readable content — only a Tombstone-Announce).
+  - 0 console errors.
+- **Checkpoint:** Home feed "Content unavailable" = Tombstone (deleted note). The feed shows a boost of a deleted note, not a content post. S36 still OPEN (53rd consecutive). No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 221 (2026-09-21) — build `401c08b5` / S36 re-confirmed: A home feed = 1 unique item (duplicate "Content unavailable" Announce); B home feed = completely empty (52nd consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed (re-check, dedup); B home feed (re-check).
