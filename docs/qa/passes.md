@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 258 (2026-09-21) — build `401c08b5` / Actor page (UI): Posts tab shows 15 posts (all S36 test posts), Followers/Following tabs present; "Load more" button for pagination; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A actor page (UI) for ii-a1 — Posts, Followers, Following tabs.
+- **Result:**
+  - **Posts tab:** Shows 15 posts (all S36 test posts from the past 4 hours), each with Like/Boost/Reply buttons. "Load more" button present for pagination.
+  - **Followers/Following tabs:** Present in the tablist.
+  - **Profile header:** Avatar "I", handle "ii-a1", profile banner.
+  - **Navigation:** All nav links present (Home, New post, Notifications 3, Directory, Communities, Profile, Settings, Search, Log out).
+  - No new defects. Actor page works correctly.
+- **Checkpoint:** Actor page UI verified. Next: waiting for dev to fix S40 (private key leak) and S36 (home feed).
+
 ## Pass 257 (2026-09-21) — build `401c08b5` / Outbox embedded objects: Create activities embed full Note objects inline (no need to fetch separate note IRI); note IRI also 200 when fetched directly; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A outbox Create activities; embedded object structure; direct note IRI fetch.
