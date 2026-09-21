@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 229 (2026-09-21) — build `401c08b5` / A actor page + outbox: 46 Creates (43 Notes + 1 Article) in outbox, actor page shows P227/P226/P225; home feed shows 0 (60th consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A actor page for ii-a1 (own posts); A outbox (Create count); A home feed (re-check).
+- **Result:**
+  - **A actor page for ii-a1:** 16 items in Posts tab. P227 (3m ago), P226 (6m ago), P225 (11m ago), P215 (32m ago), P214 (41m ago) all visible. Actor page shows all own posts.
+  - **A outbox:** 86 total items, **46 Creates** (43 Notes + 1 Article + 2 other), 3 Announces. All posts are in the outbox.
+  - **A home feed:** 0 content posts (2 unique items: duplicate "Content unavailable" Tombstone-Announce + empty). **60th consecutive S36.**
+  - **Contrast:** Outbox has 46 Creates, actor page shows them all, but home feed shows **0** content posts. The home feed query is not reading from the outbox (or is filtering out all Creates).
+  - 0 console errors.
+- **Checkpoint:** A outbox has 46 Creates, actor page shows them, home feed shows 0. S36 60th consecutive. The gap is clear: outbox/actor-page have the data, home feed query doesn't retrieve it. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 228 (2026-09-21) — build `401c08b5` / P227 (Followers-only): search + object-detail + profile all show it; home feed omits (59th consecutive); 7/8 surfaces work, home feed is the only broken one
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A search for P227; A object-detail for P227; A home feed (re-check all recent posts).
