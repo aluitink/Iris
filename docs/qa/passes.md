@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 104 (2026-09-21) — S24 D1 refined via a FRESH follow (UI Following-tab defect, not a wire problem)
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
+- **Explored:** To disambiguate S24 D1, performed a **fresh Follow** (A `ii-a1` → B `ii-b1`), rather than relying on the prior unfollow/re-follow cycle's stale state.
+- **Result:** **S24 D1 refined to a UI rendering defect.** The **fresh follow materializes the wire edge correctly** — A `ii-a1/following` now = `[c/ii-a8-community, ii-b1@B]`, in sync with `followers` (`[ii-a2, ii-b1]`). So a clean follow works; the earlier "A `following` missing ii-b1" was a **stale-state artifact of the Undo cycle**. **But the Following tab STILL omits the remote ii-b1** (shows only the local community) **even with the wire correct** — while the **Followers tab renders ii-b1 fine**. → the **Following tab drops remote actors regardless of wire state** (a UI defect); the `following`/`followers` out-of-sync-after-Undo is a secondary, transient state-consistency gap. **S24 D1 OPEN (refined); D2 persists; D3 fixed.**
+- **Checkpoint:** S36 still top priority (home feed empty for own + followed posts; dev code pass on `FeedService.BuildFeedUncachedAsync`). S24 D1 now framed as a UI Following-tab remote-actor rendering defect (dev code pass on the Following-tab resolution/render — it resolves local + communities but drops remote persons, unlike the Followers tab). S28 re-verify deferred until the dev WIP fix is committed + deployed. M2–M12 + L2–L12 blocked on operator accounts. Merge blocked on dev's uncommitted WIP.
+
 ## Pass 103 (2026-09-21) — No build change; re-confirmed S36 (UI) + S24 D1 (wire) still open
 
 - **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (built 03:04Z, **unchanged since Pass 101**). Dev's S28 fix still in **uncommitted WIP** (not deployed) → nothing new to re-verify; merge still blocked on that WIP.
