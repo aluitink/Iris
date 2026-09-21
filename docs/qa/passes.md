@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 223 (2026-09-21) — build `401c08b5` / P223 (B→A) confirms S36 pattern (5th fresh post): notification inlines, AP 404, object-detail renders, home feed omits (54th consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh B post II-S36-P223 (note `06GCAVHY2NJCS32M66CV64J0V4`); A notification/AP route/object-detail/home feed for P223.
+- **Result:**
+  - **A notification:** P223 inlined (totalItems=32, 1 P223 notification).
+  - **A AP note route:** `GET /ap/v1/u/ii-b1/notes/06GCAVHY2NJCS32M66CV64J0V4` → **404** (object NOT in A's actor-keyed note store).
+  - **A object-detail:** renders P223 content ("I ii-b1 3m ago II-S36-P223 fresh B post...") — reads from notification store.
+  - **A home feed:** P223 NOT present (2 unique items: duplicate "Content unavailable" Tombstone-Announce + empty). **54th consecutive S36.**
+  - **Pattern stable across 5 fresh posts** (P206/P208/P209/P211 A→B; P212/P223 B→A). Same pattern in both directions: notification inlines, AP 404, object-detail renders, home feed omits.
+  - 1 console error (AP 404 on the note route — expected).
+- **Checkpoint:** P223 confirms S36 pattern (54th consecutive, 5th fresh post). Pattern fully stable bidirectionally. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 222 (2026-09-21) — build `401c08b5` / Home feed "Content unavailable" = Tombstone (deleted note 06GC3AWS...); outbox has 5 Deletes, 4 references to the tombstoned note
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed "Content unavailable" Announce — traced the underlying note (06GC3AWSHG64NJHJ24EM27HZSW); A outbox Deletes.
