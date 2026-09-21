@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 242 (2026-09-21) — build `401c08b5` / B notifications: P227 (Followers-only), P226 (Article), P225 (mention) all inlined ✓; B home feed still empty (S36 66th consecutive); notification system works on both instances
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** B notifications page (ii-b1); B home feed.
+- **Result:**
+  - **B notifications:** P227 (29m ago), P226 (32m ago), P225 (37m ago) all inlined ✓. Mention notification present (from P225 @ii-b1 mention).
+  - **B home feed:** Completely empty ("Your timeline is empty. Follow people to see their posts here.").
+  - **S36 66th consecutive.** P227 is Followers-only, P226 is Article, P225 has mention — all visible in B notifications but NOT in B home feed.
+  - **Notification system works on both instances** (A: Pass 233, B: this pass). Independent of home feed.
+  - 0 console errors.
+- **Checkpoint:** B notifications confirmed working (P227/P226/P225 inlined). S36 66th consecutive. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 241 (2026-09-21) — build `401c08b5` / S36 re-confirmed (65th consecutive) after re-login: A home feed = 1 Tombstone-Announce, no content posts; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Re-login as ii-a1 (after Pass 240 logout); A home feed.
