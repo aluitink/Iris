@@ -123,3 +123,11 @@ Dev's in-process code pass (commit `0ec58d3`) proved the server (`FeedService` �
 - **S24 D2 (foreign outbox) — bidirectional, stable:** A outbox: 28 creates / 8 foreign (3 pages). B outbox: 34 creates / 24 foreign (3 pages).
 - **S39 CLOSED holding:** local-reply notification confirmed working on the new build (ii-a2 reply → ii-a1 "replied to your post" notification, just now).
 - **Verdict:** S36 **STILL OPEN (S2, top priority)** on `8243361c`. The S39 dial-base fix did not affect the feed path (expected — different code path). The home-feed defect is unchanged: own content `Create`s are in the outbox but omitted from the feed query. **23rd consecutive pass confirming S36. Awaiting dev code pass on the feed query.**
+
+## Re-verification (Pass 189, 2026-09-21, build `8243361c`) — S36 B-side confirmation: fresh B post also absent from B's own feed (25th consecutive)
+
+- **Fresh ii-b1 post `II-S36-P189`** (posted 16:52Z, B-side). The note is in ii-b1's B outbox as a clean `Create`.
+- **ii-b1's own B feed OMITS the fresh post:** `GET B /ap/v1/u/ii-b1/feed` → HTTP 200, `totalItems`=20, page-1 type histogram: `Like`, `Follow`, `Undo` (all noise). **Zero `Create` items.** The fresh B post is **in the outbox but absent from the feed** — the S36 defect is **not A-specific**; it reproduces identically on B for a B-local post.
+- **B `/home` UI:** "Your timeline is empty. Follow people to see their posts here." (despite ii-b1 following ii-a1 and having their own posts).
+- **Significance:** this is the first explicit **B-side own-post** confirmation. Prior passes focused on A-side (ii-a1) + B-side remote (A posts not in B feed). Now: **B's own posts are also omitted from B's own feed** — the feed-query defect is symmetric across both instances.
+- **Verdict:** S36 **STILL OPEN (S2, top priority)**. 25th consecutive pass. The defect is confirmed on **both instances** (A: ii-a1 own posts omitted; B: ii-b1 own posts omitted) — not an A-side-specific or cross-instance delivery issue, but a **fundamental feed-query defect** that drops all content `Create`s from the home feed on both peers.
