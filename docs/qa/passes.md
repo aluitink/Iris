@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 215 (2026-09-21) — build `401c08b5` / Directory "All known" still FIXED (401c08b5 refine); S36 home feed still OPEN (49th consecutive; P215 own post NOT in feed)
+- **Build/Live:** `401c08b5` (NEW — dev committed directory refine: "refine IsSameInstanceActor to distinguish stale local rows from remote peers"). Rebuilt + redeployed the QA cluster (containers recreated; A + B health 200).
+- **Explored:** Directory "All known" on A + B (post-rebuild); A home feed for P215 (fresh own post).
+- **Result:**
+  - **Directory "All known" still FIXED (401c08b5):**
+    - **A directory "All known":** 65 cards, ii-b1 present (Unfollow).
+    - **B directory "All known":** 54 cards, ii-a1 + ii-a2 present.
+    - The refine commit (`401c08b5`) did not break the fix. Directory "All known" remains working bidirectionally.
+  - **Home feed STILL EMPTY (S36, 49th consecutive):**
+    - P215 (A's own post, note `06GCAR9D4QQ6KMV6CRKYQTSA5W`) posted.
+    - A home feed: 3 items — 2 "Content unavailable" Announces (ii-b1 boosting old A notes) + 1 empty. **P215 NOT in A's home feed.**
+    - The directory refine (`401c08b5`) did NOT address the home feed query. S36 remains OPEN.
+  - 0 console errors.
+- **Checkpoint:** Directory "All known" still FIXED (401c08b5). S36 home feed still OPEN (49th consecutive; P215 own post not in feed). Dev still needs to fix the home feed query (`FeedService`). Next: no new S36 angles until dev ships a feed fix.
+
 ## Pass 214 (2026-09-21) — build `48a3b3eb` / Directory "All known" FIXED (48a3b3eb): remote actors now listed bidirectionally (A: 65 cards incl ii-b1; B: 54 cards incl ii-a1+ii-a2); home feed still empty (P214 own post NOT in feed)
 - **Build/Live:** `48a3b3eb` (NEW — dev committed directory fix: "keep remote actors with preferredUsername in 'All known' scope"). Rebuilt + redeployed the QA cluster (containers recreated; A + B health 200).
 - **Explored:** Directory "All known" on A + B (post-rebuild); A home feed for P214 (fresh own post).
