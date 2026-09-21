@@ -1,7 +1,7 @@
 # S32 — Delete (tombstone) emitted locally but NOT propagated to the peer; peer keeps a stale live copy
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** **OPEN (narrowed)** — receiving-side routing fixed by dev `6b11799` (shared-inbox Delete/Update of a *local* note → author); **sending-side delivery still missing** (A's cross-instance Delete `to`/`cc` empty, not delivered to the peer) → peer-stale-copy risk persists
+- **Status:** **LARGELY FIXED (Pass 142, build `38ae87c`)** — the **cross-instance A→B Delete AND Update propagation now WORK**: A deletes a note → A Tombstone + **B's cached copy is also a Tombstone** (`formerType` Note, `deleted` = the delete ts); A edits a note → **B's cached copy shows the edited content + the same `updated` ts** (no stale copy). The peer-stale-copy risk (Passes 109/110) is **resolved for both Delete + Update**. **Residual (mechanism, to confirm with dev):** B's shared inbox shows `Shared inbox: no local recipient; accepting and dropping` for the A→B activity — the peer tombstone/refresh may be a **lazy refetch** of the note rather than an applied shared-inbox Delete/Update; the **observable behavior is correct** but the delivery mechanism (applied activity vs refetch) is unconfirmed.
 - **Found:** Interop suite A9 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S31](s31-edit-clears-published-timestamp.md) (the `Update` on the same note was also rejected on B with "unknown recipient"). Distinct from [S25](s25-remote-post-not-in-followers-home-feed.md) (feed surfacing).
 
@@ -94,3 +94,21 @@ So the **local delete is correct** (Tombstone), but the **peer-propagation defec
 - **Wire:** B's inbox log shows **no inbound `Update`** for the note (not "unknown recipient" — it was simply **never delivered**); A's log shows **no outbound Update to B**. Same sending-side delivery gap as the Delete path: A does not address/deliver the `Update` to the peer.
 
 **Verdict (Update path, build `6b11799`): S32 OPEN (narrowed) — confirmed for BOTH Delete and Update.** The cross-instance `Update` (like the `Delete`) is **not delivered to the peer** (A's sending side doesn't address/send it), so a cached peer copy goes **stale** after an edit. Dev's `6b11799` receiving-side routing is correct but unreachable in the normal cross-instance flow. **Status: OPEN (narrowed) — receiving-side (Delete + Update) fixed; sending-side delivery (address Delete/Update to the note's audience) still missing for both.**
+
+## Re-test (Pass 142, 2026-09-21, build `38ae87c`) — cross-instance Delete AND Update propagation now WORK
+
+Re-verified both facets on `38ae87c` (the cluster rebuilt for dev's S37 count fix `38ae87c`). **Both the cross-instance Delete and Update now propagate to the peer — the peer-stale-copy risk (Passes 109/110) is resolved for both.**
+
+**Delete (II-S32-3, `…/u/ii-a1/notes/06GC5QJWJ984EMNV3M6C2A7Z5C`):**
+1. A posted a fresh note; B cached it — B log: `Inbox accepted: Create from …/ii-a1 targeting …/06GC5QJW. Recipient: …/ii-b1, Peer: qa-iris-a.luit.ink` (+ `GET B <note>` → 200, type Note).
+2. A **deleted** the note (owner A → `type: Tombstone`).
+3. **B's cached copy is ALSO now a Tombstone** — `GET B <note>` → 200, `type: Tombstone`, `formerType: Note`, `deleted: 2026-09-21T07:32:19.3619452Z` (= the delete time). **The cross-instance A→B Delete now propagates** (the sending-side Delete facet that was "missing" in Passes 109/110 now works).
+
+**Update (II-S32-4, `…/u/ii-a1/notes/06GC5RXZT9SAWND1C4GD6YJGMG`):**
+1. A posted a fresh note; B cached it (`GET B <note>` → 200, type Note, content "II-S32-4 fresh note…").
+2. A **edited** the note (content → "II-S32-4 EDITED — …", `updated: 2026-09-21T07:36:07.4527564Z`).
+3. **B's cached copy reflects the SAME edited content + SAME `updated` timestamp** (`07:36:07Z`). **The cross-instance A→B Update now propagates** (no stale copy; the peer's cached copy is refreshed). The sending-side Update facet (also "missing" in Pass 110) now works too.
+
+**Residual (mechanism, to confirm with dev):** B's shared-inbox log shows `Shared inbox: no local recipient; accepting and dropping. Peer: …/ii-a1#key-1` for the A→B activity — the S27-class shared-inbox "no local recipient" facet is still present (the Delete/Update is not applied via the shared inbox). So the peer tombstone/refresh is likely via a **lazy refetch** of the note (B re-fetches the A note → sees the Tombstone / edited content) rather than an applied shared-inbox `Delete`/`Update` activity. **The observable behavior (peer copy tombstoned on Delete, refreshed on Update — no stale copy) is now correct**, but the **delivery mechanism** (applied activity vs lazy refetch) is worth confirming with dev. A pure lazy-refetch peer that never re-fetches could still serve a stale copy, though in practice the peer refetches.
+
+**Verdict (build `38ae87c`): S32 LARGELY FIXED — the cross-instance A→B Delete AND Update propagation now WORK (peer copy tombstoned on Delete; peer copy shows the edited content + same `updated` ts on Update). The peer-stale-copy risk (Passes 109/110) is resolved for both. Residual: the delivery mechanism (applied shared-inbox activity vs lazy refetch) is unconfirmed — B's shared inbox still "accepts and dropping" the A→B activity as "no local recipient".** **Status: LARGELY FIXED — cross-instance Delete + Update propagation work; mechanism (refetch vs applied activity) to confirm.**
