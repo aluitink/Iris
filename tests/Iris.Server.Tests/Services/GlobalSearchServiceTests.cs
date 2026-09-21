@@ -389,6 +389,71 @@ public sealed class GlobalSearchServiceTests
         Assert.Contains(staleIri.Value, mixed);
     }
 
+    // --- S30 (A8.2): the "All known" communities facet surfaces cached remote communities ----
+
+    [Fact]
+    public async Task Search_AllKnownCommunities_SurfacesCachedRemoteGroup_NotLocal()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        // A LOCAL community (provisioned, instance-base IRI) lives in the community store.
+        await PutCommunityAsync(persistence, "local-comm", $"https://{AHost}/ap/v1/c/local-comm", local: true);
+        // A CACHED REMOTE community (Group) persisted to the community store during federation.
+        await PutCommunityAsync(persistence, "ii-comm", "https://remote.example/ap/v1/c/ii-comm", local: false);
+
+        var service = new GlobalSearchService(persistence, new Iri($"https://{AHost}"));
+
+        // The Directory "All known" communities tab (type=Actor, localOnly=false) lists the actor + the
+        // cached REMOTE community — but NOT the local community (it is "All on this instance", not
+        // "all known"). Before the S30 fix the remote group was absent → the tab was empty.
+        var allKnown = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, allKnown.Length);
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice", allKnown);
+        Assert.Contains("https://remote.example/ap/v1/c/ii-comm", allKnown);
+        Assert.DoesNotContain($"https://{AHost}/ap/v1/c/local-comm", allKnown);
+
+        // "This instance" (localOnly=true) lists only the local actors — the cached remote community and
+        // the local community are both excluded (the community-store merge is skipped for localOnly).
+        var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_AllKnownCommunities_QueryMatchesRemoteCommunityByName()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutCommunityAsync(persistence, "ii-comm", "https://remote.example/ap/v1/c/ii-comm", local: false);
+
+        var service = new GlobalSearchService(persistence, new Iri($"https://{AHost}"));
+
+        // A query matching the cached remote community's name/IRI surfaces it in the mixed path.
+        var byName = (await service.SearchAsync("ii-comm", type: "Actor")).Select(ToId).ToArray();
+        Assert.Contains("https://remote.example/ap/v1/c/ii-comm", byName);
+
+        // A query matching nothing matches neither the actor nor the cached community.
+        Assert.Empty(await service.SearchAsync("zzz-nonexistent", type: "Actor"));
+    }
+
+    [Fact]
+    public async Task Search_AllKnownCommunities_NoDoubleCounting_WhenCommunityAlreadyInActorStore()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // A community stored in BOTH the actor store and the community store must surface exactly once.
+        var communityIri = "https://remote.example/ap/v1/c/ii-comm";
+        await persistence.ActorStore.PutActorAsync(new Group
+        {
+            Id = communityIri,
+            Name = ["II Comm"],
+        });
+        await PutCommunityAsync(persistence, "ii-comm", communityIri, local: false);
+
+        var service = new GlobalSearchService(persistence, new Iri($"https://{AHost}"));
+
+        var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(1, all.Count(i => i == communityIri));
+    }
+
     // --- A no-match query returns nothing -------------------------------------------------
 
     [Fact]
@@ -452,6 +517,27 @@ public sealed class GlobalSearchServiceTests
             Id = iri.Value,
             Name = [name],
         });
+    }
+
+    /// <summary>
+    /// Stores a community (<see cref="Group"/>) in the community store — the durable store a local
+    /// community is provisioned into and a CACHED remote community is persisted into by
+    /// <c>RemoteCommunityPersister</c>. A Group is not an <see cref="Actor"/>, so it is invisible to the
+    /// actor-store search pass; the S30 "All known" communities facet is what surfaces it.
+    /// </summary>
+    private static Task PutCommunityAsync(InMemoryPersistenceProvider persistence, string name, string iri, bool local)
+    {
+        var group = new Group
+        {
+            Id = iri,
+            Name = [name],
+        };
+        if (local)
+        {
+            group.PreferredUsername = name;
+        }
+
+        return persistence.Communities.PutCommunityAsync(group);
     }
 
     private static Task PutNoteAsync(InMemoryPersistenceProvider persistence, string noteId, string content)

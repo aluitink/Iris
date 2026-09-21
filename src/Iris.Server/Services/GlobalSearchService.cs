@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Services;
@@ -130,16 +131,39 @@ public sealed class GlobalSearchService : IGlobalSearchService
             }
 
             actorMatches = rawActors.Cast<IObjectOrLink>().ToList();
+
+            // S30 (A8.2 — federated community discovery): the Directory's "All known" communities tab
+            // (and the Search page, both localOnly=false) must list every community the instance knows.
+            // Local communities live in the community store (provisioned, with an instance-base IRI) and
+            // a CACHED remote community Group is ALSO persisted there — by RemoteCommunityPersister, via
+            // the actor-document fetch path — but a Group is NOT an Actor, so it is absent from the actor
+            // store the pass above reads. Without this the "All known" communities surface is empty for a
+            // peer instance (the exact S30 A8.2 symptom: B cannot discover A's community to join it).
+            // Merge the community-store Groups into the actor results: a local community (IRI on the
+            // instance base) is excluded (it is listed by the Communities page's "All on this instance"
+            // tab, not the federated directory), a cached remote community is kept, and a duplicate of a
+            // row the actor store already surfaced is dropped. localOnly=true ("This instance") skips the
+            // merge entirely (a remote community is, by definition, not on this instance).
+            if (!localOnly)
+            {
+                actorMatches.AddRange(
+                    await GetCachedRemoteCommunitiesAsync(rawActors, normalized, ct).ConfigureAwait(false));
+            }
+
             actorTotal = actorMatches.Count;
         }
 
         // Content pass: load all matching content, apply the audience/visibility filter, then the type
-        // filter. The total is the count of the visible, type-matching content.
+        // filter. The total is the count of the visible, type-matching content. A stored actor (a
+        // <c>Person</c>/<c>Organization</c> — matched by the actor pass) is excluded, as is a stored
+        // community <c>Group</c> (S30 A8.2: a community is surfaced by the actor pass via the
+        // community-store merge, not duplicated as content).
         var contentMatches = new List<IObject>();
         if (contentPass)
         {
             var contentAll = await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false);
             contentMatches = contentAll
+                .Where(o => o is not Group)
                 .Where(o => VisibilityFilter.IsVisibleTo(o, requesterIri))
                 .Where(o => !hasType || ItemMatchesType(o, typeFilter!))
                 .ToList();
@@ -184,6 +208,71 @@ public sealed class GlobalSearchService : IGlobalSearchService
             .ToList();
 
         return (matches, matches.Count);
+    }
+
+    /// <summary>
+    /// S30 (A8.2): returns the CACHED REMOTE community Groups that the instance knows (persisted to the
+    /// community store by <c>RemoteCommunityPersister</c> during federation) and that are not already in
+    /// <paramref name="rawActors"/>. A local community (IRI on the instance base) is excluded — it is
+    /// listed by the Communities page's "All on this instance" tab, not the federated directory. This is
+    /// the "All known" communities facet: a peer instance can discover (and therefore join/follow) a
+    /// remote community it has cached, instead of the tab being empty.
+    /// </summary>
+    /// <param name="rawActors">The actor-store matches for this query (used only to de-duplicate by IRI
+    /// — a community already surfaced there is not re-added).</param>
+    /// <param name="query">The normalized (trimmed) query, or null/whitespace for "list everything". A
+    /// community matches when its <c>name</c>, <c>preferredUsername</c>, or IRI contains the query — the
+    /// same case-insensitive substring rule the actor pass applies. This keeps a no-match query empty
+    /// (a community is never surfaced when nothing matches it).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task<IReadOnlyList<IObjectOrLink>> GetCachedRemoteCommunitiesAsync(
+        IReadOnlyList<Actor> rawActors,
+        string? query,
+        CancellationToken ct)
+    {
+        var instancePrefix = _instanceBase?.Value.TrimEnd('/');
+        var existing = new HashSet<string>(
+            rawActors.Select(a => a.Id ?? string.Empty),
+            StringComparer.OrdinalIgnoreCase);
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var results = new List<IObjectOrLink>();
+        foreach (var communityIri in await _persistence.Communities.GetAllCommunityIrisAsync(ct).ConfigureAwait(false))
+        {
+            // A local community (IRI on the instance base) is not "all known" — it is this instance's own
+            // community, listed elsewhere. When the instance base is unknown, the community store is
+            // consulted as-is (the same conservative stance the actor pass takes).
+            if (instancePrefix is { Length: > 0 } prefix
+                && communityIri.Value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // De-duplicate against what the actor store already surfaced (and against ourselves) so a
+            // community cannot appear twice in the same result.
+            if (!added.Add(communityIri.Value) || existing.Contains(communityIri.Value))
+            {
+                continue;
+            }
+
+            if (!await _persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+                || community is null)
+            {
+                continue;
+            }
+
+            // Apply the query filter in-memory (the community store has no query-search): a community is
+            // surfaced only when the query matches its name / preferredUsername / IRI (an empty query
+            // matches everything, mirroring the actor pass).
+            if (!string.IsNullOrWhiteSpace(query) && !MatchesActor(community, query.Trim()))
+            {
+                continue;
+            }
+
+            results.Add(community);
+        }
+
+        return results;
     }
 
     /// <summary>
