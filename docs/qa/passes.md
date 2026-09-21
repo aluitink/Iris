@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 218 (2026-09-21) — build `401c08b5` / Search for remote community works on both A + B (1 result each); profile Following/Followers tabs work (remote actors present)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Search for ii-a8-community on A + B; A profile Following + Followers tabs.
+- **Result:**
+  - **Search for ii-a8-community:** 1 result on both A and B (ii-a8-community, II-A8 Test Community, QA community test). Remote community discovery via search works bidirectionally.
+  - **A profile (ii-a1) Following tab:** ii-a8-community (local, Unfollow) + **ii-b1** (remote, Unfollow). Both present.
+  - **A profile (ii-a1) Followers tab:** **ii-b1** (remote, Unfollow) + ii-a2 (local, Follow). Both present.
+  - **Profile tabs work correctly:** Following and Followers tabs render both local and remote actors/communities.
+  - 0 console errors.
+- **Checkpoint:** Search for remote community works (A + B). Profile Following/Followers tabs work (remote actors present). No new defects. S36 home feed still OPEN. Next: no new angles.
+
 ## Pass 217 (2026-09-21) — build `401c08b5` / Notifications work (P212 inlined); Communities page: A has ii-a8-community, B has none; no "All known" scope on Communities page
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A notifications; A Communities page; B Communities page.
