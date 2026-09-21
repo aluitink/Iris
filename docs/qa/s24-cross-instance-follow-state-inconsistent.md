@@ -134,3 +134,10 @@ Performed a **fresh Follow** (not relying on the prior cycle's state): as `ii-a1
 **D2 (foreign activities in the local actor's outbox) STILL OPEN** (re-confirmed Pass 114): `GET A /ap/v1/u/ii-a1/outbox` contains **3 foreign (B) activities** (Announce + Create + Follow, actor `ii-b1`) — a remote actor's activities leaking into the local actor's outbox (outbox-integrity defect).
 
 **Verdict (current build): S24 PARTIALLY FIXED — D1 (Following-tab remote-actor rendering) + D3 (remote-actor GET) now work; D2 (foreign activities in local outbox) is the remaining open facet.** **Status: OPEN (narrowed) — D2 only.**
+
+## Re-test (Pass 154, 2026-09-21, build `38ae87c`) — D2 still OPEN and WORSE
+
+- **D2 (foreign activities in the local actor's outbox): STILL OPEN, and the count has GROWN.** `GET A /ap/v1/u/ii-a1/outbox` → `totalItems` = **49**; the first page (20 items) contains **14 foreign (ii-b1) items** (was 6 in Pass 144; 3 in Pass 116). Type mix on the page: 11 Create + 3 Update + 2 Follow + 1 Delete + 2 Announce + 1 Like, of which 14 reference ii-b1. The outbox-integrity defect (a remote actor's activities leaking into the local actor's outbox) is **persistent and accumulating** — foreign items keep being added on every cross-instance interaction, and they are not cleaned up.
+- D1 (Following-tab remote-actor rendering) + D3 (remote-actor GET) remain fixed (no regression observed).
+
+**Verdict (build `38ae87c`): S24 PARTIALLY FIXED — D1 + D3 fixed; D2 (foreign activities in local outbox) still OPEN and the foreign-item count has grown to 14 on the first page (was 6).**

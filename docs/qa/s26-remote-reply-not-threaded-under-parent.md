@@ -55,3 +55,8 @@ The cross-instance reply is now threaded under the parent. (Note: A5's UI-surfac
 - A object-detail UI (as ii-a1) renders the reply nested under the parent ("In reply to ii-a1").
 
 Cross-instance reply threading is correct. **S26: FIXED (not reproduced on the 2026-09-21 fresh cluster).**
+
+## Re-test (Pass 154, 2026-09-21, build `38ae87c`) — S26 re-confirmed FIXED
+
+- The existing cross-instance reply **II-S26-5** (B note `…/ii-b1/notes/06GC6337X9…`, `inReplyTo` = A parent `…/ii-a1/notes/06GC5MR7…`, `attributedTo` = ii-b1) is still threaded correctly on `38ae87c`: `GET A <parent Note>/replies` → `totalItems`=1, `orderedItems` **includes** the remote reply IRI `06GC6337X9` (the B reply), `inReplyTo` intact.
+- **S26: FIXED (re-confirmed on `38ae87c`).**
