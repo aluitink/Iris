@@ -57,3 +57,9 @@ The **asymmetry** is the strongest signal: if the A-side notification *query* we
 - **Mention not resolved:** the `@ii-a1` mention in both replies did not resolve to a `Mention` tag (`tags=[]`, `to=[Public]`), though the replies are threaded under the parent via `inReplyTo`.
 
 **S39 OPEN (S2) — A-side author notifications are missing (local Like, local reply, and cross-instance reply all silent for ii-a1) while the B-side author receives the equivalent A-side interactions (22 notifications). The asymmetry + S36's A→B delivery-to-cache failure indicate a directional inbound-delivery / shared-inbox gap. Awaiting a dev code pass to distinguish "B→A activity not stored in A's inbox" from "stored but filtered by the notification query", plus a fix for the local Like/reply notification leg.**
+
+## Re-verification (Pass 159, 2026-09-21, build `38ae87c`) — fresh local-Like facet
+
+- **Fresh local-Like repro (ii-a2 → ii-a1, same instance A):** as **ii-a2** (A) Liked ii-a1's note `06GC5MR7` (II-S37-5) via the object-detail Like button. The note's wire `…/ns#likedCount` went **1 → 2** + `…/ns#score` **1 → 2** (ii-a2's local Like **materialized immediately** — confirms the S37/S28 count fix holds for a 2nd, local, same-instance Like).
+- **A-side still silent:** `GET A /local/v1/notifications?limit=10&offset=0` (auth ii-a1) → **`totalItems=0`, items 0** (unchanged from Pass 157/158). A same-instance Like produces a **count** but **no notification for the author**.
+- **Verdict:** S39 **local-Like notification leg** confirmed OPEN with a clean fresh repro (independent of the cross-instance reply evidence in Pass 157). The author-notification inbound path is broken for **local Likes** too — not just cross-instance. S39 stays OPEN (S2).
