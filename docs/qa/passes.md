@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 128 (2026-09-21) — No new commit / no build change; S27 (remote Like applied on author) re-verified → FIXED (holding): B (ii-b1) Liked A note `06GC48G96` — A log Like received+processed+accepted, `/likes` totalItems=1; S37 count facet re-confirmed (wire likedCount/likes.totalItems None). S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (~688 test lines across 3 files, no `src/` fix); QA cluster unchanged.
+- **Explored:** Re-verified **S27** (remote Like applied on author) + re-confirmed the **S37 count facet** with a fresh cross-instance Like — B (ii-b1) Liked A's note `06GC48G96` ("II-A7-3").
+- **Result:** **S27 re-verified FIXED (holding).** A's log: `Inbox received Like …/ii-b1/likes/06GC594K… from …/ii-b1 to …/ii-a1` + `LikeActivityHandler processed … ok` + `Inbox accepted: Like from …/ii-b1 targeting …/ii-a1/notes/06GC48G96…`. And `GET A <note>/likes` → totalItems=**1** (the Like IS registered + retrievable). **S37 count facet re-confirmed OPEN:** the note's wire `likedCount` = **None** + embedded `likes.totalItems` = **None** (not materialized), while `/likes`=1. So the remote Like is stored + retrievable, but the denormalized count isn't surfaced (consistent with Passes 107/115/117).
+- **Checkpoint:** S27 re-verified FIXED (holding). S37 count facet re-confirmed OPEN. S36 still top priority (dev fix in progress — ~688 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S38 (webfinger) open. S31 + S33 re-confirmed FIXED. M2–M12 + L2–L12 blocked.
+
 ## Pass 127 (2026-09-21) — No new commit / no build change; S33 (unfollow Undo propagates cross-instance) re-verified → FIXED (holding) (B unfollowed ii-a1; A log Undo received+processed+accepted, ii-a1 A /followers no longer includes ii-b1); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (~688 test lines across 3 files, no `src/` fix); QA cluster unchanged.
 - **Explored:** Re-verified **S33** (unfollow `Undo` propagates cross-instance) with a fresh unfollow — B (ii-b1) unfollowed ii-a1 (A).
