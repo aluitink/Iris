@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 175 (2026-09-21) — No `src/` change / cluster unchanged (`4431006`, healthy). Open-item stability sweep — **all open items STABLE (15th consecutive stable pass for S36/S39/S24 D4/S38; S24 D2 flat at 63/7)**
+- **Build/Live:** No `src/` change since `4431006` → no rebuild. QA cluster unchanged (build `4431006`; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a2 following=2).
+- **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28).
+- **Result:**
+  - **S36 (home feed) STILL OPEN (top priority).** Home feed still boost-wrapper only, no own content (unchanged, 15th consecutive stable).
+  - **S39 (A-side notifications) STILL OPEN.** ii-a1 `/local/v1/notifications` → `totalItems=0` (unchanged, 15th consecutive stable; re-confirmed Pass 174 with fresh local Like).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN (flat).** `GET A /u/ii-a1/outbox` → `totalItems`=**63** (flat vs Pass 174); page 1 = **7 foreign (ii-b1)** items (flat) → no new accumulation this pass.
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** `GET A /u/ii-b1` doc = **200**; `/outbox` = **404**; `/followers` = **404** (own-instance control = 200).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (own-instance control = 200).
+  - **S33 remains RE-OPENED (Pass 171).** S30/S26/S31/S29/S32/S34/S27 hold.
+
 ## Pass 174 (2026-09-21) — No `src/` change / cluster unchanged (`4431006`, healthy). Open-item sweep + **fresh S39 (local Like) re-test — S39 STILL OPEN** (ii-a1 notifications = 0 after fresh local Like from ii-a2; the 22 notifications seen in Pass 173's sweep were a transient/cache artifact, not a fix); S36 still reproduces; S24 D2 continues to accumulate (63/7); other open items STABLE
 - **Build/Live:** No `src/` change since `4431006` → no rebuild. QA cluster unchanged (build `4431006`; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a2 following=2).
 - **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28) + **fresh S39 (local Like) re-test** (ii-a2 (A) Liked ii-a1's note `06GC6BCF` → ii-a1 `/local/v1/notifications` checked).
