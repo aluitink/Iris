@@ -16,6 +16,7 @@
 
 ### 1. Confirm good state
 
+- **Pull latest first.** `git pull --rebase` (or `git fetch && git rebase` if the branch is tracking a remote). This picks up QA doc changes (`docs/qa/`, PLAN.md QA-owned sections) and any other commits on the branch. If the pull/rebase fails (conflict, network), log it in Paused Questions and **end this turn** — do not work on a stale or conflicted tree.
 - Run `dotnet build` and the **fast** test set (`dotnet test --filter "Category!=Slow"` — see PLAN.md *Test runs*). A SubAgent may run and summarize; fixes happen in the main loop.
 - **If failures:** fix *only* the breakage, re-run until green (max 2 repair attempts), commit as `fix: repair broken state from previous turn`, then **end this turn**. No new work.
 - **If still failing after 2 attempts:** write a `BLOCKED` note in PLAN.md's Active Slice describing the failure, commit, and end this turn.
@@ -24,9 +25,10 @@
 
 1. **Inbox first.** If PLAN.md's Inbox has an unactioned entry and no slice is in progress, action the oldest entry before pulling anything else. (If a slice *is* in progress, finish it first — the Inbox entry waits one more turn; it stays in the Inbox until actioned.)
 2. **QA re-verify debt first (after Inbox).** If PLAN.md's **Re-verify** list is non-empty, work it *before* new feature scope — these are already-committed fixes the QA loop is waiting on. Rebuild + redeploy, flip the finding's status with the QA loop, and clear the list.
-3. **Then the Dev Queue**, top to bottom (it is kept sorted: blockers → S2-sev QA fixes → feature scope).
-4. **Replenish before selecting:** if the Dev Queue has fewer than ~3 items, pull the next slice(s) from the relevant [docs/plans/](../plans/) deep-dive doc, or expand the next phase from [ROADMAP.md](../ROADMAP.md) into concrete slices. Do this *before* selecting, not as an afterthought.
-5. **If everything is exhausted:** define the next phase (later phases are expected to start as a one-line placeholder), add it to ROADMAP.md, seed the Dev Queue with its first slices, commit, end the turn.
+3. **New QA findings (after re-verify debt).** Check `docs/qa/` for S-numbered finding docs that are **not** yet reflected in the Dev Queue (a new S-number, or an existing S-number whose status changed from `OPEN` to a new facet). For each, read the finding, add it to the Dev Queue at the right priority (blockers → S2 → S3), and note the S-number in the queue entry. This is the formal "pull for QA changes" step — it runs every turn so new findings are triaged within one loop iteration.
+4. **Then the Dev Queue**, top to bottom (it is kept sorted: blockers → S2-sev QA fixes → feature scope).
+5. **Replenish before selecting:** if the Dev Queue has fewer than ~3 items, pull the next slice(s) from the relevant [docs/plans/](../plans/) deep-dive doc, or expand the next phase from [ROADMAP.md](../ROADMAP.md) into concrete slices. Do this *before* selecting, not as an afterthought.
+6. **If everything is exhausted:** define the next phase (later phases are expected to start as a one-line placeholder), add it to ROADMAP.md, seed the Dev Queue with its first slices, commit, end the turn.
 
 A slice must be **vertically complete**: implementation + its tests. Coverage expectations are part of the item, not a follow-up.
 
@@ -44,6 +46,7 @@ A slice must be **vertically complete**: implementation + its tests. Coverage ex
   - No dependency-direction violations (`Iris.Core` never references `Iris.Client`/`Iris.Server`; no upward dependencies).
   - No new NuGet packages without a note in PLAN.md's Active Slice (or the change doc) and a justification.
 - **Deploy if it's a web change** (so QA tests current code):
+  - **Deploy target:** the **single-instance steady-state stack** at `/workspace/apps/Iris.Web` (docker-compose → `iris.luit.ink:8088`). This is the environment the QA loop tests against for single-instance behavior. The **QA two-instance federation stack** (`qa-iris-a.luit.ink` + `qa-iris-b.luit.ink`) is **QA-owned** — dev does not build or deploy to it; cross-instance re-verification is QA's job on that stack.
   - `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
   - `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web`
   - **Avoid `--no-cache`** (it fills the host disk; on `No space left on device`, run `docker builder prune -af` first).
