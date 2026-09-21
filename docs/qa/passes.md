@@ -17,92 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 190 (2026-09-21) — build `8243361c` / Lemmy/Mastodon interop + S36 fresh A post + feed type histogram
-- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
-- **Explored:** Lemmy API health + post list, Mastodon instance API + cross-origin actor resolution, fresh A post (II-S36-P190) → A feed check, feed type histograms (A + B), /ap/v1/health both instances.
+## Pass 182 (2026-09-21) — build `9586ee36` (no `src/`/`tests/` change since the deployed build; no rebuild needed). Open-item stability sweep — **all open items STABLE (20th consecutive for S36/S39/S24-D4/S38; S24 D2 flat)**
+- **Build/Live:** `src/`+`tests/` on `interop-testing` unchanged since `9586ee36` (HEAD `f8d1b559` is the docs-only Pass-181 merge) → **no rebuild needed**; cluster unchanged (build `9586ee36`; A + B health 200).
+- **Explored:** open-item stability sweep (S36, S39, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline).
 - **Result:**
-  - **Lemmy:** `/api/v3/site` 200 (healthy); `/api/v3/post/list` = 0 posts (no Iris content federated to Lemmy — expected, no follow edges).
-  - **Mastodon:** `/api/v1/instance` 200 (v4.7.2, 1 user, 0 statuses, 0 domains); `@ii-a1` 404, webfinger 404 (no cross-origin federation — expected, no follow edges).
-  - **S36 fresh A post (II-S36-P190):** in A outbox (10 Creates) but **NOT in A feed** (20 items, 0 Creates, 0 S36). UI: 1 stale "Content unavailable" item, no S36. **26th consecutive pass.**
-  - **Feed type histograms:** A feed = Delete×3, unknown×12, Follow×4, Like×1 (0 Create). B feed = Like×6, Follow×9, Undo×5 (0 Create). **Zero content Creates on both instances** — S36 is total.
-  - **Health:** Both A+B `/ap/v1/health` = healthy (delivery queue empty, workers running, 3/6 + 6/7 actors resolvable).
-  - 0 console errors.
-- **Checkpoint:** Interop peers healthy but empty (no federation edges). S36 26th consecutive, confirmed total on both instances. Next: new exploration or stability pass.
-
-## Pass 189 (2026-09-21) — build `8243361c` / B-side page sweep + cross-instance actor pages + S36 B-side confirmation
-- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
-- **Explored:** B-side /profile (posts + Following), /search (ii-a1), cross-instance actor pages (B→A: ii-a1; A→B: ii-b1, authless), fresh B post → B own feed check.
-- **Result:**
-  - **B /profile:** 8 own posts render; Following = 2 (ii-b1 self, ii-a1) — correct.
-  - **B /search "ii-a1":** 2 results (matching notes referencing ii-a1) — works.
-  - **Cross-instance actor pages:** B→A (ii-a1 from B): 6 A posts render, Unfollow button present (follow edge active). A→B (ii-b1 from A, authless): 5 B posts render, "Sign in to follow or moderate" — correct authless gating.
-  - **S36 B-side confirmation (NEW DATA):** Fresh ii-b1 post `II-S36-P189` is in B outbox (clean `Create`) but **NOT in B's own feed** (totalItems=20, 0 Creates, Like/Follow/Undo noise). B `/home` UI = "Your timeline is empty." The S36 feed-query defect is **symmetric** — B's own posts are also omitted, not just A's. 25th consecutive pass.
-  - 0 console errors.
-- **Checkpoint:** B-side page inventory complete. S36 confirmed on both instances (A + B own posts omitted). Next: Lemmy/Mastodon interop spot-check or new exploration.
-
-## Pass 188 (2026-09-21) — build `8243361c` / page-inventory sweep (signed-in + authless)
-- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
-- **Explored:** Page-inventory sweep: /profile (posts, Following, Followers), /search (content search), /communities, /directory, /settings (Account/Content/Danger tabs), /notifications, /home, /compose. Authless pass: all routes 302→login (no data leak), / and /register render signed-out UI, 0 console errors.
-- **Result:** 0 new findings. /profile "Your posts" shows 6 own notes (correct); Following tab = 3 (ii-a1 self, ii-a8-community, ii-b1); Followers = 3 (ii-a1 self, ii-b1, ii-a2). /search "II-S39-P187" = 2 results (ii-a1 note + ii-a2 reply). /directory "This instance" = 55 actor cards. /communities "Following" = ii-a8-community. Authless: /home, /profile, /notifications, /communities, /settings all → login (correct). 0 console errors across all routes. S36 24th consecutive (stability, no new data).
-- **Checkpoint:** Page inventory complete for A. Next: new exploration (B-side pages, Lemmy/Mastodon interop, or deep-dive on a specific open item).
-
-## Pass 187 (2026-09-21) — build `8243361c` / cluster rebuild + S39 local-reply re-verify + S36 persistence (23rd consecutive)
-- **Build/Live:** rebuilt + redeployed QA cluster to `8243361c` (S39 local-reply dial-base fix). == HEAD? y.
-- **Explored:** S39 local-reply re-verify on new build (ii-a2 → ii-a1), S36 home feed after rebuild (own post in feed? + B-side), S24 D2 bidirectional outbox, S39 CLOSED holding (mark all read).
-- **Result:**
-  - **S39 local-reply — CONFIRMED on `8243361c`.** Fresh ii-a1 note `II-S39-P187` (`06GC9KGVPK2…`); ii-a2 local reply → ii-a1 notifications shows "ii-a2 replied to your post" (New, just now). The dial-base fix is holding.
-  - **S36 (home feed) — STILL OPEN, 23rd consecutive.** Fresh `II-S39-P187` post is in ii-a1's outbox (clean `Create`) but **absent from own feed** (`/feed?refresh=true` totalItems=46, **0 Create items**, all Delete/Update/Remove/Activity/Follow/Like noise). UI `/home` = "Content unavailable" only. B-side feed (ii-b1) = 20 items, 0 Creates (A→B delivery gap persists). The S39 fix did not affect the feed path (expected).
-  - **S24 D2 — bidirectional, stable.** A: 28 creates / 8 foreign. B: 34 creates / 24 foreign.
-  - **S39 CLOSED holding.** A: 29→0 unread (marked all read). B: 27→0 unread (marked all read).
-- **Checkpoint:** S36 remains #1 blocker (own content Creates in outbox but omitted from feed query; dev's in-process repro passes). Next: stability sweep or new exploration.
-
-## Pass 186 (2026-09-21) — build `2229b0ab` / S36 deep-dive: fresh own post NOT in own feed (strongest repro yet); S24 D2 bidirectional; S32 B-cache 404s; S39 CLOSED holding
-- **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change → no rebuild).
-- **Explored:** S36 deep-dive (fresh ii-a1 post → own feed check + B-side delivery check), S24 D2 bidirectional outbox, S32 B-cache note 404, S39 CLOSED holding.
-- **Result:**
-  - **S36 (home feed) — STRONGEST REPRO YET.** Fresh ii-a1 post `II-S36-P186` (note `06GC9HM77347MWBBFZFGGB9HBR`, **in outbox** as a clean `Create`, `to`=Public, `cc`=followers) → **NOT in ii-a1's own feed** (`/ap/v1/u/ii-a1/feed?source=people` totalItems=46, 0 Create items, all noise: 8 Update+Activity, 4 Follow, 3 Delete, 2 Remove, 2 Add, 1 Like). UI `/home` = boost-wrapper only. The fresh unedited `Create` is in the outbox but **omitted from the feed** — confirms S36 is a feed-query defect (not a delivery or outbox issue).
-  - **S36 A→B delivery gap re-confirmed:** the fresh A post is **NOT cached on B** (`GET B /ap/v1/u/ii-a1/notes/06GC9HM77…` → 404) + **NOT in B's home feed** (B `/home` = "Your timeline is empty", B feed totalItems=32, 0 Create items, all Like/Follow/Undo noise). B→A delivery-to-cache gap persists.
-  - **S24 D2 (foreign outbox) — BIDIRECTIONAL.** ii-a1 (A) outbox: total 68, 11 foreign (B) page 1 (was 67/11 Pass 185). ii-b1 (B) outbox: total 58, **18 foreign (A) page 1** — foreign A activities leaking into B's local actor outbox. The outbox-integrity defect is **bidirectional** (both A and B have foreign activities in their local outboxes).
-  - **S32 (B-cache note 404) — NEW DATA POINT.** `GET B /ap/v1/u/ii-a1/notes/06GC9DE5VSXHEWVTWYQ3311D0M` (the II-S39-P184 note, created Pass 184) → **404 on B** (empty body). The B-side cached copy of an A note is 404 — the S32 "peer keeps stale copy" facet is actually "peer has no copy at all" (404, not stale). This is the same A→B delivery-to-cache gap as S36.
-  - **S39 (A-side notifications) — CLOSED holding.** ii-a1 still 28 unread (no regression). ii-b1 27 unread (no regression).
-  - **All other open items STABLE** (22nd consecutive for S36; S24 D4 + S38 + S37/S28 button-UI unchanged).
-- **Checkpoint:** S36 is the #1 blocker — the fresh own-post-not-in-own-feed repro is the strongest evidence yet for dev (the Create is in the outbox but the feed query omits it). S24 D2 is now confirmed bidirectional. S32 B-cache 404 = S36 A→B delivery gap. Next pass: stability sweep or new exploration.
-
-## Pass 185 (2026-09-21) — build `2229b0ab` / open-item stability sweep — all open items STABLE (S39 CLOSED holding)
-- **Build/Live:** `2229b0ab` (== HEAD? y — no `src/` change since deployed build → no rebuild).
-- **Explored:** Open-item stability sweep: S36 home feed, S24 D2 foreign outbox, S24 D4 remote collections, S38 webfinger, S32 Tombstone, S37/S28 button-UI, follow-graph baseline, S39 CLOSED holding.
-- **Result:** All open items STABLE (21st consecutive for S36; S24 D2 grew 63/11→67/11 foreign; S24 D4 doc 200/collections 404 both directions; S38 webfinger 404 cross-instance, 200 own; S32 Tombstone 404 both sides [data loss]; S37/S28 wire counts correct [likedCount=1, repliedCount=1, score=1] but button-UI "0" residual holds; follow-graph intact [ii-a1 followers=2, following=2]; S39 CLOSED holding [28 unread, no regression]). No new defects. S30/S26/S31/S29/S34/S27/S33 hold.
-- **Checkpoint:** Next pass: S36 remains top priority (home feed, data/environment-specific, awaiting dev code pass). S24 D2 continues to accumulate (67/11). S24 D4 + S38 + S37/S28 button-UI + S32 data-loss all stable.
-
-## Pass 184 (2026-09-21) — build `2229b0ab` / **S39 cross-instance-reply + cross-instance-Like legs RESOLVED live; S39 fully CLOSED** (all 4 testable legs verified)
-- **Build/Live:** `2229b0ab` (same as Pass 183; no `src/` change → no rebuild).
-- **Explored:** S39 cross-instance re-test (fresh ii-b1→ii-a1 reply + Like) + local-follow-request leg check (UI gating toggle not present).
-- **Result:**
-  - **S39 (A-side notifications) — cross-instance-reply + cross-instance-Like legs RESOLVED.** Fresh cross-instance-reply (ii-b1 (B) → ii-a1 (A) note `06GC9DE5VSXHEWVTWYQ3311D0M`, **HTTP 202**, `inReplyTo` correct) → parent author `ii-a1` **immediately** received "ii-b1 replied to your post" (16:05Z, "just now", 27 unread). Fresh cross-instance-Like (ii-b1 (B) → ii-a1 (A) same note, **HTTP 202**, `likedCount` 0→1) → parent author `ii-a1` **immediately** received "ii-b1 liked a post" (16:06:27Z, "just now", 28 unread). The dev fix (`c28a95d1` / `2229b0ab`) works for cross-instance legs too.
-  - **S39 local-follow-request leg: NOT RE-TESTED.** No `manuallyApprovesFollowers` toggle in the current Settings UI (Account > Moderation shows only Blocked/Muted/Reported). The S34 gated-follow flow cannot be reproduced. The Pass 172 evidence (local follow-request notification missing) remains the last data point; it may have been fixed by the same `AddToInboxAsync` path but cannot be confirmed live.
-  - **S39 is now CLOSED (S2):** all 4 testable legs (local-reply, local-Like, cross-instance-reply, cross-instance-Like) confirmed working live. The 5th leg (local-follow-request) is untestable in the current UI.
-- **Checkpoint:** S39 CLOSED. Next pass: open-item stability sweep (S36, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline). S36 (home feed) remains top priority.
-
-## Pass 183 (2026-09-21) — build `2229b0ab` / **S39 local-reply + local-Like legs RESOLVED live** (Pass 182's silence was a transient deploy-time race)
-- **Build/Live:** `2229b0ab` (same as Pass 182; no `src/` change → no rebuild).
-- **Explored:** S39 local-reply + local-Like re-test (fresh ii-a2→ii-a1 interactions) after Pass 182's false-negative "fix not materializing".
-- **Result:**
-  - **S39 (A-side notifications) — local-reply + local-Like legs RESOLVED.** Fresh local-reply (ii-a2 (A) → ii-a1 (A) note `06GC9BK2DAFDGB3V2KJPP21E10`, **HTTP 202**, `inReplyTo` correct) → parent author `ii-a1` **immediately** received "ii-a2 replied to your post" (15:56:40Z, "just now", 26 unread). Fresh local-Like (ii-a2 (A) → ii-a1 (A) note `06GC9ADVRXM0ZXQ6W9Q1JC040W`, **HTTP 202**, `likedCount` 0→1) → parent author `ii-a1` **immediately** received "ii-a2 liked a post" (15:52:07Z, "just now", 25 unread). **Pass 182's silence was a transient deploy-time race** (stale `BoxItems`/`AddToInboxAsync` write during the 14:50Z deploy), **not** a persistent data/environment divergence like S36. The dev fix (`c28a95d1` / `2229b0ab`) works live.
-  - **S39 cross-instance + local-follow-request legs still untested** on this build — if they also work, S39 is fully closed.
-- **Checkpoint:** S39 local-reply + local-Like RESOLVED. Next pass: re-verify S39 cross-instance (B→A Like/reply) + local-follow-request legs; if all pass, mark S39 fully CLOSED. S36 (home feed) remains top priority.
-
-## Pass 182 (2026-09-21) — build `2229b0ab` (**NEW BUILD**, dev's S39 local-reply fix) / cluster rebuilt + redeployed from the common folder. **S39 local-reply fix re-verified → deployed but does NOT materialize live; all other open items STABLE**
-- **Build/Live:** mid-pass, dev committed `2229b0ab` ("fix: S39 local reply notification — deliver reply Create to parent author's inbox"; `src/Iris.Server/ActivityPubServerExtensions.cs` +3 tests) → `src/` changed → **rebuilt + redeployed** the QA cluster from the common folder to `2229b0ab` (images `2f63f03f`/`ba587a9d`, was `eec8628c`/`09e49b6d`; A + B health 200). The fix: for a reply whose parent author is **local**, `OutboxPublishHandler` now calls `AddToInboxAsync(parentAuthor, activity)` directly (previously a local parent was a no-op, so the reply never reached the parent's inbox).
-- **Explored:** S39 local-reply fix re-test (fresh ii-a2→ii-a1 local reply) + open-item stability sweep (S36, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline).
-- **Result:**
-  - **S39 (A-side notifications) — local-reply leg STILL OPEN: FIX DEPLOYED BUT DOES NOT MATERIALIZE LIVE.** Fresh local reply (ii-a2 (A) → ii-a1 (A) note `06GC63QMBV`, **HTTP 202**, `inReplyTo` correct) → the reply is **stored + threaded** (parent `/replies` `totalItems=2`, `…/ns#repliedCount=2`) **but parent author `ii-a1` STILL gets no notification** — `GET A /local/v1/notifications` → `totalItems=0`, UI "No notifications yet". The reply's `Create` did **not** reach `ii-a1`'s inbox in the live env **despite the passing in-process test** `LocalReply_LandsInParentAuthorInbox_ProducesNotification`. Ruled out: the fix **is** in the deployed image (built after the commit), ii-a1's prefs are clean (`disabledTypes=[]`, `mutedActors=[]`), and `Create` is not in `ServerOnlyNotificationTypes`. → **same data/environment-specific divergence as S36** (in-process passes, live fails). Cross-instance + local-Like + local-follow-request legs remain open. Handed back to dev for a **live two-instance repro** (does `AddToInboxAsync` insert a `BoxItems`/`Activities` row for `ii-a1` on the **live** A instance?).
-  - **S36 (home feed) STILL OPEN (top priority).** A `/home` (ii-a1) = single boost-wrapper ("Content unavailable — view original post", Boost=1, Like=0), target `06GC3AWSHG` = Tombstone; **no own/followed content posts render** (20th consecutive stable pass).
-  - **S24 D2 (foreign activities in local outbox) STILL OPEN + flat.** ii-a1 (A) outbox page 1 = **27 local + 13 foreign (ii-b1)** (`totalItems=63`).
+  - **S36 (home feed) STILL OPEN (top priority).** A `/home` (ii-a1) = single boost-wrapper ("Boosted by ii-b1" → "Content unavailable — view original post", Boost=1, Like=0), target `06GC3AWSHG` = Tombstone; **no own/followed content posts render** (unchanged vs Pass 181 — 20th consecutive stable pass).
+  - **S39 (A-side notifications) STILL OPEN — asymmetry re-confirmed.** ii-a1 (A) `/local/v1/notifications` → `totalItems=0`; ii-b1 (B) → `totalItems=23`. Same B-receives/A-doesn't inbound-delivery gap.
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN + flat.** ii-a1 (A) outbox page 1 = **27 local + 13 foreign (ii-b1)** (`totalItems=63`); types on page 1: Create=16, Update=8, Follow=4, Delete=3, Like=3, Remove=2, Add=2, Announce=2. (Foreign share fluctuates with the 40-item page window — totalItems held at 63 vs Pass 181.)
   - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** ii-b1 (cached on A): `/outbox`+`/followers`+`/following` = **404**; actor doc = **200** (control).
   - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` + B `wf(ii-a1@A)` = **404** (both directions); own-instance `wf(ii-a1@A)` control = **200**.
-  - **S32 (FULLY FIXED) holding check:** A-side II-S32-5 note `06GC7X75` = **Tombstone** (`formerType=Note`) — no regression.
+  - **S32 (FULLY FIXED) holding check:** A-side II-S32-5 note `06GC7X75` = **Tombstone** (`formerType=Note`, `deleted=2026-09-21T12:40:27Z`) — no regression.
   - **Follow-graph baseline intact:** ii-a1 (A) followers = **2**, ii-a2 (A) following = **2**. S30/S26/S31/S29/S34/S27 hold.
-- **Checkpoint:** S39 local-reply fix handed back to dev (live two-instance repro needed — in-process test passes but live `ii-a1` inbox never gets the reply `Create`). S36 (home feed) remains top priority. Next pass: open-item sweep on `2229b0ab`.
+- **Checkpoint:** next pass continues the open-item sweep on `9586ee36`; S36 (home feed) remains top priority — the Phase-146 feed logs (Pass 181) are the diagnostic lever for the content-omission/pollution.
 
 ## Pass 181 (2026-09-21) — **NEW BUILD `9586ee36`** (Phase 146 feed observability: `be5754b5` feed logging + `c9dbec4e` cache hit/miss + `aef48858` cache TTL) / cluster rebuilt + redeployed from the common folder (worktree is docs-only). Open-item re-verify on the new build — **all open items STABLE; the new feed-observability logs fire (build confirmed live)**
 - **Build/Live:** REBUILT + REDEPLOYED the QA cluster to `9586ee36` (common-folder `src/`, == `interop-testing` HEAD; built from `/workspace` since the worktree is for doc edits only). New image IDs (`eec8628c`/`09e49b6d`, was `0b9207e0`); A + B health 200; app started clean. **Build confirmed live:** the Phase-146 `FeedService` observability log fired on a real feed build — `Feed built for …/ii-a2: 220 ms, 2 follows (1 local, 1 remote), 84 items, slowest follow 187 ms, types: Like=9, Follow=13, Undo=6, Delete=7, Update=14, Create=28, Announce=1, Remove=3, Add=3` (proves `be5754b5`+`c9dbec4e`+`aef48858` are running; also confirms the S36/S24-D2 feed shape: content surfaces as `Update`/`Create` mixed with heavy non-content activity).
