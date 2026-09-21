@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 127 (2026-09-21) — No new commit / no build change; S33 (unfollow Undo propagates cross-instance) re-verified → FIXED (holding) (B unfollowed ii-a1; A log Undo received+processed+accepted, ii-a1 A /followers no longer includes ii-b1); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (~688 test lines across 3 files, no `src/` fix); QA cluster unchanged.
+- **Explored:** Re-verified **S33** (unfollow `Undo` propagates cross-instance) with a fresh unfollow — B (ii-b1) unfollowed ii-a1 (A).
+- **Result:** **S33 re-verified FIXED (holding).** B (ii-b1) clicked Unfollow on ii-a1 (A). A's log: `Inbox received Undo …/ii-b1/undos/06GC56X7… from …/ii-b1 to …/ii-a1` + `UndoActivityHandler processed … ok` + `Inbox accepted: Undo from …/ii-b1 targeting …/ii-b1/follows/06GC3W8T… Recipient …/ii-a1, Peer qa-iris-b`. And `GET A /ap/v1/u/ii-a1/followers` → totalItems=1, **no longer includes ii-b1** (the follow edge was removed on A). So the cross-instance unfollow (`Undo` of the `Follow`) is delivered + processed + applied on the remote instance. Consistent with the Pass-100 fix confirmation (`d6914d6`).
+- **Checkpoint:** S33 re-verified FIXED (holding). S36 still top priority (dev fix in progress — ~688 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote), S38 (webfinger remote-proxy) open. S31 re-confirmed FIXED (Pass 124). M2–M12 + L2–L12 blocked.
+
 ## Pass 126 (2026-09-21) — No new commit / no build change; NEW S38 (S3, discovery) — WebFinger does not proxy remote accounts (`acct:handle@remote-host` → 404) even when the remote actor is cached locally (own-instance webfinger 200); open count 15→16
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (~688 test lines across 3 files, no `src/` fix); QA cluster unchanged.
 - **Explored:** Checked the **cross-instance WebFinger** facet (previously untested — S29 only covered local community `!` webfinger).
