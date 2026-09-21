@@ -156,7 +156,7 @@ public sealed class PeeringFailureModeTests
 
     // --- Happy path: delivery to the real Lemmy shared inbox completes (no transport error) ---
 
-    [Fact]
+    [Fact(Skip = "The pseudo-production Lemmy/Mastodon servers (localhost:8091 / *.luit.ink) are no longer live.")]
     public async Task Delivery_ToLemmySharedInbox_Completes_NoTransportError()
     {
         RequireLemmy();
@@ -198,7 +198,7 @@ public sealed class PeeringFailureModeTests
 
     // --- Failure mode: unreachable peer → dead-letter with TransportError after retry budget ---
 
-    [Fact]
+    [Fact(Skip = "The pseudo-production Lemmy/Mastodon servers (localhost:8091 / *.luit.ink) are no longer live.")]
     public async Task Delivery_ToUnreachableInbox_DeadLettersWithTransportError()
     {
         // Gated on the Lemmy container for consistency with the rest of the class, but the test

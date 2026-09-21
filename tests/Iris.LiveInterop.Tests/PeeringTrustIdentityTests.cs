@@ -86,7 +86,7 @@ public sealed class PeeringTrustIdentityTests
         }
     }
 
-    [Fact]
+    [Fact(Skip = "The pseudo-production Lemmy/Mastodon servers (localhost:8091 / *.luit.ink) are no longer live.")]
     public void LemmyKey_LoAsPublicOnly_CanVerifyButNotSign()
     {
         RequireLemmyKey();
@@ -106,7 +106,7 @@ public sealed class PeeringTrustIdentityTests
         Assert.Contains("\"e\":", jwk);
     }
 
-    [Fact]
+    [Fact(Skip = "The pseudo-production Lemmy/Mastodon servers (localhost:8091 / *.luit.ink) are no longer live.")]
     public void LemmyKey_VerifiesIrisProducedSignature_OverSameBase()
     {
         RequireLemmyKey();
@@ -153,7 +153,7 @@ public sealed class PeeringTrustIdentityTests
             "A signature from Iris's key SHOULD verify against Iris's own public key");
     }
 
-    [Fact]
+    [Fact(Skip = "The pseudo-production Lemmy/Mastodon servers (localhost:8091 / *.luit.ink) are no longer live.")]
     public void IrisSignedRequest_VerifiesWithLemmyPublicKey()
     {
         RequireLemmyKey();
