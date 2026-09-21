@@ -59,3 +59,16 @@ S32 OPEN (reproduces on a fresh build).
 - **Peer (B):** `GET B <note IRI>` → **404**. B's copy was **already removed by the earlier `Update`** (S31 re-test: the Update dropped B's copy), so at delete time B had no live copy to tombstone — the Delete had nothing to apply against.
 
 So the **local delete is correct** (Tombstone), but the **peer-propagation defect persists in a different form**: the note's lifecycle on B was already broken by the Update (which dropped the copy), so the Delete could not produce a clean Tombstone-on-both-sides outcome. The underlying issue (note-IRI-addressed Update/Delete not cleanly applied on the peer) is the same class as the original S32. **S32: local delete correct; peer propagation still broken (peer copy already lost to the Update) — OPEN on the 2026-09-21 fresh cluster.**
+
+## Re-test (interop A9 re-verify, 2026-09-21, build `27b1ba6`)
+
+**Cleanest repro yet — B genuinely had a live copy, the Delete was rejected, and B's "tombstone" is a lazy refetch, not a propagated delete.** `ii-a1` (A) posted `II-A9-3 reverify S32 delete propagation` (Note `…/ii-a1/notes/06GC44QSENG1RQEXRGB9QEP9F0`, `to`=Public, `cc`=followers).
+
+- **Delivery to B (live):** B log `Inbox accepted: Create from …/ii-a1 targeting …/notes/06GC44QSENG1RQEXRGB9QEP9F0. Recipient: …/ii-b1`. `GET B <note IRI>` (before delete) → **200, `type`=Note**, `content`="II-A9-3 reverify S32 delete propagation". B **had a live copy.**
+- **Local delete (A):** `GET A <note IRI>` → **200, `type`=Tombstone** ✓ (A outbox has the `Delete`, `object`=note IRI).
+- **Peer (B) after delete:**
+  - `GET B <note IRI>` → **200, `type`=Tombstone** (content None).
+  - **But** B log shows the Delete activity was **rejected**: `Inbox rejected: unknown recipient https://qa-iris-a.luit.ink/ap/v1/u/ii-a1/notes/06GC44QSENG1RQEXRGB9QEP9F0`. The Delete (note-IRI-addressed, `to`/`cc` empty) was **not applied as an activity on the peer.**
+  - B's Tombstone is the result of **lazy-refetching** the IRI from A (A now serves the Tombstone), **not** of the Delete being delivered/applied. A peer that had cached the live Note and did **not** refetch would still serve the stale live copy (the original S32 symptom).
+
+**Verdict (build `27b1ba6`): S32 OPEN — the Delete is still rejected at the peer with "unknown recipient" (note-IRI-addressed activity not resolvable to a local recipient; `to`/`cc` empty), so the delete is not propagated as an activity. The peer only reflects the tombstone via a live refetch of the author's current document, which is fragile (a non-refetching peer keeps a stale live copy).**

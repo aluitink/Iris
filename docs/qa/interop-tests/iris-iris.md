@@ -326,3 +326,30 @@ Full A1–A10 run on the rebuilt QA cluster (A `qa-iris-a.luit.ink`, B `qa-iris-
 - **NEW observations:** (a) remote Like/Boost are now **UI-testable** (the prior `UiContext.cs:704` remote-object block is gone on this build) — unblocks S27/S28 regression; (b) the `Update` activity **removes the peer's copy** of the note (B 404 after edit) — a new S31 side-effect; (c) the edit **clears `published` entirely** (note has `updated` but no `published`); (d) the profile Following tab omits remote actors (S24 f1) remains the most user-visible follow-state bug.
 
 **Findings from this run:** S24, S25, S26, S27, S28, S29, S30, S31, S32, S33, S34 (all in `docs/qa/`, indexed in `docs/qa/README.md`). Cross-cutting themes: (1) remote objects are delivered+stored but not **surfaced** (S25 feed, S26 replies, S28 shares); (2) outbound `Like`/`Update`/`Delete`/`Undo` are **dropped or rejected on the peer** (S27 shared-inbox drop; S32/S33 `unknown recipient` on bare-IRI/note-IRI objects); (3) **discovery** gaps (S29 community webfinger); (4) **state** inconsistencies (S24 follow, S34 gated-follow exposure). Note: the working webfinger route is `/.well-known/webfinger` (the `/ap/v1/webfinger` path 404s for everyone — earlier suite references to `/ap/v1/webfinger` were a test-route error).
+
+---
+
+## Re-verify pass (Pass 101, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-verified the still-open S2-sev items deferred to the two-instance stack: **S25** (remote post in follower feed), **S24** (D1 Following tab / D2 outbox / D3 remote-actor GET), **S32** (delete propagation). B was restarted first to clear the in-memory feed cache.
+
+**Headline — NEW S36 (S2, broad home-feed regression).** The home timeline renders **"Your timeline is empty"** even for an actor's **own** posts:
+- **(a) own post:** B's own note `…/06GC41BA…` is in B's outbox but **not** in B's `/home`.
+- **(b) local follow:** A's `ii-a2` note `…/06GC4225…` is in ii-a2's outbox but **not** in ii-a1's `/home` (ii-a1 follows ii-a2 locally).
+- **(c) remote follow (S25):** A→B note `…/06GC40F0…` was delivered+accepted+stored on B, but **not** in ii-b1's `/home`.
+- Captured the UI's authenticated `GET /ap/v1/u/{me}/feed` (16–17 items): dominated by **actor-document activity noise** (`Update`/`Add`/`Remove` on the actor IRI, self `Follow`, `Undo`/`Delete`/`Like`) with **only one content `Create` (a community Group join)** + one `Announce`. The real post `Create`s are absent.
+- Restarting B (clearing the feed cache) did **not** change it → a **build regression**, not a stale cache. **Supersedes/blocks S25** and re-opens the S18 local-timeline symptom. Dev code pass on `FeedService.BuildFeedUncachedAsync` (feed source over-inclusive of actor-doc activity / under-inclusive of content `Create`s). → [s36](../s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md)
+
+**S24 — D3 FIXED, D1 CONFIRMED (sharper root cause), D2 persists.**
+- **D3 (remote-actor direct GET):** **FIXED** — `GET A /ap/v1/u/ii-b1` = **200** (was 404).
+- **D1 (Following tab omits remote actor):** **CONFIRMED** with a sharper root cause. A `ii-a1`'s **`following` collection = `[c/ii-a8-community]` only — ii-b1 is MISSING**, even though A's outbox has the `Follow → ii-b1` activity and A's **`followers`** lists ii-b1. So the follow **edge never materialized in A's `following`** after an unfollow/re-follow cycle → **`following` and `followers` are out of sync**. The Following tab (showing only the community) is rendering that missing edge.
+- **D2 (spurious/foreign activities in local outbox):** **persists** — A's outbox still stores B-authored `Follow` activities. → [s24](../s24-cross-instance-follow-state-inconsistent.md)
+
+**S32 — OPEN (cleanest repro yet).** `ii-a1` posted `II-A9-3 reverify S32 delete propagation` (note `…/06GC44QSENG1RQEXRGB9QEP9F0`, `to`=Public). B **received+stored a live copy** (pre-delete `GET B <note>` = 200, `type`=Note). After A deleted it: `GET A <note>` = **Tombstone** ✓; `GET B <note>` = **Tombstone** — **but** B's log shows the Delete was **rejected** (`unknown recipient <note-IRI>`), so B's Tombstone is a **lazy refetch** of A's current doc, **not** a propagated/applied delete. A non-refetching peer would keep a stale live copy. **S32 OPEN.** → [s32](../s32-delete-not-propagated-peer-stale-copy.md)
+
+**Net (Pass 101):**
+- **NEW:** **S36** (broad home-feed regression — omits all post `Create`s, polluted with actor-doc activity; supersedes S25).
+- **FIXED:** **S24 D3** (remote-actor direct GET now 200).
+- **STILL OPEN:** **S24 D1** (Following tab / `following`-edge sync) + **S24 D2** (foreign activities in local outbox); **S32** (Delete rejected at peer, note-IRI-addressed).
+- **SUPERSEDED:** **S25** (by S36).
+- **CHECKPOINT:** S36 is top priority (home feed is the primary surface; empty for own + followed posts). S28 re-verify deferred (dev's S28 fix not yet committed/deployed). S30 (community join/view) not re-exercised this pass.
