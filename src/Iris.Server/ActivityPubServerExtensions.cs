@@ -3916,8 +3916,11 @@ public static class ActivityPubServerExtensions
         // author's local followers (the local actors who follow the remote author — the shared-inbox
         // equivalent of the per-actor inbox fan-out); an Undo of a Follow is addressed to the follow's
         // target (the followee — the Undo's object is the original Follow, whose target is the followee,
-        // not the follow's own IRI, which is not an actor and would 404 as "unknown recipient"); and any
-        // other activity (Follow, Accept, Reject, Tombstone, ...) is addressed to its object.
+        // not the follow's own IRI, which is not an actor and would 404 as "unknown recipient"); a Like of
+        // an object is addressed to the object's owner (its attributedTo — the object is a Note, not an
+        // actor, so routing to the object IRI would drop the activity as "no local recipient" and the
+        // note's likes would never update, S27); and any other activity (Follow, Accept, Reject,
+        // Tombstone, ...) is addressed to its object.
         var parsed = ActivityJson.Deserialize<IObjectOrLink>(json);
         List<Iri> recipients = [];
         Iri? fanOutAuthor = null;
@@ -3963,6 +3966,22 @@ public static class ActivityPubServerExtensions
                         }
                     }
                 }
+            }
+            else if (typedActivity is Like
+                     && typedActivity.Object is { } likeObjects
+                     && FirstIriFromCollection(likeObjects) is { } likedObjectIri)
+            {
+                // A Like of an object: the object is a Note (not an actor), so its IRI is not a valid inbox
+                // recipient — routing to it would drop the activity as "no local recipient" (S27) and the
+                // note's /likes would never update. Resolve the object's owner (its attributedTo) and
+                // address the delivery to the owner (the note's author) instead; the author's
+                // LikeActivityHandler then records the like edge on the note. A local object's owner is
+                // read from the object store (no wire hop); an unresolvable owner degrades to the object
+                // IRI, which the per-recipient actor-existence check below then drops as before (no local
+                // recipient). (Announce is NOT handled here: it is a content activity routed to the
+                // author's local followers by the branch above, mirroring the per-actor-inbox behavior.)
+                var ownerIri = await ResolveObjectOwnerForDeliveryAsync(persistence, null, new Iri(likedObjectIri), ct).ConfigureAwait(false);
+                recipients.Add(ownerIri);
             }
             else
             {

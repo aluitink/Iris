@@ -244,6 +244,46 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             "the followee's followers set (S33).");
     }
 
+    // --- S27: a Like of a LOCAL note delivered to the shared inbox must route to the note's AUTHOR
+    // --- (the note's attributedTo), not the note's own IRI. The note is a content object, not an actor,
+    // --- so routing to its IRI drops the activity as "no local recipient" and the note's /likes never
+    // --- updates. The shared inbox must resolve the note's owner and dispatch the Like to the author,
+    // --- whose LikeActivityHandler records the like edge on the note. ---
+
+    [Fact]
+    public async Task LikeOfLocalNote_DeliveredToSharedInbox_RoutesToAuthorAndRecordsLikeEdge()
+    {
+        // bob (local, hosted by B) authored a note that is stored in B's object store.
+        var noteIri = $"https://{BHost}/ap/v1/u/{Bob}/notes/{Guid.NewGuid():N}";
+        await _bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri,
+            Content = ["a note by bob"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        });
+
+        // alice (remote) likes bob's note: a Like whose object is the note IRI (a content object, not an
+        // actor). Deliver it to B's shared inbox over the wire (B resolves alice's key from A's actor doc).
+        var like = BuildLike(AliceActorIri, new Iri(noteIri));
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, like);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B validated the signature and stored the Like under its IRI (proving the shared inbox routed it
+        // to a local recipient and processed it, rather than "no local recipient; accepting and dropping").
+        Assert.True(
+            await _bPersistence.Activities.TryGetActivityAsync(new Iri(like.Id!), out _),
+            "A Like delivered to the shared inbox should be stored (routed to the note's author), not dropped (S27).");
+
+        // B recorded the like edge (alice → note) — the note's /likes collection now includes alice. The
+        // shared inbox routed the Like to the note's author (bob), whose LikeActivityHandler recorded the
+        // edge; routing to the note's own IRI would have dropped it (no local recipient) and left /likes empty.
+        Assert.True(
+            await _bPersistence.Likes.HasLikedAsync(AliceActorIri, new Iri(noteIri)),
+            "A Like of a local note delivered to the shared inbox should record the like edge on the note (S27).");
+    }
+
     // --- A Create whose author is not local is accepted and dropped (not this instance's concern) ---
 
     [Fact]
@@ -338,6 +378,17 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             Object = [new Link { Href = new Uri(targetIri.Value) }],
         };
         return follow;
+    }
+
+    private static Like BuildLike(Iri likerIri, Iri objectIri)
+    {
+        return new Like
+        {
+            Id = $"https://{AHost}/activities/like-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(likerIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(likerIri.Value) }],
+            Object = [new Link { Href = new Uri(objectIri.Value) }],
+        };
     }
 
     private static async Task WaitForAsync(Func<Task<bool>> condition, TimeSpan timeout)
