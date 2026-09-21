@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 171 (2026-09-21) — No `src/` change / cluster unchanged (`38ae87c`, healthy). Open-item sweep + fresh S33 (unfollow `Undo`) re-test — **S33 cross-instance leg REGRESSED** (B→A `Undo` not delivered; same root cause as S39); other open items STABLE
+- **Build/Live:** No `src/` change since `38ae87c` (dev's latest commit `0ec58d3` is PLAN-only) → no rebuild. QA cluster unchanged (build `38ae87c`; A + B health 200; follow edges intact pre-test: ii-a1 followers=2, ii-b1 followers=2).
+- **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38) + **fresh S33 (unfollow `Undo`) re-test** (B `ii-b1` unfollowed A `ii-a1`, then re-followed to restore).
+- **Result:**
+  - **S33 (unfollow `Undo`) cross-instance leg REGRESSED → RE-OPENED (NEW regression).** Pre-state: A `ii-a1/followers`=2 (`[ii-a2, ii-b1]`), B `ii-b1/following`=1. B pressed Unfollow on ii-a1 → **B-side local holds**: B `following` 1→**0** + B outbox has `Undo` `…/ii-b1/undos/06GC7KXQ…` (pub **11:52:45Z**), object = **bare-IRI** original Follow `06GC76S3ZD`. **A-side does NOT apply**: A `ii-a1/followers` **stays 2** (`[ii-a2, ii-b1]`), A outbox (page 1) has **no `Undo(Follow)` from ii-b1** (only stale 09:12 actor-doc `Remove`/`Update` noise from the S34 gating test) → the B→A `Undo` is **not delivered** to A's store. **Same directional B→A inbound-delivery gap as S39** (B's outbound activities don't land in A's store) — cross-linked. State **restored** via re-follow (B new `Follow` `…/ii-b1/follows/06GC7MB2E8…` pub 11:54:34 → B `following`=1; A `followers`=2). The Pass 164 "fixed" was the A-side leg in a transient delivery-window state; on the settled `38ae87c` stack the B→A `Undo` leg does not propagate.
+  - **S36 (home feed) STILL OPEN (top priority).** Home feed still boost-wrapper only, no own content (unchanged).
+  - **S39 (A-side notifications) STILL OPEN.** `ii-a1` `/local/v1/notifications` → `totalItems=0` (unchanged).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN.** `GET A /u/ii-a1/outbox` → `totalItems`=**57** (flat vs Pass 170); page 1 = **8 foreign (ii-b1)** items.
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** `GET A /u/ii-b1` doc = **200**; `/outbox` = **404**; `/followers` = **404** (own-instance control = 200).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (own-instance control = 200).
+- **Checkpoint:** **No build change; open-item sweep + fresh S33 re-test on `38ae87c` — S33 cross-instance leg REGRESSED (B→A `Undo` not delivered; same root cause as S39, now cross-linked). S33 RE-OPENED → open count now 14.** S36 (home feed) + S39 + S24 D2 (total 57) + S24 D4 + S38 + S37/S28 (button-UI) all STILL OPEN. S30/S26/S31/S29/S32/S34/S27 hold. **M2–M12 + L2–L12 blocked** (operator accounts). Awaiting dev's decision on the B→A inbound-delivery root cause (S33 + S39), S36, S24 D2/D4, S38.
+
 ## Pass 170 (2026-09-21) — No `src/` change / cluster unchanged (`38ae87c`, healthy). Open-item stability sweep + S29 re-verify — all open items STABLE (12th consecutive stable pass)
 - **Build/Live:** No `src/` change since `38ae87c` (dev's latest commit `0ec58d3` is PLAN-only) → no rebuild. QA cluster unchanged (build `38ae87c`; A + B health 200; follow edges intact: ii-a1 followers=2, ii-b1 followers=2).
 - **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28) + **S29 re-verify** (community webfinger).

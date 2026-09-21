@@ -70,3 +70,18 @@ Rebuilt the two Iris services from `interop-testing` HEAD (`27b1ba6`) before re-
 - **Peer (A):** after the async delivery settled (A delivery queue drained), `GET A /ap/v1/u/ii-a1/followers` → **`[ii-a2]` only — `ii-b1` REMOVED**. ✅ (First check at ~4 s still showed ii-b1; it cleared once the queued `Undo` was delivered — the fix routes the shared-inbox `Undo` to the follow's target, A resolves the bare-IRI Follow from its activity store, and removes the edge.)
 
 **S33 FIXED** — the unfollow now propagates to the peer's `followers` on the current build, via the shared-inbox bare-IRI `Undo` path (no "unknown recipient" rejection). Note the fix does **not** change the wire to an embedded Follow; it corrects the **receiving** shared-inbox routing so a bare-IRI `Undo` resolves to the follow's target.
+
+## Re-test (Pass 171, 2026-09-21, build `38ae87c`) — S33 cross-instance leg REGRESSED (B→A inbound-delivery gap, same root cause as S39)
+
+A fresh unfollow (B `ii-b1` unfollowed A `ii-a1`) **reproduced the S33 cross-instance leg** on `38ae87c` — the same symptom the Pass 164 re-verify had marked FIXED:
+
+- **Pre-state:** A `ii-a1/followers` = 2 (`[ii-a2, ii-b1]`); B `ii-b1/following` = 1 (`ii-a1`).
+- **B pressed Unfollow** on `ii-a1`'s actor page (B).
+- **Local (B):** `GET B /ap/v1/u/ii-b1/following` → **0** (ii-b1 no longer follows ii-a1). ✓ (local applied)
+- **Wire (B outbox):** B now has `Undo` `…/ii-b1/undos/06GC7KXQSM0SV0AK3EZQ8JR7TR` (pub **11:52:45Z**), `object` = **bare IRI** `…/ii-b1/follows/06GC76S3ZDMW4385X9326QEVJ4` (the original Follow IRI) — the exact bare-IRI `Undo` wire shape.
+- **Peer (A):** `GET A /ap/v1/u/ii-a1/followers` → **STILL 2** (`[ii-a2, ii-b1]`) — **ii-b1 was NOT removed**. A's outbox (page 1) contains **no `Undo(Follow)` from ii-b1** and **no new `Remove`/`Update`**(actor) — the only `Remove`/`Update`(actor) on A are **stale** (pub 09:12, ii-a1's own actor-doc noise from the S34 gating test), unrelated to this unfollow.
+- **Restore:** B re-followed ii-a1 (B outbox new `Follow` `…/ii-b1/follows/06GC7MB2E8…`, pub 11:54:34) → B `following` restored to 1; A `followers` stayed 2 (consistent — the original edge was never removed on A).
+
+**Interpretation:** the **B-side local** unfollow applies (B outbox `following` drops, the `Undo` is emitted) but the **B→A inbound delivery** of that `Undo` **does not land in A's outbox/store**, so A's `followers` edge is never removed. This is the **same directional B→A inbound-delivery gap** documented in [S39](s39-a-side-notifications-missing-b-side-receives-asymmetric-inbound-delivery.md) (B's outbound activities — reply/Like/Follow/**Undo** — do not land in A's store). S33's cross-instance leg and S39 are **two faces of the same B→A delivery root cause**: a dev fix to the shared-inbox / inbound-delivery path is expected to address both. (The earlier Pass 164 "FIXED" observation was the A-side leg in a transient delivery-window state; on the settled `38ae87c` stack the B→A `Undo` leg does not propagate.)
+
+**Status: S33 cross-instance leg REGRESSED / OPEN again on `38ae87c` (B→A `Undo` not delivered) — cross-linked to S39. Local (B) leg holds; A-side `followers` edge remains.**
