@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 105 (2026-09-21) — No build change; re-confirmed S32 root-cause facet (Delete to/cc empty)
+
+- **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged since Pass 101). Dev's S28 fix still in **uncommitted WIP** (not deployed) → nothing new to re-verify; merge still blocked on that WIP.
+- **Explored:** Wire re-check of **S32**'s root-cause facet (is the `Delete` addressed to the note's audience?) on the Pass 101 deleted note.
+- **Result:** **S32 root-cause facet re-confirmed.** A `ii-a1`'s `Delete` for note `…/06GC44QSE…` has **`to` = None, `cc` = None** — the delete is **not addressed to the note's audience** (the note's original `to`/`cc`), so a peer can't apply it as a targeted delivery (the peer only reflects the tombstone via a lazy refetch). The note on A is a **Tombstone** (`formerType` Note). Stable. No new defects; S36/S24/S28/S32 all unchanged.
+- **Checkpoint:** **S36 top priority** (home feed empty for own + followed posts; dev code pass on `FeedService.BuildFeedUncachedAsync`). S24 D1 (UI Following-tab remote-actor rendering) + D2; S28 (deferred until dev WIP fix committed+deployed); S32 (Delete to/cc empty + note-IRI-addressed, rejected at peer). M2–M12 + L2–L12 blocked on operator accounts. **Merge blocked** on dev's uncommitted WIP.
+
 ## Pass 104 (2026-09-21) — S24 D1 refined via a FRESH follow (UI Following-tab defect, not a wire problem)
 
 - **Build/Live:** QA cluster still `== HEAD` `27b1ba6` (unchanged). Dev WIP still uncommitted (nothing new to re-verify; merge still blocked).
