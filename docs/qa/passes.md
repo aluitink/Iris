@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 233 (2026-09-21) — build `401c08b5` / A notifications: P223 (B post) inlined ✓, P225/P227 (own posts) not in notifications (expected), mention/reply/like notifications present; 62nd consecutive S36
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A notifications page (ii-a1).
+- **Result:**
+  - **A notifications:** 264 DOM elements. P223 (B→A post) inlined ✓ ("ii-b1 posted 31m ago II-S36-P223 fresh B post...").
+  - P225/P227 (A's own posts) NOT in notifications (expected — own posts don't generate notifications).
+  - Mention notification present (from P225 @ii-b1 mention).
+  - Reply notification present.
+  - Like notification present.
+  - Boost notification: not present (the only boost is the Tombstone-Announce, which is in the home feed).
+  - **Notification system works correctly** — independent of home feed (S36).
+  - **S36 62nd consecutive** (P223 in notification, not in home feed).
+  - 0 console errors.
+- **Checkpoint:** Notifications confirmed working (P223 inlined). S36 62nd consecutive. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 232 (2026-09-21) — build `401c08b5` / Directory Paging (new inbox item): NOT reproducible on QA cluster (7 total items, no pagination needed); no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Directory "All known" tab (People + Communities) on A.
