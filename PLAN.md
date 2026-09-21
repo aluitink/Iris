@@ -134,6 +134,8 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs. → **Fix `401c08b5` deployed** (remote actors with a preferredUsername are now kept in the "All known" scope; S5 stale-local-row drop preserved). Awaiting QA re-verify.
 
+**Directory Paging** - We are showing only the first 100, we should continue to page out all of the records with infinity scroll.
+
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
 - *(cleared Pass 27, 2026-09-20 — build now current (`a45f3d4` deployed); QA live-verified **S6** remote Join, the **S4** local-community following facet, the **S8** "All on this instance" list, and **S16** poll-vote persistence. S4's remote-community display caveat remains open in [s04](docs/qa/s04-communities-following-remote.md).)*
