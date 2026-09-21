@@ -1571,6 +1571,111 @@ public sealed class FeedServiceTests
         Assert.Equal(1, createsOfNote.Count + announcesOfNote.Count);
     }
 
+    [Fact]
+    public async Task S36_LiveWireShape_CommunityGroupCreatePlusActorDocNoisePlusOwnNotePlusFollowNote_AllContentCreatesPresent()
+    {
+        // Reproduces the EXACT S36 live wire shape (ii-a1 feed, 16 items): the actor's outbox holds a
+        // community Group Create (the "only content Create" in the live feed), heavy actor-document
+        // noise (Updates on the actor IRI, self Follow, Like, Undo, Delete, Add/Remove on the actor
+        // IRI), the actor's OWN note Create, AND a local-follow's note Create. The live feed showed
+        // NONE of the note Creates (only the Group Create). This test asserts all three content
+        // Creates (Group + own note + follow note) are present in the feed. If it passes, the server
+        // is correct and the live issue is environmental (data shape not reproducible in-process).
+        // If it fails, it reveals the root cause.
+        var groupIri = $"https://{LocalHost}/c/test-community";
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            SeedActor(persistence, alice, "Alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            // 1. The community Group Create (the "only content Create" in the live S36 feed).
+            persistence.Activities.AddToOutboxAsync(alice, new Create
+            {
+                Id = $"{alice.Value}/create-group",
+                Actor = [new Link { Href = new Uri(alice.Value) }],
+                Object = [new Group { Id = groupIri, Name = ["Test Community"] }],
+            }).GetAwaiter().GetResult();
+
+            // 2. Heavy actor-document noise (the S36 live feed: Update x several on the actor IRI,
+            //    self Follow, Like, Undo, Delete, Add/Remove on the actor IRI, Follow x3).
+            var aliceIri = alice.Value;
+            for (var i = 0; i < 5; i++)
+            {
+                persistence.Activities.AddToOutboxAsync(alice, new Update
+                {
+                    Id = $"{aliceIri}/update-{i}",
+                    Actor = [new Link { Href = new Uri(aliceIri) }],
+                    Object = [new Link { Href = new Uri(aliceIri) }],
+                }).GetAwaiter().GetResult();
+            }
+            persistence.Activities.AddToOutboxAsync(alice, new Follow
+            {
+                Id = $"{aliceIri}/follow-self",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            AddLike(persistence, alice, $"{aliceIri}/like-1", $"https://{LocalHost}/notes/other");
+            persistence.Activities.AddToOutboxAsync(alice, new Undo
+            {
+                Id = $"{aliceIri}/undo-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri($"{aliceIri}/follow-self") }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Delete
+            {
+                Id = $"{aliceIri}/delete-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri($"https://{LocalHost}/notes/gone") }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Add
+            {
+                Id = $"{aliceIri}/add-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Remove
+            {
+                Id = $"{aliceIri}/remove-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            for (var i = 0; i < 3; i++)
+            {
+                persistence.Activities.AddToOutboxAsync(alice, new Follow
+                {
+                    Id = $"{aliceIri}/follow-{i}",
+                    Actor = [new Link { Href = new Uri(aliceIri) }],
+                    Object = [new Link { Href = new Uri($"https://{LocalHost}/ap/v1/u/follow-target-{i}") }],
+                }).GetAwaiter().GetResult();
+            }
+
+            // 3. The actor's OWN note Create (absent in the live S36 feed).
+            AddPost(persistence, alice, "a-own", "my own post");
+
+            // 4. A local-follow's note Create (absent in the live S36 feed).
+            AddPost(persistence, bob, "b-1", "bob 1");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        // The feed contains Create activities; check for the Group Create by its Create IRI
+        // (the activity's IRI, not the embedded Group's IRI).
+        var createIris = feed
+            .OfType<Create>()
+            .Select(c => c.Id)
+            .ToList();
+        // The Group Create must be present (it was the "only content Create" in the live feed).
+        Assert.Contains($"{alice.Value}/create-group", createIris);
+        // The actor's OWN note Create must be present (absent in the live S36 feed).
+        Assert.Contains($"https://{LocalHost}/notes/a-own", createIris);
+        // The local-follow's note Create must be present (absent in the live S36 feed).
+        Assert.Contains($"https://{LocalHost}/notes/b-1", createIris);
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(

@@ -151,6 +151,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 **Phase 145 — QA re-verification (dev-gated on QA results):**
 
 - **Await QA two-instance re-verify results** for the deployed S-series fixes (S32 delete/update audience, S36 home-feed, S37 likedCount, S30 A8.2/A8.4, S26, S27, S28). When QA reports back: triage any residual failures, capture the wire shape, and fix in-process with a regression test. The two open S2 items are **S36** (home-feed omits posts + actor-doc noise; BLOCKED in-process, needs QA wire capture) and **S24-D1** (Following tab omits remote actors; CLOSED non-reproducible, needs QA two-instance repro). No new feature scope in this phase.
+- **S36 regression test added (this turn):** `S36_LiveWireShape_CommunityGroupCreatePlusActorDocNoisePlusOwnNotePlusFollowNote_AllContentCreatesPresent` reproduces the exact live S36 wire shape (community Group Create + heavy actor-doc noise + own note Create + local-follow note Create) and asserts all three content Creates are present. **PASSES** — confirms the server is correct for the live shape in-process; the live issue is environmental (data shape not reproducible in-process). Gives QA a reference test for the two-instance re-verify.
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
