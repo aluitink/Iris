@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 197 (2026-09-21) — build `8243361c` / B-side notifications confirm bidirectional content-inlining
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** ii-b1 notifications (UI + `/local/v1/notifications` API).
+- **Result:**
+  - **B-side notifications inline content (CONFIRMS Pass 196 bidirectionally):** ii-b1 `/local/v1/notifications` (totalItems=32, page 1=20) has **19 `Create` items** with full content inlined — including 5 S36 A-side posts (P193, P192, P191, P190, P186) with actor=ii-a1 and content text (e.g., "II-S36-P193 fresh A post for object-cache re-check"). UI renders "ii-a1 posted" with content.
+  - **Symmetric to Pass 196:** A-side (Pass 196) had 10 Creates with inlined B content; B-side (this pass) has 19 Creates with inlined A content. The notification path inlines content **bidirectionally** on both instances.
+  - **Root cause confirmed:** The notification path inlines the Create's object content at store time on BOTH instances. The home-feed and outbox paths do NOT inline — they query the local object store which has no cached Note (404). The object-fetch/caching step is present in the notification path (implicit, via inlining) and absent in the feed/outbox paths.
+  - S36 32nd consecutive. 0 console errors.
+- **Checkpoint:** Bidirectional content-inlining in notifications confirmed. Root cause (feed path lacks inlining/fetch that notification path has) is now fully characterized from both sides. Next: new exploration.
+
 ## Pass 196 (2026-09-21) — build `8243361c` / notification path bypasses object-cache gap
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** ii-a1 notifications (UI + `/local/v1/notifications` API); P189 note route on A.
