@@ -17,18 +17,6 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 190 (2026-09-21) — build `8243361c` / Lemmy/Mastodon interop + S36 fresh A post + feed type histogram
-- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
-- **Explored:** Lemmy API health + post list, Mastodon instance API + cross-origin actor resolution, fresh A post (II-S36-P190) → A feed check, feed type histograms (A + B), /ap/v1/health both instances.
-- **Result:**
-  - **Lemmy:** `/api/v3/site` 200 (healthy); `/api/v3/post/list` = 0 posts (no Iris content federated to Lemmy — expected, no follow edges).
-  - **Mastodon:** `/api/v1/instance` 200 (v4.7.2, 1 user, 0 statuses, 0 domains); `@ii-a1` 404, webfinger 404 (no cross-origin federation — expected, no follow edges).
-  - **S36 fresh A post (II-S36-P190):** in A outbox (10 Creates) but **NOT in A feed** (20 items, 0 Creates, 0 S36). UI: 1 stale "Content unavailable" item, no S36. **26th consecutive pass.**
-  - **Feed type histograms:** A feed = Delete×3, unknown×12, Follow×4, Like×1 (0 Create). B feed = Like×6, Follow×9, Undo×5 (0 Create). **Zero content Creates on both instances** — S36 is total.
-  - **Health:** Both A+B `/ap/v1/health` = healthy (delivery queue empty, workers running, 3/6 + 6/7 actors resolvable).
-  - 0 console errors.
-- **Checkpoint:** Interop peers healthy but empty (no federation edges). S36 26th consecutive, confirmed total on both instances. Next: new exploration or stability pass.
-
 ## Pass 189 (2026-09-21) — build `8243361c` / B-side page sweep + cross-instance actor pages + S36 B-side confirmation
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** B-side /profile (posts + Following), /search (ii-a1), cross-instance actor pages (B→A: ii-a1; A→B: ii-b1, authless), fresh B post → B own feed check.
