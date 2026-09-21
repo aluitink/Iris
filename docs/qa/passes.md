@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 182 (2026-09-21) — build `9586ee36` (no `src/`/`tests/` change since the deployed build; no rebuild needed). Open-item stability sweep — **all open items STABLE (20th consecutive for S36/S39/S24-D4/S38; S24 D2 flat)**
+- **Build/Live:** `src/`+`tests/` on `interop-testing` unchanged since `9586ee36` (HEAD `f8d1b559` is the docs-only Pass-181 merge) → **no rebuild needed**; cluster unchanged (build `9586ee36`; A + B health 200).
+- **Explored:** open-item stability sweep (S36, S39, S24 D2, S24 D4, S38, S32-holding, follow-graph baseline).
+- **Result:**
+  - **S36 (home feed) STILL OPEN (top priority).** A `/home` (ii-a1) = single boost-wrapper ("Boosted by ii-b1" → "Content unavailable — view original post", Boost=1, Like=0), target `06GC3AWSHG` = Tombstone; **no own/followed content posts render** (unchanged vs Pass 181 — 20th consecutive stable pass).
+  - **S39 (A-side notifications) STILL OPEN — asymmetry re-confirmed.** ii-a1 (A) `/local/v1/notifications` → `totalItems=0`; ii-b1 (B) → `totalItems=23`. Same B-receives/A-doesn't inbound-delivery gap.
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN + flat.** ii-a1 (A) outbox page 1 = **27 local + 13 foreign (ii-b1)** (`totalItems=63`); types on page 1: Create=16, Update=8, Follow=4, Delete=3, Like=3, Remove=2, Add=2, Announce=2. (Foreign share fluctuates with the 40-item page window — totalItems held at 63 vs Pass 181.)
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** ii-b1 (cached on A): `/outbox`+`/followers`+`/following` = **404**; actor doc = **200** (control).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` + B `wf(ii-a1@A)` = **404** (both directions); own-instance `wf(ii-a1@A)` control = **200**.
+  - **S32 (FULLY FIXED) holding check:** A-side II-S32-5 note `06GC7X75` = **Tombstone** (`formerType=Note`, `deleted=2026-09-21T12:40:27Z`) — no regression.
+  - **Follow-graph baseline intact:** ii-a1 (A) followers = **2**, ii-a2 (A) following = **2**. S30/S26/S31/S29/S34/S27 hold.
+- **Checkpoint:** next pass continues the open-item sweep on `9586ee36`; S36 (home feed) remains top priority — the Phase-146 feed logs (Pass 181) are the diagnostic lever for the content-omission/pollution.
+
 ## Pass 181 (2026-09-21) — **NEW BUILD `9586ee36`** (Phase 146 feed observability: `be5754b5` feed logging + `c9dbec4e` cache hit/miss + `aef48858` cache TTL) / cluster rebuilt + redeployed from the common folder (worktree is docs-only). Open-item re-verify on the new build — **all open items STABLE; the new feed-observability logs fire (build confirmed live)**
 - **Build/Live:** REBUILT + REDEPLOYED the QA cluster to `9586ee36` (common-folder `src/`, == `interop-testing` HEAD; built from `/workspace` since the worktree is for doc edits only). New image IDs (`eec8628c`/`09e49b6d`, was `0b9207e0`); A + B health 200; app started clean. **Build confirmed live:** the Phase-146 `FeedService` observability log fired on a real feed build — `Feed built for …/ii-a2: 220 ms, 2 follows (1 local, 1 remote), 84 items, slowest follow 187 ms, types: Like=9, Follow=13, Undo=6, Delete=7, Update=14, Create=28, Announce=1, Remove=3, Add=3` (proves `be5754b5`+`c9dbec4e`+`aef48858` are running; also confirms the S36/S24-D2 feed shape: content surfaces as `Update`/`Create` mixed with heavy non-content activity).
 - **Explored:** **Open-item re-verify on the new build** (S36, S39, S24 D2, S24 D4, S38, S32-holding, S33/S34 context).
