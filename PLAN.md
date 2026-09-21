@@ -120,7 +120,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 - **Topology:** per-agent environment stacks (see [DUAL_DEV_PROTOCOL.md](docs/reference/DUAL_DEV_PROTOCOL.md)). dev1 → `dev1-*` (10xxx), dev2 → `dev2-*` (20xxx), qa → `qa-*` (30xxx), prod → `iris.luit.ink` (8088). Each agent builds from its own worktree.
 - **Verified 2026-09-21:** all 13 FQDNs serve HTTP 200 over TLS; WebFinger confirms each Iris instance advertises its own FQDN (e.g. `alice@dev1-iris-a.luit.ink` → `acct:alice@dev1-iris-a.luit.ink`). The FQDNs are mapped to the per-env published ports by an **external (operator) reverse proxy** — there is **no proxy stack in this repo** and none to configure. The per-env compose only publishes the host ports (e.g. `dev1-iris-a` → 10081); the external proxy terminates TLS and routes each FQDN to that port. **All communication with the project goes over the deployed containers via the public FQDNs** — never a local port, `localhost`, or `docker exec`.
 - **Dev1 stack:** `dev1-iris-a` + `dev1-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21).
-- **Dev2 stack:** `dev2-iris-a` + `dev2-iris-b` healthy (fresh build from `14eb0db1`, 2026-09-21 — S36 home-feed fix deployed).
+- **Dev2 stack:** `dev2-iris-a` + `dev2-iris-b` healthy (fresh build from `645b3660`, 2026-09-21 — S36 home-feed fix + S17 Likes tab scoping deployed).
 - **QA stack:** `qa-iris-a` + `qa-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21). QA must re-verify S40/S2/S14 (fixed) + directory fix (awaiting re-verify) on the new stack.
 - **Prod:** `iris-web` on `e8988af6` (S17 fix + QA status updates), port 8088.
 
@@ -147,7 +147,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **FIXED `14eb0db1`, awaiting QA re-verify** (IsFollowReply cc=[followers] fix). **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S17, S19, S20, S21, S35** — open.
+- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **FIXED `14eb0db1`, awaiting QA re-verify** (IsFollowReply cc=[followers] fix). **S17** [profile tabs overfetch outbox](docs/qa/s17-profile-tabs-overfetch-outbox.md) — **FIXED `645b3660`, awaiting QA re-verify** (Likes tab scoped to `/liked`; Your posts/Replies bounded to 4 pages). **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S19, S20, S21, S35** — open.
 - **S3-sev:** **S38** — open.
 
 
@@ -174,6 +174,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 - **Directory "All known" fix (401c08b5):** refine `IsSameInstanceActor` to distinguish stale local rows (S5) from remote peers. A non-canonical actor whose handle matches a LOCAL actor's handle is dropped (S5); a non-canonical actor whose handle is NOT local is kept (remote Iris actor). Preserves S5 while fixing the directory.
 - **S36 (home feed):** **FIXED `14eb0db1`.** `IsFollowReply`'s audience fallback used `GetAudienceIris()` (to+cc), which made every top-level post with `cc=[followers]` look like a directed reply and drop it from the home timeline. Fix: inspect only `to`. Awaiting QA re-verify.
+- **S17 (profile tabs overfetch):** **FIXED `645b3660`.** Likes tab now reads the scoped `/liked` collection (1 request, no fan-out) instead of filtering the full outbox. Your posts/Replies tabs bounded to 4 pages (`FilteredTopUpMaxPages=3`). Playwright-verified: Likes tab fires 1 `/liked` request. Awaiting QA re-verify.
 - **S32, S24-D1, S37, S30, S36 (in-process investigation) — see change docs + finding docs.**
 
   ## Keeping the docs lean

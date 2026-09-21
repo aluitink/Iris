@@ -1,7 +1,7 @@
 # S17 — Profile tabs over-fetch the entire outbox (on load + every tab switch)
 
 - **Class:** perf / request-spam — **Severity:** S2
-- **Status:** open (re-confirmed Pass 39, 2026-09-20, on deployed `4f5dd5c`)
+- **Status:** fixed (commit `645b3660`, 2026-09-21) — **awaiting QA re-verify** — Likes tab now reads the scoped `/liked` collection (1 request, no fan-out); Your posts/Replies tabs bounded to 4 pages by `FilteredTopUpMaxPages=3` (commit `fc684ced`)
 - **Found:** Pass 29 (2026-09-20) — re-confirmed Pass 35
 - **Related:** [s16](s16-poll-votes-not-persisted.md) (polls also missing from "Your posts"), the Profile pagination ("Load more") control
 
