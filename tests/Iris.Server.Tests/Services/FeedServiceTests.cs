@@ -1419,6 +1419,158 @@ public sealed class FeedServiceTests
         Assert.Equal(2, allAgain.Count);
     }
 
+    // --- S36 repro: home feed omits the actor's own post when the outbox is polluted with
+    // --- actor-document activity -------------------------------------------------------
+
+    [Fact]
+    public async Task Feed_OwnPostPlusActorDocNoise_KeepsOwnCreate()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            SeedActor(persistence, alice, "Alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            // The actor's own content post (a Create of a public Note).
+            AddPost(persistence, alice, "a-own", "my own post");
+
+            // The actor's own outbox also holds actor-document activity noise (profile edits, a self
+            // Follow, a Like, an Undo, a Delete) — the S36 symptom: the feed is dominated by these and
+            // the content Create is absent.
+            var aliceIri = alice.Value;
+            persistence.Activities.AddToOutboxAsync(alice, new Update
+            {
+                Id = $"{aliceIri}/update-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Update
+            {
+                Id = $"{aliceIri}/update-2",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Follow
+            {
+                Id = $"{aliceIri}/follow-self",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri(aliceIri) }],
+            }).GetAwaiter().GetResult();
+            AddLike(persistence, alice, $"{aliceIri}/like-1", $"https://{LocalHost}/notes/other");
+            persistence.Activities.AddToOutboxAsync(alice, new Undo
+            {
+                Id = $"{aliceIri}/undo-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri($"{aliceIri}/follow-self") }],
+            }).GetAwaiter().GetResult();
+            persistence.Activities.AddToOutboxAsync(alice, new Delete
+            {
+                Id = $"{aliceIri}/delete-1",
+                Actor = [new Link { Href = new Uri(aliceIri) }],
+                Object = [new Link { Href = new Uri($"https://{LocalHost}/notes/gone") }],
+            }).GetAwaiter().GetResult();
+
+            // A followed actor's post must also surface.
+            AddPost(persistence, bob, "b-1", "bob 1");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        var ids = feed.Select(IdOf).ToList();
+        Assert.Contains($"https://{LocalHost}/notes/a-own", ids);
+        Assert.Contains($"https://{LocalHost}/notes/b-1", ids);
+    }
+
+    [Fact]
+    public async Task Feed_OwnPostBuries_UnderCapOfActorDocNoise_StillKeepsOwnCreate()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            SeedActor(persistence, alice, "Alice");
+            var aliceIri = alice.Value;
+
+            // 250 actor-document Update activities (the S36 noise): each references the actor IRI, so
+            // none is coalesced by the by-content-object pass and none is a reply. With the default
+            // MaxItems = 200, the own post (added last) would be truncated to the last 200 of 251 if
+            // the cap is applied before the own-outbox items are guaranteed a slot.
+            for (var i = 0; i < 250; i++)
+            {
+                persistence.Activities.AddToOutboxAsync(alice, new Update
+                {
+                    Id = $"{aliceIri}/noise-{i:D3}",
+                    Actor = [new Link { Href = new Uri(aliceIri) }],
+                    Object = [new Link { Href = new Uri(aliceIri) }],
+                }).GetAwaiter().GetResult();
+            }
+
+            // The actor's own content post.
+            AddPost(persistence, alice, "a-own", "my own post");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-own");
+    }
+
+    [Fact]
+    public async Task S36_OwnCreatePlusSameObjectAnnouncePlusActorDocNoise_KeepsOwnCreate()
+    {
+        // The exact S36 shape: the actor's outbox holds their own note's Create AND an Announce (boost)
+        // of that same note, plus heavy actor-document noise. The by-content-object coalesce pass groups
+        // the Create and the Announce by the note IRI; the embedded Create must survive (the Announce is
+        // the redundant one). S36: the live feed showed only the Announce + a Group Create, and the note's
+        // own Create was absent.
+        var noteIri = $"https://{LocalHost}/notes/a-own";
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            SeedActor(persistence, alice, "Alice");
+            var aliceIri = alice.Value;
+
+            // 120 actor-document Update activities (the S36 noise: profile edits / actor-IRI activity).
+            for (var i = 0; i < 120; i++)
+            {
+                persistence.Activities.AddToOutboxAsync(alice, new Update
+                {
+                    Id = $"{aliceIri}/noise-{i:D3}",
+                    Actor = [new Link { Href = new Uri(aliceIri) }],
+                    Object = [new Link { Href = new Uri(aliceIri) }],
+                }).GetAwaiter().GetResult();
+            }
+
+            // The actor's own content post (a Create of the note, embedded).
+            AddPost(persistence, alice, "a-own", "my own post");
+
+            // The actor ALSO boosted that same note (an Announce, link-only) — the S36 "Announce (boost
+            // of the note)" that appeared in the feed while the Create did not.
+            AddAnnounce(persistence, alice, $"{aliceIri}/announce-own", noteIri, embedded: false);
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        var createsOfNote = feed
+            .OfType<Create>()
+            .Where(c => c.Object?.FirstOrDefault() is IObject { Id: var id } && id == noteIri)
+            .ToList();
+        var announcesOfNote = feed
+            .OfType<Announce>()
+            .Where(a => a.Object?.FirstOrDefault().ResolveObjectIri()?.Value == noteIri)
+            .ToList();
+
+        Assert.True(
+            createsOfNote.Count > 0,
+            $"the own note Create must survive the coalesce pass; feed had {feed.Count} items, " +
+            $"note Creates={createsOfNote.Count}, note Announces={announcesOfNote.Count}");
+        // The note must not render twice (Create + Announce coalesced to one).
+        Assert.Equal(1, createsOfNote.Count + announcesOfNote.Count);
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(

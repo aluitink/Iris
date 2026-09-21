@@ -1,3 +1,4 @@
+using Iris.Client;
 using Iris.Server.Data;
 using KristofferStrube.ActivityStreams;
 using Npgsql;
@@ -277,5 +278,336 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
         var empty = await p.Actors.SearchActorsAsync("zzz-no-such-needle-" + Guid.NewGuid().ToString("N")[..8], 100, 0, localOnly: false);
         Assert.Empty(empty);
         Assert.Equal(0, await p.Actors.CountSearchMatchesAsync("zzz-no-such-needle-" + Guid.NewGuid().ToString("N")[..8], localOnly: false));
+    }
+
+    /// <summary>
+    /// S36 repro over the EF (PostgreSQL) store: an actor's outbox holds a content <c>Create</c> of a
+    /// note plus actor-document noise (an <c>Update</c> and an <c>Add</c> whose object is the actor IRI).
+    /// The <see cref="Iris.Server.Services.FeedService"/> (the home-timeline feed) must surface the actor's
+    /// own note <c>Create</c>. This drives the <em>real</em> EF <see cref="IActivityStore"/> (the
+    /// production store, <c>BoxItems</c>/<c>Activities</c> jsonb round-trip) rather than the in-memory
+    /// store, so a store-specific divergence (the EF outbox read returning the noise but not the
+    /// content, or a document round-trip that degrades the <c>Create</c>) is caught here.
+    /// </summary>
+    [Fact]
+    public async Task S36_FeedService_OverEfStore_SurfacesOwnNoteCreate_AmongActorDocNoise()
+    {
+        var p = NewProvider();
+        var ns = "s36" + Guid.NewGuid().ToString("N")[..8];
+        var actorIri = new Iri($"https://test.local/ap/v1/u/{ns}");
+        await p.Actors.PutActorAsync(new Person { Id = actorIri.Value, PreferredUsername = ns, Name = [$"{ns}"] });
+
+        // The actor's own content post (a Create of a public Note).
+        var noteIri = $"https://test.local/ap/v1/{ns}/notes/{Guid.NewGuid():N}";
+        var createIri = $"https://test.local/ap/v1/{ns}/creates/{Guid.NewGuid():N}";
+        var note = new Note
+        {
+            Id = noteIri,
+            Content = ["s36 own post must surface in the home feed"],
+            AttributedTo = [Link(actorIri.Value)],
+            To = [Link("https://www.w3.org/ns/activitystreams#Public")],
+        };
+        var create = new Create
+        {
+            Id = createIri,
+            Actor = [Link(actorIri.Value)],
+            Object = [note],
+        };
+        await p.Activities.AddToOutboxAsync(actorIri, create);
+
+        // Actor-document noise (profile update + a self add), the same shape the live outbox carries.
+        var updateIri = $"https://test.local/ap/v1/{ns}/activities/{Guid.NewGuid():N}";
+        await p.Activities.AddToOutboxAsync(actorIri, new Update
+        {
+            Id = updateIri,
+            Actor = [Link(actorIri.Value)],
+            Object = [Link(actorIri.Value)],
+        });
+        var addIri = $"https://test.local/ap/v1/{ns}/adds/{Guid.NewGuid():N}";
+        await p.Activities.AddToOutboxAsync(actorIri, new Add
+        {
+            Id = addIri,
+            Actor = [Link(actorIri.Value)],
+            Object = [Link(actorIri.Value)],
+        });
+
+        // Sanity: the EF outbox read returns all three (the store round-trip works).
+        var outbox = await p.Activities.GetOutboxAsync(actorIri);
+        Assert.Equal(3, outbox.Count);
+
+        // Run the real home-timeline feed over the EF store. The actor has no follows, so the feed is
+        // exactly the actor's own outbox items — the note Create must survive.
+        var feed = new Iris.Server.Services.FeedService(
+            p,
+            new EfLocalActorResolver(p),
+            new EfNullActorDocumentFetcher(),
+            new EfNullClient(),
+            Microsoft.Extensions.Options.Options.Create(new Iris.Server.Services.FeedOptions()));
+
+        var items = await feed.GetFeedAsync(actorIri);
+
+        // The note's Create must be present in the feed (S36: it was absent on the live EF host).
+        Assert.Contains(items, i =>
+        {
+            if (i is not Activity a)
+            {
+                return false;
+            }
+            var first = a.Object?.FirstOrDefault();
+            return a.Type?.FirstOrDefault() == "Create"
+                   && first is IObject o
+                   && o.Id == noteIri;
+        });
+    }
+
+    private sealed class EfLocalActorResolver(IPersistenceProvider persistence) : Iris.Server.Caching.ILocalActorResolver
+    {
+        public async Task<bool> IsLocalActorAsync(Iri actorIri, CancellationToken ct = default)
+            => await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
+    }
+
+    private sealed class EfNullActorDocumentFetcher : Iris.Server.Security.IActorDocumentFetcher
+    {
+        public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+            => Task.FromResult<Actor?>(null);
+    }
+
+    /// <summary>
+    /// A null <see cref="Iris.Client.IActivityPubClient"/> for the feed service over the EF store:
+    /// the actor under test has no remote follows, so no remote collection fetch occurs. The client
+    /// methods that would touch the wire are inert (empty enumerables / 202 results) and the rest are
+    /// unimplemented stubs (the feed path never calls them).
+    /// </summary>
+    private sealed class EfNullClient : Iris.Client.IActivityPubClient
+    {
+        public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
+            => Task.FromResult<IObject?>(null);
+
+        public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
+            => Task.FromResult<Actor?>(null);
+
+        public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)
+            => Task.FromResult<NodeInfo?>(null);
+
+        public Task<Iris.Client.LemmyPostScore?> GetLemmyPostScoreAsync(Iri iri, CancellationToken ct = default)
+            => Task.FromResult<Iris.Client.LemmyPostScore?>(null);
+
+        public Task<Iris.Client.DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UndoFollowAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> AcceptAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> SetManuallyApprovesMembersAsync(Iri communityIri, bool enabled, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> SetManuallyApprovesFollowersAsync(Iri actorIri, bool enabled, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> DislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UndislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UnannounceAsync(Iri actorId, Iri originalAnnounceId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> CreateCommunityAsync(
+            Iri actorId,
+            string name,
+            string displayName,
+            string? description = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(0, false, ""));
+
+        public Task<Iris.Client.DeliveryResult> UnblockAsync(Iri actorId, Iri originalBlockId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(0, false, ""));
+
+        public Task<Iris.Client.DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(0, false, ""));
+
+        public Task<Iris.Client.DeliveryResult> UnflagAsync(Iri actorId, Iri originalFlagId, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(0, false, ""));
+
+        public Task<Iris.Client.DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> PostQuestionAsync(
+            Iri actorId,
+            string content,
+            IEnumerable<string> options,
+            DateTime? endsAt = null,
+            bool multiple = false,
+            IEnumerable<Iri>? to = null,
+            IEnumerable<Iri>? cc = null,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<string>? hashtags = null,
+            Func<string, string?>? hashtagHrefFactory = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<Iris.Client.DeliveryResult> PostReplyAsync(
+            Iri actorId,
+            Iri parentIri,
+            string content,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<Iri>? to = null,
+            IEnumerable<string>? hashtags = null,
+            Iri? conversationIri = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
+        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
+            => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound)
+            {
+                Content = new StringContent(string.Empty),
+            });
+
+        public async IAsyncEnumerable<Iris.Core.Collections.CollectionPage> GetCollectionAsync(
+            Iri collectionId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield break;
+        }
+
+        public IAsyncEnumerable<IObjectOrLink> GetCollectionItemsAsync(
+            Iri collectionId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetCommunityFeedAsync(
+            Iri communityId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
+            Iri actorId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(
+            Iri objectIri,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetLikesAsync(
+            Iri objectIri,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetSharesAsync(
+            Iri objectIri,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> SearchAsync(
+            Iri instanceBase,
+            string? query = null,
+            Iris.Client.SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
+            Iri actorId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
+            Iri actorId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
+            Iri actorId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
+            Iri actorId,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+            Iri actorId,
+            Iris.Client.Pipeline.ProxyCredentials credentials,
+            Iris.Client.Collections.CollectionQuery? query = null,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield break;
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private static async IAsyncEnumerable<T> EmptyAsync<T>(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask.ConfigureAwait(false);
+            yield break;
+        }
     }
 }
