@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 230 (2026-09-21) — build `401c08b5` / S36 stable at 61st consecutive: A home feed = 1 unique item (Tombstone-Announce), B home feed = completely empty; no new angles
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed (re-check); B home feed (re-check).
+- **Result:**
+  - **A home feed:** 2 DOM elements → 1 unique item (dedup): "Boosted by ii-b1, 17h ago, Content unavailable — view original post" (Tombstone-Announce). No content posts.
+  - **B home feed:** Completely empty ("Your timeline is empty. Follow people to see their posts here. Browse the directory →").
+  - **S36 61st consecutive.** Pattern stable. No new angles.
+  - 0 console errors.
+- **Checkpoint:** S36 stable (61st consecutive). A: 1 Tombstone-Announce; B: empty. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 229 (2026-09-21) — build `401c08b5` / A actor page + outbox: 46 Creates (43 Notes + 1 Article) in outbox, actor page shows P227/P226/P225; home feed shows 0 (60th consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A actor page for ii-a1 (own posts); A outbox (Create count); A home feed (re-check).
