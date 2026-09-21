@@ -158,7 +158,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 > **The loops never block on a question.** When either loop hits something it can't decide (a product fork, a conflict, a destructive action), it logs a short entry here and **moves on to another item** (stashing in-flight work first). A human clears this list when convenient; cleared entries fold their answer into the relevant slice/change doc. See [DEV_LOOP.md - Blocking without stopping](docs/reference/DEV_LOOP.md#blocking-without-stopping).
 
-- *(empty)*
+- **[Dev, 2026-09-21] `git pull --rebase` conflict on PLAN.md + docs/qa/passes.md (QA Pass 205 commit).** Rebasing `interop-testing` (2 commits ahead: `863f22c8` diag + `b459a948` docs) onto origin hit a content conflict in `PLAN.md` and `docs/qa/passes.md` when applying commit `9a251708` (QA Pass 205). Both files are QA-owned; the conflict is between QA's Pass 205 doc changes and dev's S36 diagnostic Active Slice / Live state updates. **Rebase aborted** — the tree is back to a clean state at `b459a948`. A human (or the QA loop) needs to resolve the PLAN.md + passes.md conflicts before the next `git pull --rebase` can succeed. The 2 local commits (S36 diagnostic logging) are safe and not lost.
 
 ## Recently Completed
 
