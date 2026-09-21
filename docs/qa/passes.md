@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 198 (2026-09-21) — build `8243361c` / actor-page Posts tab renders remote notes despite AP route 404
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** ii-a1 view of ii-b1 actor page (Posts tab); object detail page for P189; local object API routes.
+- **Result:**
+  - **NEW — actor-page Posts tab renders remote content despite AP route 404:** ii-a1's view of `https://qa-iris-a.luit.ink/actor?iri=.../ii-b1` Posts tab renders 7 items with full content (e.g., "ii-b1 45m ago II-S36-P189 fresh B post..."). The `/ap/v1/u/ii-b1/notes/{id}` route returns 404 on A, yet the UI renders the content.
+  - **Object detail page also renders:** `GET /object?iri=.../ii-b1/notes/06GC9RFVB4BRXGCYYMVGHWX0XM` → 200, shows "ii-b1 45m ago II-S36-P189..." with content. No error.
+  - **Local object API:** `/local/v1/object?iri=...` → 200 HTML (the UI page), but does NOT contain the note content (the content comes from a different data path — likely the notification store or the outbox store where the Create was stored with inlined content).
+  - **Root cause further refined:** The UI has at least 3 content sources: (1) the AP note route (404 — object not cached), (2) the notification store (inlines content — Pass 196/197), (3) the outbox store (stores the Create activity with the object reference — S24 D2). The actor-page Posts tab and object detail page appear to use source (2) or (3) rather than source (1), which is why they render content despite the AP route 404. The home-feed path uses source (1) (or a similar object-store query) and finds nothing.
+  - S36 33rd consecutive. 0 console errors.
+- **Checkpoint:** UI content-source map: actor-page/object-detail use notification/outbox store (inlined content); home-feed uses object store (404). The fix is to make the home-feed path use the same inlined-content source as the actor-page. Next: new exploration.
+
 ## Pass 197 (2026-09-21) — build `8243361c` / B-side notifications confirm bidirectional content-inlining
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** ii-b1 notifications (UI + `/local/v1/notifications` API).
