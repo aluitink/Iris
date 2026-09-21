@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 240 (2026-09-21) — build `401c08b5` / Authless pass: /home → 302 to /login ✓, / → 302 to /login ✓; no data leaks; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Authless access to /home and / on A.
+- **Result:**
+  - **/home (authless):** 302 redirect to /login ✓ (correct gating).
+  - **/ (authless):** 302 redirect to /login ✓ (correct gating).
+  - **Login page:** Renders correctly ("Sign in Handle @ Password Sign in New here? Create an account.").
+  - No data leaks. No console errors.
+  - No new defects found.
+- **Checkpoint:** Authless gating works. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 239 (2026-09-21) — build `401c08b5` / S36 re-confirmed (64th consecutive): A home feed = 1 Tombstone-Announce, no content posts; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed.
