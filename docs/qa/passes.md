@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 120 (2026-09-21) — No new commit / no build change; re-verified S26 cross-instance reply threading → PASS (B reply federated to A with inReplyTo=A parent, A /replies totalItems=1); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
+- **Explored:** Ran a fresh **cross-instance reply** (S26) on the current build — B (ii-b1) replied to a live A note (`06GC4RR4`), then verified federation + threading.
+- **Result:** **S26 re-verified PASS (holding).** B (ii-b1) posted a reply to A note `06GC4RR4`; the reply federated to A: `GET A <parent>/replies` → totalItems=1 = the B reply IRI (`https://qa-iris-b.luit.ink/ap/v1/u/ii-b1/notes/06GC51KHX46P8GTT3RXWWRYXCW`), and that reply's `inReplyTo` = the A parent IRI + `actor` = ii-b1 (**threading correct**). Cross-instance reply threading holds on the current build.
+- **Checkpoint:** S26 re-verified (PASS, holding). S36 still top priority (dev fix in progress — 296 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 119 (2026-09-21) — No new commit / no build change; dev S36 WIP grew (296 lines of tests across FeedServiceTests + EfPersistenceContractTests, incl. an EF persistence integration test); still no src/ fix → S36 OPEN
 - **Build/Live:** No new commit (HEAD `aebe420`); QA cluster unchanged. **Dev S36 WIP grew to 296 lines of tests** across **two files** — `FeedServiceTests.cs` (2 tests: `Feed_OwnPostPlusActorDocNoise_KeepsOwnCreate`, `Feed_OwnPostBuries_UnderCapOfActorDocNoise_StillKeepsOwnCreate`) + `EfPersistenceContractTests.cs` (new EF persistence integration test `S36_FeedService_OverEfStore_SurfacesOwnNoteCreate_AmongActorDocNoise` + test harness). **No `src/` changes yet** — the S36 fix itself is not written (tests only) → S36 still open.
 - **Explored:** Checked the dev S36 WIP state (commit / WIP / build staleness) — confirmed the fix is still in the test-writing phase.
