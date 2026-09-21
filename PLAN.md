@@ -120,14 +120,14 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 - **Topology:** per-agent environment stacks (see [DUAL_DEV_PROTOCOL.md](docs/reference/DUAL_DEV_PROTOCOL.md)). dev1 → `dev1-*` (10xxx), dev2 → `dev2-*` (20xxx), qa → `qa-*` (30xxx), prod → `iris.luit.ink` (8088). Each agent builds from its own worktree.
 - **Verified 2026-09-21:** all 13 FQDNs serve HTTP 200 over TLS via the gateway proxies; WebFinger confirms each Iris instance advertises its own FQDN (e.g. `alice@dev1-iris-a.luit.ink` → `acct:alice@dev1-iris-a.luit.ink`). Gateway `stack.sh` updated to bring up the `proxies/iris-environments` compose (4th stack).
 - **Dev1 stack:** `dev1-iris-a` + `dev1-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21).
-- **Dev2 stack:** `dev2-iris-a` + `dev2-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21).
+- **Dev2 stack:** `dev2-iris-a` + `dev2-iris-b` healthy (fresh build from `14eb0db1`, 2026-09-21 — S36 home-feed fix deployed).
 - **QA stack:** `qa-iris-a` + `qa-iris-b` healthy (fresh build from `a915d9c4`, 2026-09-21). QA must re-verify S40/S2/S14 (fixed) + directory fix (awaiting re-verify) on the new stack.
 - **Prod:** `iris-web` on `e8988af6` (S17 fix + QA status updates), port 8088.
 
     ## Active Slice
 
 - **Directory "All known" omits remote actors (FIXED `401c08b5`, awaiting QA re-verify).** QA Pass 202: the directory's "All known" tab omits remote actors bidirectionally (A does not show ii-b1, B does not show ii-a1), while search finds them. Root cause: `GlobalSearchService.IsSameInstanceActor` dropped any actor with a `preferredUsername` whose IRI was not on the local instance base — which incorrectly excluded remote Iris actors (they carry a handle too). Fix (refined `401c08b5`): a non-canonical actor whose handle matches a LOCAL actor's handle is a stale local row (S5) and is dropped; a non-canonical actor whose handle is NOT local is a remote peer and is kept. This preserves S5 (stale local alice is dropped) while keeping remote Iris actors. **Dev cluster rebuilt 2026-09-21 on `401c08b5`.** QA must rebuild the QA cluster to re-verify.
-- **S36 home-feed (DIAGNOSIS COMPLETE — in-process root cause NOT reproducible; regression-net added; live evidence requested).** The server path is provably correct in-process: (a) new regression-net test `S36_OwnPostsSurvive_CapSaturationByLocalFollowPlusBrokenRemotePlusDeliveredContent` (own posts + a local follow saturating the MaxItems=200 cap + a broken remote follow whose delivered content lives in the object store) PASSES — own posts survive; (b) the existing S36 live-wire-shape tests (actor-doc noise + Group Create + own Create + follow Create) all pass; (c) the live dev container's `Iris.Server.dll` was byte-verified to contain the S25 delivered-content union (`GetDeliveredContentAsync`) — the deployed build is current. The live drop is therefore **data/environment-specific** (the live actors have accumulated S25/S32 noise the fresh reproductions don't have). **QA request:** on the next re-verify, capture the live actor's outbox IRIs + activity types (`SELECT "Id", "Type" FROM "Activities"` joined to the outbox box-items) and the exact signed `GET /ap/v1/u/{me}/feed` body — the in-process repros cannot see the live data shape.
+- **S36 home-feed (FIXED `14eb0db1`, awaiting QA re-verify).** Root cause: `FeedService.IsFollowReply`'s audience fallback used `GetAudienceIris()` (to+cc minus public sentinel) to detect directed replies. Every top-level post Iris writes carries `cc=[followers]` (the standard public-post shape), so its audience count was always >0 and the post was dropped from the home timeline as a "reply." Fix: the fallback now inspects only the `to` field — a `to` of just the public sentinel (or absent) is a top-level post (kept); a named `to` is a directed reply (filtered). `cc=[followers]` is a public carbon-copy, not a directed recipient. Two regression tests added (own posts with `to=Public,cc=followers` surface among actor-doc noise; directed replies still filtered). All 69 FeedService tests + 1436 Server tests pass. **Dev2 stack needs rebuild + redeploy for QA re-verify.**
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
@@ -146,7 +146,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
-- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **OPEN (66th consecutive pass; home feed is the ONLY broken surface of 8; awaiting dev fix)**. **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S17, S19, S20, S21, S35** — open.
+- **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **FIXED `14eb0db1`, awaiting QA re-verify** (IsFollowReply cc=[followers] fix). **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S2, S3, S4, S14, S17, S19, S20, S21, S35** — open.
 - **S3-sev:** **S38** — open.
 
 
@@ -172,7 +172,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 ## Recently Completed
 
 - **Directory "All known" fix (401c08b5):** refine `IsSameInstanceActor` to distinguish stale local rows (S5) from remote peers. A non-canonical actor whose handle matches a LOCAL actor's handle is dropped (S5); a non-canonical actor whose handle is NOT local is kept (remote Iris actor). Preserves S5 while fixing the directory.
-- **S36 (home feed):** **OPEN (66th consecutive pass).** Home feed is the ONLY broken surface of 8 (notifications, actor page, object-detail, profile, community feed, directory, search all work). Awaiting dev fix to the home feed query.
+- **S36 (home feed):** **FIXED `14eb0db1`.** `IsFollowReply`'s audience fallback used `GetAudienceIris()` (to+cc), which made every top-level post with `cc=[followers]` look like a directed reply and drop it from the home timeline. Fix: inspect only `to`. Awaiting QA re-verify.
 - **S32, S24-D1, S37, S30, S36 (in-process investigation) — see change docs + finding docs.**
 
   ## Keeping the docs lean

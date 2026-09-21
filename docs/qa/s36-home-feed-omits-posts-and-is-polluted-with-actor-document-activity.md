@@ -1,7 +1,7 @@
 # S36 — Home feed omits the user's own posts + followed posts and is polluted with actor-document activity (Update/Add/Remove/Follow/Undo/Delete/Like); UI renders "Your timeline is empty"
 
 - **Class:** bug / data-integrity / regression — **Severity:** S2 (the home timeline is the primary surface; it shows essentially nothing)
-- **Status:** open — **NEW regression on the current build (`27b1ba6`); not present in the 2026-09-20 fresh-rebuild re-tests**
+- **Status:** fixed (commit `14eb0db1`, 2026-09-21) — **awaiting QA re-verify** — root cause: `IsFollowReply` audience fallback used `GetAudienceIris()` (to+cc), which made every top-level post with `cc=[followers]` look like a directed reply; fix inspects only `to`
 - **Found:** Interop suite A2/A4 re-verify (Iris↔Iris), 2026-09-21, fresh QA cluster (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`), build `27b1ba6` (rebuilt 2026-09-21T03:04Z)
 - **Related:** [S25](s25-remote-post-not-in-followers-home-feed.md) (remote post not in follower feed — **now subsumed** by this broader defect), [S18](s18-local-follow-timeline-empty.md) (local follow → empty timeline — **this is the local variant, now regressing again**), [S32](s32-delete-not-propagated-peer-stale-copy.md) (the `Delete`/tombstone noise seen in the feed is the S32 side-effect surfacing in the feed query)
 
