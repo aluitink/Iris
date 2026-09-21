@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 114 (2026-09-21) — No new commit / no build change; re-confirmed S24 D2 (foreign activities in local actor outbox) — 3 B activities in ii-a1's outbox
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (`FeedServiceTests.cs` repro test still uncommitted). QA cluster unchanged (no redeploy).
+- **Explored:** Re-confirmed **S24 D2** (foreign activities in a local actor's outbox) — inspected `GET A /ap/v1/u/ii-a1/outbox` for activities whose `actor` is on the B instance.
+- **Result:** **S24 D2 re-confirmed OPEN.** ii-a1's (A) outbox (20 items) contains **3 foreign (B) activities** — an `Announce` (`…/ii-b1/announces/…`, actor `ii-b1`), a `Create` (`…/ii-b1/creates/…`, actor `ii-b1`), and a `Follow` (`…/ii-b1/follows/…`, actor `ii-b1`). A remote (B) actor's activities are leaking into the local (A) actor's outbox — an outbox-integrity defect (an outbox should contain only the local actor's own activities). (Note: the first count script under-counted because these items carry `actor` as a plain IRI **string**, not a `Link` dict.)
+- **Checkpoint:** S24 D2 re-confirmed (with D1 — Following-tab remote-actor rendering — S24 stays OPEN). S36 top priority (dev fix pending). S28 (count), S30 (A8.4), S32 (sending-side), S37 open. M2–M12 + L2–L12 blocked.
+
 ## Pass 113 (2026-09-21) — No new commit (HEAD `aebe420` rebase); dev S36 WIP seen (failing repro test `Feed_OwnPostPlusActorDocNoise_KeepsOwnCreate`); S36 re-confirmed OPEN with fresh `/feed` evidence
 - **Build/Live:** No new commit (HEAD `aebe420` = rebase of `11fbec6`, identical source; cluster already current — no redeploy). **Dev has NEW S36 WIP**: `tests/Iris.Server.Tests/Services/FeedServiceTests.cs` — a **failing repro test** `Feed_OwnPostPlusActorDocNoise_KeepsOwnCreate` (own Note Create + followed post must survive when the outbox is polluted with Update/Follow/Like/Undo/Delete actor-doc activity). The fix itself is not yet written → S36 still open.
 - **Explored:** Re-confirmed **S36 (home feed)** on the current build — A home UI (ii-a1) + the authenticated `/feed` shape (via in-page fetch hook + Refresh).
