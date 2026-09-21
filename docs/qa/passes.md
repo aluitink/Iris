@@ -17,6 +17,20 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 208 (2026-09-21) — build `adf65b84` / P208 confirms S36 pattern: notification inlines, outbox stores embedded, AP route 404, home feed empty
+- **Build/Live:** `adf65b84` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post II-S36-P208 (note `06GCADRQ67GKYP0RZ1RB237YD4`); B notification/outbox/AP route/object-detail/home feed for P208.
+- **Result:**
+  - **B notification:** inlines full P208 content (totalItems=35).
+  - **B outbox:** P208 Create appears after ~3 min delivery lag (totalItems 67→68), object embedded with content.
+  - **B AP note route:** `GET /ap/v1/u/ii-a1/notes/06GCADRQ67GKYP0RZ1RB237YD4` → **404** (object NOT in actor-keyed note store).
+  - **B object-detail:** renders P208 content (reads from outbox/notification store, NOT the AP note route).
+  - **B home feed:** **EMPTY** ("Your timeline is empty") — 43rd consecutive S36.
+  - **Pattern confirmed across P206 + P208 (2 fresh posts):** notification inlines content at store time; outbox stores Create with embedded object; AP note route 404s (object not in actor-keyed store); home feed empty (queries actor-keyed store → 404); object-detail renders (reads from outbox/notification store).
+  - **S36 fix (`adf65b84`) assessment:** The fix fetches + caches the bare-link object on inbound Create. The cached object is accessible via the object-detail page (which reads from the outbox/notification store). But the AP note route (`/ap/v1/u/{actor}/notes/{id}`) reads from a different store (the actor-keyed note store) which is NOT populated by the fix. **The fix needs to ALSO populate the actor-keyed note store, OR the home-feed query needs to read from the same store as the object-detail page.**
+  - S36 43rd consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** S36 pattern fully confirmed across 2 fresh posts (P206 + P208). The fix caches the object (object-detail works) but doesn't populate the actor-keyed note store (AP route 404, home feed empty). Dev needs to populate the actor-keyed note store or redirect the feed query. Next: no new angles — S36 is fully characterized, waiting for dev to address the store mismatch.
+
 ## Pass 207 (2026-09-21) — build `adf65b84` / P206 object-detail renders but AP route 404 (content in outbox, not object store)
 - **Build/Live:** `adf65b84` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** P206 on B: AP note route, object-detail page, local object API routes.
