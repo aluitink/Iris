@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 243 (2026-09-21) — build `401c08b5` / Compose page: all controls present (editor, Note/Article/Poll, Public/Followers/Direct, CW, attachments, char count, Post button); no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A Compose page (all controls).
+- **Result:**
+  - **Editor:** Present (textarea/contenteditable).
+  - **Content types:** Note, Article, Poll.
+  - **Visibility:** Public, Followers, Direct.
+  - **Content warning:** Present.
+  - **Attachments:** "Attachments (optional — images, video, audio, PDF) 0/500".
+  - **Char count:** Present (0/500).
+  - **Post button:** Present.
+  - All controls render correctly. No new defects.
+  - 0 console errors.
+- **Checkpoint:** Compose page all controls work. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 242 (2026-09-21) — build `401c08b5` / B notifications: P227 (Followers-only), P226 (Article), P225 (mention) all inlined ✓; B home feed still empty (S36 66th consecutive); notification system works on both instances
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** B notifications page (ii-b1); B home feed.
