@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 226 (2026-09-21) — build `401c08b5` / P226 (A Article): Article posted (type: Article, IRI /articles/...), in profile, NOT in home feed (57th consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A Article II-S36-P226 (IRI `https://qa-iris-a.luit.ink/ap/v1/u/ii-a1/articles/06GCAYBA2NCC1X5FBT1R5CG7GG`, type: Article); A home feed + profile for P226.
+- **Result:**
+  - **P226 posted:** A outbox has the Create. Note IRI uses `/articles/` path (not `/notes/`). Type: **Article** (not Note). Content: "II-S36-P226 fresh A Article (build 401c08b5)...".
+  - **A profile:** P226 visible in "Your posts" tab (5m ago).
+  - **A home feed:** P226 NOT present (2 unique items: duplicate "Content unavailable" Tombstone-Announce + empty). **57th consecutive S36.**
+  - **Key insight:** Articles (type: Article, IRI /articles/...) are also omitted from the home feed, same as Notes (type: Note, IRI /notes/...). The home feed bug is NOT specific to Notes — it affects all content types (Notes + Articles).
+  - 0 console errors.
+- **Checkpoint:** P226 (Article) confirms S36 affects all content types (Notes + Articles). Article in profile, NOT in home feed (57th consecutive). No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 225 (2026-09-21) — build `401c08b5` / P225 (A→B with @ii-b1 mention): mention notification works, but home feed still omits (56th consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh A post II-S36-P225 with @ii-b1 mention (note `06GCAX586PRJVX8GGJZ0D68WMG`); B notification/home feed for P225.
