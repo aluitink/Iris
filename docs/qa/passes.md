@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 237 (2026-09-21) — build `401c08b5` / Profile page: 6 tabs (Your posts, Replies, Likes, Followers, Following, Communities); Likes tab works (shows liked posts); Replies tab empty (correct); no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A Profile page (all tabs).
+- **Result:**
+  - **Tabs:** Your posts, Replies, Likes, Followers, Following, Communities.
+  - **Your posts:** P227, P226, P225 visible (from Pass 227-229).
+  - **Replies:** "No replies to your posts yet." (correct — no one has replied to ii-a1's posts).
+  - **Likes:** Shows liked posts (II-S28, II-B-selftest, II-A7-3, etc.). Works correctly.
+  - **Followers:** (tested in Pass 218 — remote actors present).
+  - **Following:** (tested in Pass 218 — remote actors present).
+  - **Communities:** (not tested in detail).
+  - No new defects found.
+  - 0 console errors.
+- **Checkpoint:** Profile page all tabs work. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 236 (2026-09-21) — build `401c08b5` / Communities page: 3 tabs (Following, My communities, All on this instance), NO "All known" scope; ii-a8-community visible in Following + All on this instance; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A Communities page (tabs + scope).
