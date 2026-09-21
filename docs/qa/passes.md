@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 225 (2026-09-21) — build `401c08b5` / P225 (A→B with @ii-b1 mention): mention notification works, but home feed still omits (56th consecutive)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post II-S36-P225 with @ii-b1 mention (note `06GCAX586PRJVX8GGJZ0D68WMG`); B notification/home feed for P225.
+- **Result:**
+  - **P225 posted:** A outbox has the Create. Note `to: Public` (public visibility). Content includes `@ii-b1` mention link.
+  - **B notification:** P225 inlined (3m ago, "II-S36-P225 fresh A post with @ii-b1 mention..."). **Mention notification works** — B was notified about the @ii-b1 mention.
+  - **B home feed:** P225 NOT present (completely empty: "Your timeline is empty"). **56th consecutive S36.**
+  - **Key insight:** The mention notification works (B knows about P225), but the home feed still doesn't show it. The notification system and the home feed are separate paths — the notification path works, the feed path is broken.
+  - 0 console errors.
+- **Checkpoint:** Mention notification works (P225 @ii-b1 → B notified). Home feed still omits P225 (56th consecutive). The notification system is independent of the home feed — fixing one won't fix the other. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 224 (2026-09-21) — build `401c08b5` / Notifications + actor page show P223 (remote post visible); home feed omits it — content-source map complete (8 surfaces)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A notifications for P223; A actor page for ii-b1 (P223 visibility).
