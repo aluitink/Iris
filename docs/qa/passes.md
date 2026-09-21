@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 238 (2026-09-21) — build `401c08b5` / Settings page: 3 tabs (Account, Content, Danger) all render correctly; Content tab has notification types + muted actors + relays; Danger tab has account deletion; no new defect
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A Settings page (all tabs).
+- **Result:**
+  - **Account tab:** Profile (ii-a1, link to actor page, "Edit your profile"), Security, Change password, Moderation.
+  - **Content tab:** Notification types (New followers, Likes, Boosts/shares, Replies), Muted actors ("No muted actors"), Mute Communities, Relays.
+  - **Danger tab:** Account deletion ("Deleting your account is permanent and irreversible... Delete my account").
+  - All tabs render correctly. No new defects.
+  - 0 console errors.
+- **Checkpoint:** Settings page all tabs work. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 237 (2026-09-21) — build `401c08b5` / Profile page: 6 tabs (Your posts, Replies, Likes, Followers, Following, Communities); Likes tab works (shows liked posts); Replies tab empty (correct); no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A Profile page (all tabs).
