@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 239 (2026-09-21) — build `401c08b5` / S36 re-confirmed (64th consecutive): A home feed = 1 Tombstone-Announce, no content posts; no new angles
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed.
+- **Result:**
+  - **A home feed:** 2 DOM elements → 1 unique item (Tombstone-Announce, "Content unavailable"). No content posts.
+  - **S36 64th consecutive.** Pattern stable. No new angles.
+  - 0 console errors.
+- **Checkpoint:** S36 64th consecutive. A: 1 Tombstone-Announce; no content posts. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 238 (2026-09-21) — build `401c08b5` / Settings page: 3 tabs (Account, Content, Danger) all render correctly; Content tab has notification types + muted actors + relays; Danger tab has account deletion; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A Settings page (all tabs).
