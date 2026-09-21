@@ -199,8 +199,8 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
 
         var parentIri = await GetFirstCreateObjectIriAsync(_aliceActorIri);
         Assert.NotNull(parentIri);
-        var parentIriValue = parentIri!.Value;
-        var parentPath = parentIriValue.Substring(parentIriValue.IndexOf("/ap/v1/", StringComparison.Ordinal));
+        var parentIriString = parentIri?.ToString() ?? string.Empty;
+        var parentPath = parentIriString.Substring(parentIriString.IndexOf("/ap/v1/", StringComparison.Ordinal));
 
         // Act: bob replies to the note, but the reply's inReplyTo carries the DIAL base (what a client
         // dialing through the host-published port emits), not the advertised base. Before the fix the
@@ -229,7 +229,7 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
             item is Create create && create.Object is { } objects
             && objects.FirstOrDefault() is IObject note
             && note.InReplyTo is { } inReplyTo
-            && inReplyTo.Select(r => r.ResolveObjectIri()?.Value).Contains(parentIriValue));
+            && inReplyTo.Select(r => r.ResolveObjectIri()?.Value).Contains(parentIriString));
         Assert.True(
             replyInInbox,
             "the reply's Create must land in the parent author's inbox (the inReplyTo dial-base IRI is " +
