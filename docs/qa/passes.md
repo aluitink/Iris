@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 234 (2026-09-21) — build `401c08b5` / S36 re-confirmed (63rd consecutive): A home feed = 1 Tombstone-Announce, B home feed = empty; no new angles
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed; B home feed.
+- **Result:**
+  - **A home feed:** 2 DOM elements → 1 unique item (Tombstone-Announce, "Content unavailable"). No content posts.
+  - **B home feed:** Completely empty ("Your timeline is empty. Follow people to see their posts here.").
+  - **S36 63rd consecutive.** Pattern stable. No new angles.
+  - 0 console errors.
+- **Checkpoint:** S36 63rd consecutive. A: 1 Tombstone-Announce; B: empty. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 233 (2026-09-21) — build `401c08b5` / A notifications: P223 (B post) inlined ✓, P225/P227 (own posts) not in notifications (expected), mention/reply/like notifications present; 62nd consecutive S36
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A notifications page (ii-a1).
