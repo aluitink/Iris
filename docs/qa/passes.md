@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 110 (2026-09-21) — No new commit; re-confirmed S30 A8.2 (community `/c/{name}` 404) OPEN; dev's S30 fix is uncommitted WIP
+
+- **Build/Live:** QA cluster still on `6b11799` (Pass 109 deploy). `interop-testing` HEAD unchanged (`3924b59` merge). **Dev has NEW uncommitted WIP**: an **S30 fix** in `ActivityPubServerExtensions.cs` (the `/c/{name}` community route now falls back to a **cached remote community by name** when no local community matches — serving the stored remote Group doc as-is; mirrors the S24 remote-actor fallback) + `CommunityEndpointIntegrationTests.cs`. **Not committed/deployed** → the S30 fix is not live.
+- **Explored:** Re-verified the **S30 A8.2 (discovery)** facet on the current (pre-S30-fix) build: does B serve the remote community `ii-a8-community` at `/c/{name}`?
+- **Result:** **S30 A8.2 re-confirmed OPEN.** A community `ii-a8-community` (Group, "II-A8 Test Community") exists on A. On B: `GET /ap/v1/c/ii-a8-community` → **404** (the `/c/{name}` route is local-only — the S30 gap), while `GET /actor?iri=…/c/ii-a8-community` → **200** (the follow path via the actor page works, per the Pass-97 A8.3 note). So discovery via `/c/{name}` still 404s; dev's WIP would fix exactly this facet but is uncommitted.
+- **Checkpoint:** S36 still top priority (home feed empty; needs `FeedService` pass). S30 A8.2 re-confirmed open (dev's S30 fix is WIP — re-verify once committed + deployed). S28 re-verify still pending dev's S28 fix (not yet committed). S24 D1/D2 + S32 (sending-side) + S37 open. **Merge already done** (`3924b59`); next `qa`→`interop-testing` sync will ride on the next dev commit. M2–M12 + L2–L12 blocked on operator accounts.
+
 ## Pass 109 (2026-09-21) — Rebuilt QA cluster to dev's S32 fix (`6b11799`); S32 re-verified → fix is receiving-side only, cross-instance A→B Delete still not delivered (peer-stale risk persists)
 
 - **Build/Live:** **Dev committed `6b11799` (S32 fix)** — route a shared-inbox Delete/Update of a **local** note to the note's author (mirrors the S27 Like branch; 2 new integration tests). The QA cluster was on the **pre-fix build `27b1ba6`**, so I **rebuilt + redeployed** `qa-iris-a`/`qa-iris-b` from HEAD `6b11799` (compose `--project-name qa`, volumes preserved — accounts + data intact; both healthy). Dev's earlier WIP (`PLAN.md`, `ActivityPubServerExtensions.cs`, `SharedInboxIntegrationTests.cs`) is now **committed** (merge blocker partially cleared — docs-only WIP remains).
