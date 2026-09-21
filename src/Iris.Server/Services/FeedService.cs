@@ -192,7 +192,18 @@ public sealed class FeedService : IFollowFeedService
             && _feedCache.TryGetValue(actorIri, out var cached)
             && DateTime.UtcNow - cached.BuiltUtc < CacheTtl)
         {
+            _logger.LogDebug("Feed cache HIT for {ActorIri} ({Age}s old, {Items} items)",
+                actorIri.Value, (int)(DateTime.UtcNow - cached.BuiltUtc).TotalSeconds, cached.Items.Count);
             return ApplyThreadFilter(cached.Items, threadDepth);
+        }
+
+        if (!bypassCache)
+        {
+            _logger.LogDebug("Feed cache MISS for {ActorIri} (rebuilding)", actorIri.Value);
+        }
+        else
+        {
+            _logger.LogDebug("Feed cache BYPASS for {ActorIri} (rebuilding)", actorIri.Value);
         }
 
         var rebuilt = await BuildFeedUncachedAsync(actorIri, ct).ConfigureAwait(false);

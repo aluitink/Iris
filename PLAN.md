@@ -123,7 +123,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
    ## Active Slice
 
-- **Phase 146 — Production hardening (ACTIVE).** First slice **Feed observability** DONE this turn: structured logging + per-follow latency in `FeedService.BuildFeedUncachedAsync` (total latency, follow counts local/remote, item count by type, slowest follow). All 1428 tests pass, deployed + healthy. Phase 145 (QA re-verify) remains dev-gated; S36 + S24-D1 open S2 items. Next slice: cache hit/miss observability.
+- **Phase 146 — Production hardening (ACTIVE).** **Feed observability DONE** (2 turns): structured logging + per-follow latency in `BuildFeedUncachedAsync` + cache hit/miss/bypass in `BuildFeedAsync`. All 1428 tests pass, deployed + healthy. Phase 145 (QA re-verify) remains dev-gated; S36 + S24-D1 open S2 items. Next slice: performance (outbox IRI index or configurable cache TTL).
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
@@ -155,7 +155,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Phase 146 — Production hardening (ACTIVE):**
 
-- **Feed observability (DONE, this turn):** added structured logging + per-follow latency tracking to `FeedService.BuildFeedUncachedAsync`. The build now logs: total latency, follow count (local vs remote), item count by type (Create/Announce/Like/Follow/etc.), and the slowest follow's latency. DI updated to inject `ILogger<FeedService>`. All 1428 tests pass. Deployed + healthy. Next slice: cache hit/miss observability (log whether the feed came from the 30s cache or was rebuilt).
+- **Feed observability (DONE):** structured logging + per-follow latency in `FeedService.BuildFeedUncachedAsync` (total latency, follow counts local/remote, item count by type, slowest follow) + cache hit/miss/bypass logging in `BuildFeedAsync` (LogDebug level with cache age + item count on hit, rebuild trigger on miss/bypass). DI injects `ILogger<FeedService>`. All 1428 tests pass. Deployed + healthy. Next Phase 146 slice: performance — feed query optimization (index on outbox IRI for the `GetOutboxAsync` hot path) or cache tuning (make TTL configurable).
 ## QA Queue
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
