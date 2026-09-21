@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 251 (2026-09-21) — build `401c08b5` / Metadata + SEO audit: title/description/favicon/lang present; no PWA manifest, no robots.txt, no sitemap, no canonical/OG meta; NodeInfo discovery 200; no new defect (feature gaps noted)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home page metadata; common web paths (manifest, robots, sitemap, nodeinfo).
+- **Result:**
+  - **Present:** `<title>Home · Iris</title>`, meta description, favicon.svg, viewport meta, `lang="en"`.
+  - **NodeInfo discovery:** `/.well-known/nodeinfo` → 200 (links to `/ap/v1/nodeinfo/2.0`).
+  - **Absent (feature gaps, not defects):** PWA manifest (404), robots.txt (404), sitemap.xml (404), opensearch.xml (404), canonical URL, Open Graph / Twitter Card meta tags.
+  - No new defects. Feature gaps are expected for an early-stage ActivityPub instance.
+- **Checkpoint:** Metadata/SEO baseline captured. No new defects. Next: waiting for dev to fix home feed query (S36).
+
 ## Pass 250 (2026-09-21) — build `401c08b5` / S36 re-confirmed (68th consecutive): A home feed = 1 Tombstone-Announce, B home feed = empty; no new angles
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A home feed; B home feed.
