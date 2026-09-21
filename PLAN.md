@@ -117,7 +117,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit (code):** `401c08b5` — **Directory fix (refined): distinguish stale local rows (S5) from remote peers in the "All known" scope.** S36 fix `adf65b84` + diagnostic `863f22c8` still in effect. Dev cluster rebuilt 2026-09-21.
+- **Deployed commit (code):** `746c6a1e` — **S36 regression net (test-only) + diagnosis recorded.** S36 fix `adf65b84` + diagnostic `863f22c8` + directory fix `401c08b5` all in effect. `iris-web` (single-instance steady-state) rebuilt + redeployed 2026-09-21.
 - **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84` (directory fix `401c08b5` not yet on the QA cluster — QA must rebuild to re-verify).
 
     ## Active Slice
