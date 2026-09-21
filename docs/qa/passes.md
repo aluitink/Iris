@@ -17,6 +17,17 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 199 (2026-09-21) — build `8243361c` / search + object-detail render remote content; home-feed shows "Content unavailable" for Announces
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Search for P193 on both instances; object detail for P193 on B; home-feed "Content unavailable" items.
+- **Result:**
+  - **NEW — search renders remote content bidirectionally:** `/search?q=II-S36-P193` on A: 1 result (ii-a1, own post, full content). On B: **1 result (ii-a1, remote A post, full content "II-S36-P193 fresh A post...")** despite B's AP note route being 404. Search uses the same inlined-content source as actor-page/object-detail (notification/outbox store), not the object store.
+  - **Object detail for P193 on B:** 200, renders "ii-a1 21m ago II-S36-P193..." with content. Confirms Pass 198's finding bidirectionally (B→A direction).
+  - **Home-feed "Content unavailable" (NEW observation):** A's home feed shows 2 items with "Content unavailable — view original post" (Announce/Boost of ii-a1's note by ii-b1, 15h ago). The Announce's object (ii-a1's note) IS in A's object store (it's A's own note), so the "Content unavailable" is unexpected — it may be a stale cache or a different object-lookup path for Announce objects.
+  - **Content-source map complete:** actor-page, object-detail, search, notifications all use the inlined-content source (notification/outbox store). Home-feed uses the object store (404 for remote notes, "Content unavailable" for some local notes in Announces). The fix is to make home-feed use the inlined-content source.
+  - S36 34th consecutive. 0 console errors.
+- **Checkpoint:** Content-source map complete (4 UI surfaces use inlined source; home-feed uses object store). "Content unavailable" on Announces is a new sub-facet. Next: new exploration.
+
 ## Pass 198 (2026-09-21) — build `8243361c` / actor-page Posts tab renders remote notes despite AP route 404
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** ii-a1 view of ii-b1 actor page (Posts tab); object detail page for P189; local object API routes.
