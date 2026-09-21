@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 219 (2026-09-21) — build `401c08b5` / Community feed WORKS (P215/P214/P211 all visible in ii-a8-community feed); home feed still empty — different query path
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed (re-check); A community feed (ii-a8-community).
+- **Result:**
+  - **A home feed:** Still 3 items (2 "Content unavailable" Announces + 1 empty). P215/P214/P211 NOT in home feed. S36 still OPEN (50th consecutive).
+  - **A community feed (ii-a8-community):** **WORKS CORRECTLY** — P215 (7m ago), P214 (16m ago), P211, and all other ii-a1 posts are visible in the community feed. The community feed shows member posts.
+  - **Key insight:** The community feed query works (shows member posts), but the home feed query doesn't (omits all posts). These are different query paths:
+    - Community feed: queries the community's member posts → works
+    - Home feed: queries the user's followed actors' posts → broken (S36)
+  - The home feed bug is specific to the `FeedService.BuildFeedUncachedAsync` path (or equivalent), not a general "posts aren't stored" issue. Posts ARE stored (visible in profile, community feed, actor page, object-detail) — the home feed query just doesn't retrieve them.
+  - 0 console errors.
+- **Checkpoint:** Community feed WORKS (member posts visible). Home feed still empty (50th consecutive). The bug is isolated to the home feed query path, not a storage issue. Dev should compare the community feed query (works) vs the home feed query (broken) to find the difference. Next: no new S36 angles until dev ships a feed fix.
+
 ## Pass 218 (2026-09-21) — build `401c08b5` / Search for remote community works on both A + B (1 result each); profile Following/Followers tabs work (remote actors present)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Search for ii-a8-community on A + B; A profile Following + Followers tabs.
