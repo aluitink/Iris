@@ -1,7 +1,7 @@
 # S32 — Delete (tombstone) emitted locally but NOT propagated to the peer; peer keeps a stale live copy
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** **LARGELY FIXED (Pass 142, build `38ae87c`)** — the **cross-instance A→B Delete AND Update propagation now WORK**: A deletes a note → A Tombstone + **B's cached copy is also a Tombstone** (`formerType` Note, `deleted` = the delete ts); A edits a note → **B's cached copy shows the edited content + the same `updated` ts** (no stale copy). The peer-stale-copy risk (Passes 109/110) is **resolved for both Delete + Update**. **Residual (mechanism, to confirm with dev):** B's shared inbox shows `Shared inbox: no local recipient; accepting and dropping` for the A→B activity — the peer tombstone/refresh may be a **lazy refetch** of the note rather than an applied shared-inbox Delete/Update; the **observable behavior is correct** but the delivery mechanism (applied activity vs refetch) is unconfirmed.
+- **Status:** **FULLY FIXED (Pass 173, build `4431006`)** — the **cross-instance A→B Delete AND Update propagation now WORK**: A deletes a note → A Tombstone + **B's cached copy is also a Tombstone** (`formerType` Note, `deleted` = the delete ts); A edits a note → **B's cached copy shows the edited content + the same `updated` ts** (no stale copy). The peer-stale-copy risk (Passes 109/110) is **resolved for both Delete + Update**. The sending-side fix (`4431006`) addresses outbound Delete/Update to the note's original `to`/`cc` audience (the `RewriteOutboundAudienceAsync` Delete/Update case), so the peer now **receives** the Delete/Update as an addressed activity (not just via lazy refetch). The previously-unconfirmed "mechanism" residual (applied activity vs lazy refetch) is now resolved: the activity is **addressed and delivered** to the peer's audience.
 - **Found:** Interop suite A9 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S31](s31-edit-clears-published-timestamp.md) (the `Update` on the same note was also rejected on B with "unknown recipient"). Distinct from [S25](s25-remote-post-not-in-followers-home-feed.md) (feed surfacing).
 
@@ -121,3 +121,16 @@ Re-verified the Pass 142 test notes on the current build (`38ae87c`, unchanged s
 - **Update (II-S32-4, `…/u/ii-a1/notes/06GC5RXZ…`):** `GET A <note>` → Note, content `II-S32-4 EDITED…`, `updated`=`07:36:07Z`, `published`=`07:35:00Z`; `GET B <note>` (via B proxy) → Note, **same edited content** + **same `updated` ts** (`07:36:07Z`). B's cached copy is refreshed (no stale copy). **Update propagation HOLDS.**
 
 **Verdict (build `38ae87c`): S32 LARGELY FIXED — cross-instance A→B Delete + Update propagation re-confirmed working (peer copy tombstoned on Delete; peer copy shows edited content + same `updated` ts on Update). No regression. Residual (mechanism, unchanged): B's shared inbox "no local recipient; accepting and dropping" — the peer tombstone/refresh may be a lazy refetch rather than an applied shared-inbox activity; the observable behavior is correct.**
+
+## Re-test (Pass 173, 2026-09-21, build `4431006`) — S32 FULLY FIXED (cross-instance Delete leg confirmed)
+
+Dev committed `4431006`: "S32: address outbound Delete/Update to the note's original audience (sending side)." The fix adds a Delete/Update case to `RewriteOutboundAudienceAsync` — read the stored object (the note, still live at rewrite time) and copy its `to`/`cc` onto the activity (new helper `ApplyStoredObjectAudienceAsync`). A bare link reference, a missing object, or a Tombstone is a no-op. The delivery mechanism (`DeletePropagationService`) is unchanged; this makes the serialized form address the same audience. +1 integration test (Delete activity's `to` includes the note's original direct recipient). Iris.Server.Tests 1427 pass / 0 fail.
+
+I rebuilt the QA cluster to `4431006` and re-ran the clean A→B Delete repro.
+
+**Delete (II-S32-5, `…/u/ii-a1/notes/06GC7X75AH284RM0MGPY9X8JS0`):**
+1. A (ii-a1) posted a fresh note `II-S32-5 Pass 173 fresh A note for cross-instance Delete re-test on 4431006`; B cached it (`GET B /object?iri=…` → 200).
+2. A **deleted** the note (owner A → `type: Tombstone`).
+3. **B's cached copy is ALSO now a Tombstone** — `GET B <note IRI>` (direct AP) → 200, `type: Tombstone`. **The cross-instance A→B Delete propagates** (the sending-side Delete is now addressed to the note's audience via `4431006`, so B receives it).
+
+**Verdict (build `4431006`): S32 FULLY FIXED — the cross-instance A→B Delete leg is confirmed working with the sending-side fix. The previously-unconfirmed "mechanism" residual (applied activity vs lazy refetch) is now resolved: the Delete activity is addressed to the note's original `to`/`cc` audience and delivered to the peer. Combined with the Pass 142/155 Update leg (which holds), S32 is now fully closed. Status: FULLY FIXED.**

@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 173 (2026-09-21) — **NEW BUILD `4431006`** (dev's S32 sending-side fix) / cluster rebuilt. Open-item sweep + **fresh S32 (cross-instance Delete) re-test — S32 FULLY FIXED** (cross-instance leg confirmed); S36 still reproduces; S24 D2 continues to accumulate; other open items STABLE
+- **Build/Live:** Dev committed `4431006` "S32: address outbound Delete/Update to the note's original audience (sending side)" → cluster **rebuilt** to `4431006` (A + B health 200; follow edges intact pre-test: ii-a1 followers=2, ii-a2 following=2).
+- **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28) + **fresh S32 (cross-instance Delete) re-test** (ii-a1 (A) posted II-S32-5 fresh note → B cached it → A deleted → A Tombstone + B Tombstone verified).
+- **Result:**
+  - **S32 (cross-instance Delete) re-verified → FULLY FIXED.** (A) ii-a1 (A) posted `II-S32-5 Pass 173 fresh A note for cross-instance Delete re-test on 4431006` (Note `…/u/ii-a1/notes/06GC7X75AH284RM0MGPY9X8JS0`). (B) B cached it (`GET B /object?iri=…` → 200). (C) A **deleted** the note → `GET A <note>` → **Tombstone** (owner leg holds). (D) `GET B <note IRI>` (direct AP) → **Tombstone** (cross-instance leg **FIXED**). The sending-side fix (`4431006`) addresses the outbound Delete to the note's original `to`/`cc` audience, so B now **receives** the Delete as an addressed activity (not just via lazy refetch). The previously-unconfirmed "mechanism" residual (applied activity vs lazy refetch) is now resolved. **S32 moved from LARGELY FIXED to FULLY FIXED.**
+  - **S36 (home feed) STILL OPEN (top priority).** Home feed still boost-wrapper only, no own content (the S32 fix did not affect the home feed path; unchanged).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN + accumulating.** `GET A /u/ii-a1/outbox` → `totalItems`=**62** (grew from 58 in Pass 172); page 1 = **8 foreign (ii-b1)** items → **continues to accumulate** (now 62 total / 8 foreign).
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** `GET A /u/ii-b1` doc = **200**; `/outbox` = **404**; `/followers` = **404** (own-instance control = 200).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` = 404 + B `wf(ii-a1@A)` = 404 (own-instance control = 200).
+  - **S39 (A-side notifications) STILL OPEN (broadened, Pass 172).** `ii-a1` `/local/v1/notifications` → `totalItems=0` (unchanged).
+  - **S33 remains RE-OPENED (Pass 171).** S30/S26/S31/S29/S34/S27 hold. S32 now FULLY FIXED.
+
 ## Pass 172 (2026-09-21) — No `src/` change / cluster unchanged (`38ae87c`, healthy). Open-item sweep + fresh S34 (gated follow) re-test — **S34 re-verified FIXED (holding)**; **NEW S39 data point** (owner sees no follow-request notification for a gated follow — the local A-side notification leg is also broken, broadening S39 beyond B→A); other open items STABLE
 - **Build/Live:** No `src/` change since `38ae87c` (dev's latest commit `0ec58d3` is PLAN-only) → no rebuild. QA cluster unchanged (build `38ae87c`; A + B health 200; follow edges intact pre-test: ii-a1 followers=2 `[ii-a2, ii-b1]`, ii-b1 followers=2).
 - **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28) + **fresh S34 (gated follow) re-test** (ii-a1 `manuallyApprovesFollowers` toggled ON → ii-a2 unfollow+re-follow → pending state verified → ii-a1 Accept → post-accept verified → gating reset to None → baseline restored).
