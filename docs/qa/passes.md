@@ -17,6 +17,21 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 213 (2026-09-21) — build `863f22c8` / CRITICAL: local home feed ALSO empty (own post P212 in outbox + AP 200 but NOT in own feed)
+- **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** P212 (B's own post) on B: AP route, home feed, actor page.
+- **Result:**
+  - **CRITICAL FINDING:** B's own post P212 (note `06GCAKBA2Q1DNDV2VGQ15NP2KR`):
+    - B AP note route: **200** (type: Note, content present) — the object IS in B's actor-keyed note store (local posts work)
+    - B outbox: P212 Create present (totalItems=71, 18 Creates)
+    - B actor page: P212 is the first item in the Posts tab
+    - **B home feed: EMPTY** ("Your timeline is empty") — **P212 is NOT in B's own home feed**
+  - **This is a SEVERE defect:** The home feed is empty even for the actor's OWN posts. The home feed is completely broken — it doesn't show ANY posts (own or remote). This is not just an S36 cross-instance issue; the entire home feed is non-functional.
+  - **Root cause refinement:** The home feed query is broken for ALL posts (local + remote). The feed is not reading from the outbox or the actor-keyed note store. It's querying something else that returns nothing. This is a regression or a fundamental feed query bug.
+  - **S36 scope expanded:** S36 is not just "cross-instance home feed omits remote posts" — it's "home feed is completely empty" (no posts at all, own or remote). The cross-instance object-cache gap is one facet, but the feed query itself is broken for all content.
+  - S36 47th consecutive (home feed empty). 0 console errors.
+- **Checkpoint:** CRITICAL — home feed is empty even for the actor's own posts (P212 in outbox + AP 200 but NOT in feed). The feed query is fundamentally broken. Dev needs to investigate the home feed query path (why it returns 0 items even for local posts in the outbox). Next: dev needs to fix the home feed query.
+
 ## Pass 212 (2026-09-21) — build `863f22c8` / P212 B→A direction: same S36 pattern (notification inlines, AP 404, object-detail renders, feed missing)
 - **Build/Live:** `863f22c8` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh B post II-S36-P212 (note `06GCAKBA2Q1DNDV2VGQ15NP2KR`); A notification/outbox/AP route/object-detail/home feed for P212.

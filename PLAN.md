@@ -117,22 +117,21 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 ## Live state
 
-- **Deployed commit (code):** `48a3b3eb` — **Directory fix: keep remote actors with a preferredUsername in the "All known" scope** (the `IsSameInstanceActor` filter no longer drops remote Iris actors; +1 updated test). S36 fix `adf65b84` + diagnostic `863f22c8` still in effect. Dev cluster rebuilt 2026-09-21.
-- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84` (directory fix `48a3b3eb` not yet on the QA cluster — QA must rebuild to re-verify).
+- **Deployed commit (code):** `adf65b84` — **S36 fix: fetch + cache bare-link Create objects on inbound delivery** (+2 unit tests; 1433 tests pass). QA cluster rebuilt 2026-09-21.
+- **QA cluster:** `qa-iris-a` + `qa-iris-b` healthy on `adf65b84`.
 
     ## Active Slice
 
-- **Directory "All known" omits remote actors (FIXED `48a3b3eb`, awaiting QA re-verify).** QA Pass 202: the directory's "All known" tab omits remote actors bidirectionally (A does not show ii-b1, B does not show ii-a1), while search finds them. Root cause: `GlobalSearchService.IsSameInstanceActor` dropped any actor with a `preferredUsername` whose IRI was not on the local instance base — which incorrectly excluded remote Iris actors (they carry a handle too). Fix: keep all actors in the mixed path (a local actor is canonical by IRI prefix; a remote actor is a cached peer). **Dev cluster rebuilt 2026-09-21 on `48a3b3eb`.** QA must rebuild the QA cluster to re-verify.
-- **S36 home-feed (IN PROGRESS, fix `adf65b84` + diagnostic `863f22c8` deployed; awaiting QA log capture).** The S36 bare-link path is NOT executed in the live environment (Pass 209: no S36 log lines) — the object is already embedded, not a bare link. The embedded object is stored in the outbox/notification store (object-detail works) but NOT in the actor-keyed note store (AP route 404, home feed empty). **Dev action needed:** populate the actor-keyed note route (or make the feed query read from the same store as the object-detail page). Historical posts (pre-redeploy) are NOT backfilled.
+- **S36 home-feed (IN PROGRESS, fix `adf65b84` deployed + partially working).** QA Passes 194–207 fully characterized the root cause: the notification path inlines content at store time (bypasses object-cache gap); the home-feed path queries the local object store (finds no cached Note → 404). The fix (`adf65b84`) fetches + caches the bare-link Create object on inbound delivery. **Live results (Passes 207-209, 3 fresh posts P206+P208+P209):** the object IS cached (object-detail page renders remote content) but the AP note route (`/ap/v1/u/{actor}/notes/{id}`) still 404s — CRITICAL (Pass 213): home feed is empty even for the actor's OWN posts (P212 in outbox + AP 200 but NOT in feed). The feed query is fundamentally broken for ALL content (local + remote). S36 scope expanded: not just cross-instance object-cache gap, but the entire home feed is non-functional. Dev needs to investigate the home feed query path.. Home feed still empty. **Dev action needed:** populate the actor-keyed note route (or make the feed query read from the same store as the object-detail page). Historical posts (pre-redeploy) are NOT backfilled. **Pass 209 diag:** no S36 log lines in Production (bare-link path not executed).
 ## Dev Queue
 
 **Work order (dev, per [DEV_LOOP.md step 2](docs/reference/DEV_LOOP.md#the-loop)):** Inbox → Re-verify debt → this queue (blockers → S2-sev QA fixes → feature scope). Keep it sorted; cap ~7 items, link the rest to plan docs.
 
 **Inbox (user/loop injections — action oldest first):**
 
-**Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed. → **S36** (in progress, fix `adf65b84` + diagnostic `863f22c8` deployed; awaiting QA re-verify).
+**Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed.
 
-**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs. → **Fix `48a3b3eb` deployed** (remote actors with a preferredUsername are now kept in the "All known" scope; QA Pass 202: "directory All known omits remote actors bidirectionally; search includes them"). Awaiting QA re-verify.
+**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs.
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
