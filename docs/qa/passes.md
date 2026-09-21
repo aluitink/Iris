@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 195 (2026-09-21) — build `8243361c` / S24 D2 bidirectional growth + object-cache gap persistence
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** B outbox full scan (S24 D2 B-side); A outbox full scan (S24 D2 A-side); P189 A-cache re-check; P193 B-cache re-check.
+- **Result:**
+  - **S24 D2 bidirectional growth (NEW DATA):** B outbox: 65 total, **31 foreign from A** (28 Create + 3 Follow) — was 30 in Pass 192. A outbox: **74 total, 19 foreign from B** (10 Create + 6 Follow + 3 Announce). Both sides growing. The foreign activities are the same notes that are 404 on the peer's note route.
+  - **Object-cache gap persists:** P189 (B note, ~35min old): A cache 404. P193 (A note, ~7min old): B cache 404. Source caches serve 200. Bidirectional, persistent.
+  - S36 31st consecutive. 0 console errors.
+- **Checkpoint:** S24 D2 quantified bidirectionally (B: 31/65, A: 19/74). Object-cache gap stable. S36+S24 D2 root cause (Pass 192) holds. Next: new exploration.
+
 ## Pass 194 (2026-09-21) — build `8243361c` / P193 delivery timing + object-cache gap persistence
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** II-S36-P193 delivery timing (B outbox scan at 1min, 2min, 3min); B cache re-check.
