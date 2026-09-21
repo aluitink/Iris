@@ -44,6 +44,7 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
 {
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
+    private readonly Stores.ObjectInteractionCountRefreshService? _countRefresh;
 
     /// <summary>
     /// Initializes a new <see cref="LikeActivityHandler"/>.
@@ -52,14 +53,25 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
     /// <see cref="IObjectStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether the recipient is a local actor.</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
+    /// <param name="countRefresh">
+    /// The interaction-count refresher (S37): when present, the liked object's denormalized
+    /// <c>likedCount</c> is refreshed immediately after the like edge is recorded, so the object document
+    /// is correct on the next read without waiting for the periodic refresh pass. May be null (a host that
+    /// does not register it) — in that case the count converges on the next interval pass.
+    /// </param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
-    public LikeActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<LikeActivityHandler>? logger = null)
+    public LikeActivityHandler(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        ILogger<LikeActivityHandler>? logger = null,
+        Stores.ObjectInteractionCountRefreshService? countRefresh = null)
         : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
         _persistence = persistence;
         _localActors = localActors;
+        _countRefresh = countRefresh;
     }
 
     /// <inheritdoc/>
@@ -97,6 +109,14 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
             await _persistence.Likes
                 .RecordLikeAsync(likerIri.Value, objectIri.Value, ct)
                 .ConfigureAwait(false);
+
+            // S37: refresh the object's denormalized likedCount immediately so the object document is
+            // correct on the next read, rather than waiting for the periodic refresh pass (which only runs
+            // every 30 s and would otherwise serve the stale pre-computed 0).
+            if (_countRefresh is { } refresh)
+            {
+                await refresh.RefreshObjectCountsAsync(objectIri.Value, ct).ConfigureAwait(false);
+            }
         }
 
         // (2) Local community recipient: record the like in each of the community's local members'

@@ -218,6 +218,71 @@ public sealed class ObjectInteractionCountRefreshService : BackgroundService
     }
 
     /// <summary>
+    /// Re-computes and persists the per-object interaction counters for a single stored object, so the
+    /// object's denormalized <c>likedCount</c> / <c>sharedCount</c> / <c>repliedCount</c> /
+    /// <c>dislikedCount</c> reflect a just-recorded (or removed) like / boost / reply / dislike edge
+    /// immediately, rather than waiting for the next interval pass. No-op when the object is not stored
+    /// locally (a remote object's counters live on the object's home instance), is a tombstone, has no
+    /// resolvable IRI, or no <c>iris:</c> namespace is configured.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The object-document and collection-page read paths serve the pre-computed counters (persisted onto
+    /// the stored object's <see cref="IObject.ExtensionData"/>) when present, and only fall back to the
+    /// per-read reverse-index sweep when they are absent. Once the startup / first tick has persisted a
+    /// zero for an object that has no edges, a subsequent like does not make those counters absent — it
+    /// leaves them stale until the next interval pass. Calling this right after recording (or removing) a
+    /// like edge closes that gap: the counter is refreshed synchronously so the very next read of the
+    /// object's document is correct (S37 — a remote Like is stored and the <c>/likes</c> collection is
+    /// correct, but the Note's <c>likedCount</c> stays 0 until the 30 s refresh tick).
+    /// </para>
+    /// </remarks>
+    /// <param name="objectIri">The IRI of the stored object whose counters should be refreshed.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns><see langword="true"/> when the object's stored counters were updated;
+    /// <see langword="false"/> when there was nothing to update (object not stored / tombstone / no
+    /// namespace) or the stored counters already matched the freshly computed values.</returns>
+    public async Task<bool> RefreshObjectCountsAsync(Iri objectIri, CancellationToken ct)
+    {
+        if (_namespace is null)
+        {
+            return false;
+        }
+
+        if (_persistence is null)
+        {
+            return false;
+        }
+
+        if (!await _persistence.Objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false)
+            || obj is null)
+        {
+            // A remote (not locally stored) object's counters are maintained on the object's home
+            // instance, not here — there is nothing to refresh locally.
+            return false;
+        }
+
+        if (obj is Tombstone || obj.Id is not { Length: > 0 })
+        {
+            return false;
+        }
+
+        var likers = (await _persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+        var shared = (await _persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+        var replied = (await _persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
+        var disliked = (await _persistence.Dislikes.GetDislikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+        var score = likers - disliked;
+
+        if (!WriteCountsIfChanged(obj, _namespace!, likers, shared, replied, disliked, score))
+        {
+            return false;
+        }
+
+        await _persistence.Objects.PutObjectAsync(obj, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
     /// Writes the four counters (and the derived <c>iris:score</c>) onto the object's
     /// <see cref="IObject.ExtensionData"/> under the given <c>iris:</c> namespace base. Returns
     /// <see langword="true"/> when any value changed (so the caller re-stores the object);

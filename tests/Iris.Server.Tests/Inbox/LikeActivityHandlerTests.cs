@@ -1,5 +1,8 @@
+using System.Text.Json;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Tests.Inbox;
@@ -105,6 +108,66 @@ public sealed class LikeActivityHandlerTests
         // No like edge is recorded (the object is not stored locally).
         Assert.False(await persistence.Likes.HasLikedAsync(RemoteLiker, RemoteObject));
         Assert.Empty(await persistence.Likes.GetLikedAsync(LocalPerson));
+    }
+
+    // --- S37: a remote Like immediately materializes the object's denormalized likedCount ---
+
+    [Fact]
+    public async Task HandleAsync_RemoteLikerOfLocalObject_MaterializesLikedCountImmediately()
+    {
+        // S37: before the fix, a remote Like was stored and the object's /likes collection was correct,
+        // but the Note's denormalized likedCount stayed 0 until the periodic (30 s) refresh pass ran.
+        // The handler now refreshes the object's counters immediately after recording the like edge, so
+        // the stored object's likedCount reflects the like on the very next read.
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedPersonAsync(persistence, LocalPerson);
+        var localObject = new Iri("https://b.domain.local/ap/v1/o/note-s37");
+        await SeedLocalObjectAsync(persistence, localObject);
+        var ns = "https://iris.example/ns#";
+        var refresher = new ObjectInteractionCountRefreshService(
+            persistence,
+            Options.Create(new ActivityPubServerOptions { NamespaceIri = new Iri(ns) }),
+            NullLogger<ObjectInteractionCountRefreshService>.Instance);
+        var sut = new LikeActivityHandler(persistence, new DefaultLocalActorResolver(persistence), countRefresh: refresher);
+        var like = BuildLike(RemoteLiker, localObject);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, like), like);
+
+        // The like edge is recorded (the remote liker liked the local object).
+        Assert.True(await persistence.Likes.HasLikedAsync(RemoteLiker, localObject));
+        // S37: the stored object's denormalized likedCount is 1 immediately (not waiting for the 30 s
+        // refresh pass, and not a stale 0).
+        _ = await persistence.Objects.TryGetObjectAsync(localObject, out var stored);
+        Assert.NotNull(stored);
+        Assert.Equal(1, ReadExtensionInt(stored, ns + IrisExtensionTerms.LikedCount));
+    }
+
+    [Fact]
+    public async Task HandleAsync_TwoRemoteLikersOfLocalObject_LikedCountIsTwo()
+    {
+        // S37 (accumulation): two distinct remote likers each materialize their like; the object's
+        // denormalized likedCount is 2 after the second (each Like refreshes the count, so it is never a
+        // stale undercount).
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedPersonAsync(persistence, LocalPerson);
+        var localObject = new Iri("https://b.domain.local/ap/v1/o/note-s37b");
+        await SeedLocalObjectAsync(persistence, localObject);
+        var ns = "https://iris.example/ns#";
+        var refresher = new ObjectInteractionCountRefreshService(
+            persistence,
+            Options.Create(new ActivityPubServerOptions { NamespaceIri = new Iri(ns) }),
+            NullLogger<ObjectInteractionCountRefreshService>.Instance);
+        var sut = new LikeActivityHandler(persistence, new DefaultLocalActorResolver(persistence), countRefresh: refresher);
+        var likerB = new Iri("https://c.domain.local/ap/v1/u/carol");
+        var like1 = BuildLike(RemoteLiker, localObject);
+        var like2 = BuildLike(likerB, localObject);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, like1), like1);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, like2), like2);
+
+        _ = await persistence.Objects.TryGetObjectAsync(localObject, out var stored);
+        Assert.NotNull(stored);
+        Assert.Equal(2, ReadExtensionInt(stored, ns + IrisExtensionTerms.LikedCount));
     }
 
     // --- Local community recipient: recorded in members' outboxes ------------------------
@@ -246,6 +309,17 @@ public sealed class LikeActivityHandlerTests
             Id = objectIri.Value,
             Content = ["a local object"],
         });
+
+    private static int? ReadExtensionInt(IObject obj, string key)
+    {
+        var ext = obj.ExtensionData;
+        return ext is not null
+            && ext.TryGetValue(key, out var el)
+            && el.ValueKind == JsonValueKind.Number
+            && el.TryGetInt32(out var value)
+            ? value
+            : null;
+    }
 
     private static Like BuildLike(Iri likerIri, Iri objectIri) => new()
     {

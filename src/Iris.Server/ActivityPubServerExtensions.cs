@@ -801,6 +801,16 @@ public static class ActivityPubServerExtensions
         // TryAddSingleton<IHostedService> would only register the FIRST hosted service. The factory
         // resolves the (possibly null) IPersistenceProvider so a host without persistence gets an inert
         // service rather than a resolution failure.
+        // Registered as a singleton first so the inbound LikeActivityHandler can resolve it to refresh a
+        // single object's counters immediately after recording a like edge (S37) instead of waiting for the
+        // next interval pass. The hosted-service factory below constructs a SEPARATE instance that runs the
+        // periodic + startup pass (a background service must be its own instance; the singleton is used
+        // only for on-demand single-object refreshes), so the two never share state.
+        services.TryAddSingleton(sp =>
+            new Stores.ObjectInteractionCountRefreshService(
+                sp.GetService<IPersistenceProvider>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Stores.ObjectInteractionCountRefreshService>>()));
         services.AddHostedService(sp =>
             new Stores.ObjectInteractionCountRefreshService(
                 sp.GetService<IPersistenceProvider>(),

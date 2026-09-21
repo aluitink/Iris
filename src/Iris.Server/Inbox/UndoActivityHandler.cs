@@ -64,6 +64,7 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
 {
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
+    private readonly Stores.ObjectInteractionCountRefreshService? _countRefresh;
 
     /// <summary>
     /// Initializes a new <see cref="UndoActivityHandler"/>.
@@ -72,15 +73,25 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
     /// <see cref="IActivityStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether an actor IRI is a local person.</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
+    /// <param name="countRefresh">
+    /// The interaction-count refresher (S37): when present, the object's denormalized counters are refreshed
+    /// immediately after a like edge is removed (an unlike), so the object document is correct on the next
+    /// read. May be null (a host that does not register it).
+    /// </param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localActors"/> is null.</exception>
-    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<UndoActivityHandler>? logger = null)
+    public UndoActivityHandler(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        ILogger<UndoActivityHandler>? logger = null,
+        Stores.ObjectInteractionCountRefreshService? countRefresh = null)
         : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
         _persistence = persistence;
         _localActors = localActors;
+        _countRefresh = countRefresh;
     }
 
     /// <inheritdoc/>
@@ -121,6 +132,14 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
             await _persistence.Likes
                 .RemoveLikeAsync(likeEdge.Liker, likeEdge.LikedObject, ct)
                 .ConfigureAwait(false);
+
+            // S37: refresh the object's denormalized likedCount immediately so an unlike decrements the
+            // object document's count on the next read, rather than waiting for the periodic refresh pass.
+            if (_countRefresh is { } refresh)
+            {
+                await refresh.RefreshObjectCountsAsync(likeEdge.LikedObject, ct).ConfigureAwait(false);
+            }
+
             return;
         }
 
