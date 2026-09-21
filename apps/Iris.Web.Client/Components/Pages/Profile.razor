@@ -94,10 +94,9 @@ else
         <div role="tabpanel" id="panel-likes" aria-labelledby="tab-likes">
         <PagedCollection
             Client="@OutboxClient"
-            CollectionIri="@OutboxIri"
+            CollectionIri="@LikedIri"
             PageSize="10"
             ShowRefreshButton="true"
-            ItemFilter="IsLike"
             ItemTemplate="@PostTemplate"
             EmptyMessage="You haven't liked any posts yet." />
         </div>
@@ -272,6 +271,14 @@ else
         => Session.ActorId is { } actor ? actor.FollowingOf() : null;
 
     /// <summary>
+    /// The signed-in user's liked-collection IRI (S17: the Likes tab reads its own scoped
+    /// <c>/liked</c> collection instead of filtering the full outbox, which triggered a
+    /// multi-page fan-out on every tab switch).
+    /// </summary>
+    private Iri? LikedIri
+        => Session.ActorId is { } actor ? actor.LikedOf() : null;
+
+    /// <summary>
     /// Whether an outbox item is one of the signed-in user's **own** replies: a <c>Create</c> whose
     /// actor is the user and whose embedded object has an <c>inReplyTo</c>. The outbox is a mixed
     /// collection (the user's own activities interleaved with mirrored remote content), so scoping to
@@ -298,16 +305,6 @@ else
         }
 
         return OutboxFilter.IsOwnContentItem(item, Session.ActorId);
-    }
-
-    private static bool IsLike(IObjectOrLink item)
-    {
-        if (item is not Activity activity)
-        {
-            return false;
-        }
-
-        return activity.Type?.FirstOrDefault() == "Like";
     }
 
     /// <summary>
