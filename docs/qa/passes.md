@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 250 (2026-09-21) — build `401c08b5` / S36 re-confirmed (68th consecutive): A home feed = 1 Tombstone-Announce, B home feed = empty; no new angles
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A home feed; B home feed.
+- **Result:**
+  - **A home feed:** 2 DOM elements → 1 unique item (Tombstone-Announce, "Content unavailable"). No content posts.
+  - **B home feed:** Completely empty ("Your timeline is empty. Follow people to see their posts here.").
+  - **S36 68th consecutive.** Pattern stable. No new angles.
+  - 0 console errors.
+- **Checkpoint:** S36 68th consecutive. A: 1 Tombstone-Announce; B: empty. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 249 (2026-09-21) — build `401c08b5` / WebFinger CORRECTION: standard path /.well-known/webfinger works (ii-a1, alice both 200); /ap/v1/webfinger is a different (unused) endpoint that 404s; NOT a defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A /.well-known/webfinger (standard ActivityPub path) for ii-a1 and alice.
