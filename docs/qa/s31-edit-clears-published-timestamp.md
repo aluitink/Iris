@@ -1,7 +1,7 @@
 # S31 — Editing a Note clears its `published` timestamp (and the `Update` activity's object omits `updated`)
 
 - **Class:** bug / data-integrity — **Severity:** S3
-- **Status:** open
+- **Status:** **fixed (2026-09-21, `45f3038`, change 14822)** — clean-entry re-verify on the rebuilt QA cluster (HEAD `27b1ba6`); `published` preserved + `updated` stamped. (The peer-copy-dropped side-effect is S32, tracked separately.)
 - **Found:** Interop suite A9 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`)
 - **Related:** A9 (Edit/Update). The Update itself federates correctly (B's copy reflects the edit) — this is a **timestamp** defect on the edited Note.
 
@@ -41,3 +41,23 @@ When a Note is updated, the handler replaces the stored Note with the incoming `
 - B's log: `Inbox rejected: unknown recipient …/notes/06GC1GR5XZG3ZRFDG8YH34J3TR` (the `Update` delivery, note-IRI object, is rejected at the peer — see S32); B's cached copy of the note nonetheless shows the new content + `published`=None via lazy refetch.
 
 S31 OPEN (reproduces on a fresh build).
+
+## Re-test (interop A9, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED — reproduces (timestamp defect), with an added federation side-effect.** `ii-a1` (A) posted `II-A4-1 hello cross-instance` (Note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW`), then edited the body to `II-A9-1 edited cross-instance`.
+- `GET A <note>` → `content` = `II-A9-1 edited cross-instance`, `updated` = `2026-09-21T02:14:20Z`, **`published` = None** (absent — the note has **only `updated`, no `published`**). The edited note's object keys: `attributedTo, content, dislikedCount, likedCount, repliedCount, score, sharedCount, id, to, type, updated, url` — **no `published`**.
+- **UI no-refresh:** after Save, the object-detail page **still showed the old content** (`II-A4-1 hello cross-instance`) — the edit saved on the wire but the UI did not re-render.
+- **Federation side-effect (new, see S32):** the `Update` was addressed to the note IRI and B's copy of the note was **removed** — `GET B <note>` → **404** after the edit (the note had previously federated and was fetchable on B before the edit). So the Update not only clears `published` on A, it also drops the peer's copy.
+
+**S31 OPEN (reproduces on the 2026-09-21 fresh cluster; `published` cleared + UI no-refresh + peer copy dropped).**
+
+## Re-verify after fix (2026-09-21, rebuilt QA cluster @ HEAD `27b1ba6`)
+
+The QA cluster's `qa-iris-a`/`qa-iris-b` images were 3h old (pre-dating the S31/S33/S27 fixes), so I rebuilt the two Iris services from `interop-testing` HEAD (`27b1ba6`) before re-verifying — the first edit attempt on the stale build still showed `published=None` (confirming the build was behind), then the rebuild made the fix live.
+
+Clean entry as `ii-a1` (A), fresh note `S31 re-verify v2 base` (Note `…/ii-a1/notes/06GC3VAXBN4MEP52TQF1N21CM0`), `published`=`2026-09-21T03:05:53.7578037Z`, no `updated`. Edited the body to `S31 re-verify v2 edited`:
+
+- `GET A <note>` → `content`=`S31 re-verify v2 edited`, **`published`=`2026-09-21T03:05:53.7578037Z` (PRESERVED — unchanged)**, **`updated`=`2026-09-21T03:06:47.4042671Z` (STAMPED)**. ✅
+- `published` preservation = `True`; `updated` set = `True`.
+
+**S31 FIXED** — the timestamp defect (the S31 core) no longer reproduces on the current build. (Note: `GET B <note>` still 404s — that peer-copy-dropped behavior is **S32**, a separate finding; it does not affect the S31 verdict on A, the source of truth.)

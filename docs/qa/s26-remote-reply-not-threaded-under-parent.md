@@ -47,3 +47,11 @@ So a remote reply is delivered, accepted, and the reply Note is fetchable on the
 - `GET A <parent note>/replies` → `orderedItems` now **includes BOTH** the local reply (`ii-a2`) **and the remote reply** (`ii-b1` `06GC1CF9FTZMHD2CE533RGHFJ0`).
 
 The cross-instance reply is now threaded under the parent. (Note: A5's UI-surfacing assertions remain blocked by S25, but the wire-level threading that S26 reported broken is now correct.) **S26: not reproduced on the fresh build (likely fixed; re-confirm on next regression run).**
+
+## Re-test (interop A5, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED FIXED — not reproduced.** `ii-a1` (A) posted `II-A4-1 hello cross-instance` (Note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW`); `ii-b1` (B) replied `II-A5-1 reply from B` (Note `…/ii-b1/notes/06GC3BJ0SHJMT4ZV87KYY056ZC`, `inReplyTo` = the parent Note IRI).
+- `GET A <parent Note>/replies` → `orderedItems` **includes** the remote reply (ii-b1's note), `inReplyTo` = parent.
+- A object-detail UI (as ii-a1) renders the reply nested under the parent ("In reply to ii-a1").
+
+Cross-instance reply threading is correct. **S26: FIXED (not reproduced on the 2026-09-21 fresh cluster).**

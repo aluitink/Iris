@@ -45,3 +45,11 @@ When a `Follow` is received by an account with `manuallyApprovesFollowers = true
 - `GET A /ap/v1/u/ii-a1/followers` (public) **before accept** = `[ii-b1@B, ii-a2]` (count 2) — **`ii-a2` present before acceptance** (A3.2 ✗).
 
 S34 OPEN (reproduces on a fresh build). (A3.1 pending-request + A3.3 post-accept behavior unchanged from the original run.)
+
+## Re-test (interop A3, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED FIXED — not reproduced.** `ii-a1` (A) enabled "Require approval for follow requests" (`manuallyApprovesFollowers = true`); `ii-a2` (A) pressed Follow on `ii-a1`.
+- **Pending (before accept):** `GET A /ap/v1/u/ii-a1/followers` (public) = **`[ii-b1@B]` only (count 1)** — `ii-a2` **withheld** while pending. `ii-a2/following` = count 0. ii-a1's profile **Requests tab** shows "ii-a2 wants to follow you" with Accept/Reject (A3.1 ✓).
+- **After Accept:** `GET A /ap/v1/u/ii-a1/followers` = `[ii-b1@B, ii-a2]` (count 2); `ii-a2/following` = `[ii-a1]` (A3.3 ✓). (Note: the accept took a few seconds to persist — an immediate re-read right after Accept still showed count 1; a re-read ~5 s later showed count 2.)
+
+The pending/gated follower is now correctly excluded from the public `followers` collection until the owner accepts. **S34: FIXED (not reproduced on the 2026-09-21 fresh cluster).**

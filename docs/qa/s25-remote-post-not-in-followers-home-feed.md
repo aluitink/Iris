@@ -58,3 +58,13 @@ Build note: the fresh `up -d --build` (image built 2026-09-20T21:10 UTC) predate
 - `GET B /ap/v1/u/ii-b1/feed` = only the two `Follow` activities (no `Create`/Note for the remote post).
 
 Note: B **does** have the A4 note in its object store — `GET B /ap/v1/proxy/<note>` → 200 (the `CreateActivityHandler` stored the embedded Note, `StoreEmbeddedObjectAsync`). The defect is purely the **feed query**, which does not include the delivered remote post (it returns only Follow activities). A working-tree fix (`FeedService.GetDeliveredContentAsync`, uncommitted, not in this build) targets exactly this gap; it has **not** been validated yet (needs a rebuild + re-test). **S25 OPEN (reproduces on a fresh build of the original code; a fix is in progress in the working tree but unbaked/unvalidated).**
+
+## Re-test (interop A4, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED — reproduces.** `ii-a1` (A) posted `II-A4-1 hello cross-instance` (Note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW`, `to`=Public, `cc`=ii-a1/followers) while `ii-b1` (B) follows `ii-a1`.
+- A outbox `Create → Note` correct.
+- B stored the note: `GET B /ap/v1/u/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW` → **200** (proxy/object fetch works).
+- B `/home` (as ii-b1) = **"Your timeline is empty. Follow people to see their posts here."** (0 console errors).
+- The remote Note is **not** in ii-b1's home feed despite being delivered + stored.
+
+**S25 OPEN (reproduces on the 2026-09-21 fresh cluster).**

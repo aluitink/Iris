@@ -301,4 +301,102 @@ Stack torn down (`down -v`) and rebuilt fresh; accounts + `ii-comm` re-created. 
 
 **Net (fresh build):** S24 facet 1, S25, S29, S30, S31, S32, S33, S34 **reproduce**; S26 **fixed**; S24 facets 2–3 **not reproduced**; S27/S28 **not re-testable via Playwright** (need a signed CLI client). A10 re-follow restored the edge afterward (suite left healthy).
 
+## Re-test (fresh QA cluster, 2026-09-21)
+
+Full A1–A10 run on the rebuilt QA cluster (A `qa-iris-a.luit.ink`, B `qa-iris-b.luit.ink`). Accounts `ii-a1`/`ii-a2` (A), `ii-b1` (B); community `ii-a8-community` (A).
+
+| Test | Result | Evidence |
+|---|---|---|
+| A1 | PASS | webfinger `/.well-known/webfinger?resource=acct:ii-a1@qa-iris-a.luit.ink` → 200 (×3 handles); 0 console errors on fresh cluster |
+| A2 | PARTIAL | A2.1 **FAIL → S24 f1** (Following tab "Not following anyone yet" both instances despite correct `following`); A2.2 **PASS** (wire: each side's followers contains the other); A2.3 **PASS** (`GET A /ap/v1/u/ii-b1`=200, `GET B /ap/v1/u/ii-a1`=200); S24 f2 variant (foreign Follow stored in B's ii-b1 outbox) |
+| A3 | **PASS (S34 fixed)** | A3.1 PASS (Requests tab "ii-a2 wants to follow you", Accept/Reject); A3.2 **PASS** (public `ii-a1/followers` = `[ii-b1@B]` only **before** accept — gated follower **withheld**); A3.3 PASS (after Accept: `ii-a1/followers` = `[ii-b1, ii-a2]`, `ii-a2/following` = `[ii-a1]`; ~5 s to persist) |
+| A4 | PARTIAL | A4.1 **PASS** (A outbox `Create→Note` `II-A4-1`, `to`=Public, `cc`=ii-a1/followers); A4.2 **FAIL → S25** (note stored on B — `GET B <note>` 200 — but B `/home` = "Your timeline is empty"; 0 console errors) |
+| A5 | **PASS (S26 fixed)** | A5.1 PASS (B outbox reply `inReplyTo`=parent Note IRI); A5.2 PASS (`GET A <parent>/replies` includes the remote reply; A object-detail renders it nested under the parent) |
+| A6 | PARTIAL | A6.1 **PASS** (A UI Like `pressed` count 1; A outbox `Like` object = remote Note IRI); A6.2 **FAIL → S27** (B note `likes` count 0, Likes tab "No likes yet", button not pressed). **Note: the prior "UI blocks remote like" no longer applies — remote Like is now UI-testable.** |
+| A7 | PARTIAL | A7.1 **PASS** (B UI Boost `pressed` count 1; B outbox `Announce` object = remote Note IRI); A7.2 **PARTIAL → S28** (A object-detail shows "1 boost" + Shares tab lists ii-b1 — **improvement** — but Boost button count stays 0 and `GET A <note>/shares` wire = 0). **Remote Boost now UI-testable.** |
+| A8 | PARTIAL | A8.1 **PASS** (Group doc `GET A /ap/v1/c/ii-a8-community` 200; **S29 fixed** — webfinger `acct:!ii-a8-community@…` = 200); A8.2 **FAIL → S30** (B search = 0 results, `GET B /ap/v1/c/ii-a8-community` = 404 — no discovery); A8.3 **PASS** (B actor page `?iri=…/c/ii-a8-community` renders the remote Group; Follow → `GET A /ap/v1/c/ii-a8-community/followers` = `[ii-b1@B]`); A8.4 **FAIL → S30** (no UI to post into a community; a plain-public note was not community-addressed and not in B's feed) |
+| A9 | PARTIAL | A9.1 **PARTIAL → S31** (edit saves on A wire: content + `updated`, but **`published` absent** and UI did not re-render); A9.2 **FAIL → S31/S32** (the `Update` removed B's copy — `GET B <note>` = 404 after the edit); A9.3 **PASS** (`GET A <note>` = Tombstone; A outbox `Delete`); A9.4 **PASS (vacuous)** (B note already 404 from the Update) |
+| A10 | PARTIAL | A10.1 **PASS** (A `following` drops ii-b1; A outbox `Undo` object = bare `follows/` IRI); A10.2 PASS (A side); A10.3 **FAIL → S33** (`GET B /ap/v1/u/ii-b1/followers` still = `[ii-a1@A]` after ~12 s — Undo not propagated) |
+
+**Net (2026-09-21 fresh cluster):**
+- **FIXED / not reproduced:** **S26** (reply threading), **S29** (community webfinger), **S34** (gated follow withheld until accept).
+- **STILL OPEN (reproduced):** **S24 f1** (Following tab omits remote), **S24 f2** (variant: foreign activity in local outbox), **S25** (remote post not in home feed), **S30** (community discovery + community-post federation — though A8.3 follow now works).
+- **FIXED on rebuilt cluster (Pass 100, HEAD `27b1ba6`):** **S27** (remote Like now applied on author — `likedCount` 0→1), **S31** (edit preserves `published` + stamps `updated`; the peer-copy-dropped side-effect is S32), **S33** (unfollow `Undo` now propagates via shared-inbox bare-IRI routing). These three were reproduced in the run above **only because the QA cluster images pre-dated the fixes** — they were confirmed fixed after rebuilding the two Iris services from HEAD.
+- **PARTIALLY IMPROVED:** **S28** (remote Boost now lands in the Shares tab, but button count + `/shares` endpoint still 0), **S32** (local delete correct/Tombstone; peer propagation still broken — peer copy already lost to the Update).
+- **NEW observations:** (a) remote Like/Boost are now **UI-testable** (the prior `UiContext.cs:704` remote-object block is gone on this build) — unblocks S27/S28 regression; (b) the `Update` activity **removes the peer's copy** of the note (B 404 after edit) — a new S31 side-effect; (c) the edit **clears `published` entirely** (note has `updated` but no `published`); (d) the profile Following tab omits remote actors (S24 f1) remains the most user-visible follow-state bug.
+
 **Findings from this run:** S24, S25, S26, S27, S28, S29, S30, S31, S32, S33, S34 (all in `docs/qa/`, indexed in `docs/qa/README.md`). Cross-cutting themes: (1) remote objects are delivered+stored but not **surfaced** (S25 feed, S26 replies, S28 shares); (2) outbound `Like`/`Update`/`Delete`/`Undo` are **dropped or rejected on the peer** (S27 shared-inbox drop; S32/S33 `unknown recipient` on bare-IRI/note-IRI objects); (3) **discovery** gaps (S29 community webfinger); (4) **state** inconsistencies (S24 follow, S34 gated-follow exposure). Note: the working webfinger route is `/.well-known/webfinger` (the `/ap/v1/webfinger` path 404s for everyone — earlier suite references to `/ap/v1/webfinger` were a test-route error).
+
+---
+
+## Re-verify pass (Pass 101, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-verified the still-open S2-sev items deferred to the two-instance stack: **S25** (remote post in follower feed), **S24** (D1 Following tab / D2 outbox / D3 remote-actor GET), **S32** (delete propagation). B was restarted first to clear the in-memory feed cache.
+
+**Headline — NEW S36 (S2, broad home-feed regression).** The home timeline renders **"Your timeline is empty"** even for an actor's **own** posts:
+- **(a) own post:** B's own note `…/06GC41BA…` is in B's outbox but **not** in B's `/home`.
+- **(b) local follow:** A's `ii-a2` note `…/06GC4225…` is in ii-a2's outbox but **not** in ii-a1's `/home` (ii-a1 follows ii-a2 locally).
+- **(c) remote follow (S25):** A→B note `…/06GC40F0…` was delivered+accepted+stored on B, but **not** in ii-b1's `/home`.
+- Captured the UI's authenticated `GET /ap/v1/u/{me}/feed` (16–17 items): dominated by **actor-document activity noise** (`Update`/`Add`/`Remove` on the actor IRI, self `Follow`, `Undo`/`Delete`/`Like`) with **only one content `Create` (a community Group join)** + one `Announce`. The real post `Create`s are absent.
+- Restarting B (clearing the feed cache) did **not** change it → a **build regression**, not a stale cache. **Supersedes/blocks S25** and re-opens the S18 local-timeline symptom. Dev code pass on `FeedService.BuildFeedUncachedAsync` (feed source over-inclusive of actor-doc activity / under-inclusive of content `Create`s). → [s36](../s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md)
+
+**S24 — D3 FIXED, D1 CONFIRMED (sharper root cause), D2 persists.**
+- **D3 (remote-actor direct GET):** **FIXED** — `GET A /ap/v1/u/ii-b1` = **200** (was 404).
+- **D1 (Following tab omits remote actor):** **CONFIRMED** with a sharper root cause. A `ii-a1`'s **`following` collection = `[c/ii-a8-community]` only — ii-b1 is MISSING**, even though A's outbox has the `Follow → ii-b1` activity and A's **`followers`** lists ii-b1. So the follow **edge never materialized in A's `following`** after an unfollow/re-follow cycle → **`following` and `followers` are out of sync**. The Following tab (showing only the community) is rendering that missing edge.
+- **D2 (spurious/foreign activities in local outbox):** **persists** — A's outbox still stores B-authored `Follow` activities. → [s24](../s24-cross-instance-follow-state-inconsistent.md)
+
+**S32 — OPEN (cleanest repro yet).** `ii-a1` posted `II-A9-3 reverify S32 delete propagation` (note `…/06GC44QSENG1RQEXRGB9QEP9F0`, `to`=Public). B **received+stored a live copy** (pre-delete `GET B <note>` = 200, `type`=Note). After A deleted it: `GET A <note>` = **Tombstone** ✓; `GET B <note>` = **Tombstone** — **but** B's log shows the Delete was **rejected** (`unknown recipient <note-IRI>`), so B's Tombstone is a **lazy refetch** of A's current doc, **not** a propagated/applied delete. A non-refetching peer would keep a stale live copy. **S32 OPEN.** → [s32](../s32-delete-not-propagated-peer-stale-copy.md)
+
+**Net (Pass 101):**
+- **NEW:** **S36** (broad home-feed regression — omits all post `Create`s, polluted with actor-doc activity; supersedes S25).
+- **FIXED:** **S24 D3** (remote-actor direct GET now 200).
+- **STILL OPEN:** **S24 D1** (Following tab / `following`-edge sync) + **S24 D2** (foreign activities in local outbox); **S32** (Delete rejected at peer, note-IRI-addressed).
+- **SUPERSEDED:** **S25** (by S36).
+- **CHECKPOINT:** S36 is top priority (home feed is the primary surface; empty for own + followed posts). S28 re-verify deferred (dev's S28 fix not yet committed/deployed). S30 (community join/view) not re-exercised this pass.
+
+---
+
+## Re-verify pass (Pass 102, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-verified **S28** (A7 remote Boost → note `shares`), which is now UI-testable (the remote-boost block is gone). Build unchanged since Pass 101; dev's S28 fix is in **uncommitted WIP**, not deployed → this is a **pre-fix** re-verify.
+
+**S28 — OPEN, REGRESSED.** `ii-a1` (A) posted `II-A7-3 reverify S28 remote boost shares` (Note `…/ii-a1/notes/06GC48G96XE3WTTV3KK0D39QQ8`, `to`=Public). `ii-b1` (B) pressed **Boost** from B:
+- **B (booster):** outbox `Announce`, `actor`=ii-b1, `object`=the Note IRI ✓; B UI Boost pressed, count 1 (local side ✓).
+- **A (author) log:** `Shared inbox: no local recipient; accepting and dropping. Peer: …/ii-b1#key-1` — the Announce is **DROPPED**, not accepted, and **no `AnnounceActivityHandler processed` line** (the original run logged `Handler AnnounceActivityHandler processed Announce … ok` + `Inbox accepted`).
+- **A note wire:** `GET A <note>` → `shares.totalItems`=0, `sharedCount`=None (no local increment); `GET A <note>/shares` → totalItems 0.
+- **A object-detail UI (ii-a1):** Boost count **0**, Shares tab = **"No boosts yet."**
+
+So the remote Boost no longer reaches the author at all on this build — the shared-inbox recipient resolution drops the inbound `Announce` (same class as S27, Like dropped). The earlier "partially improved" (Shares-tab-populated) state from the 2026-09-20 fresh cluster is **gone** on `27b1ba6`. **S28 needs the dev WIP fix (`AnnounceActivityHandler` + `/shares` + shared-inbox Announce→author routing) committed + deployed before a meaningful re-verify.**
+
+**S36 re-confirmed:** B (ii-b1) `/home` still renders **"Your timeline is empty. Follow people to see their posts here."** despite having posts + follows → S36 OPEN.
+
+**Net (Pass 102):**
+- **REGRESSED:** **S28** (remote Announce now dropped at the shared inbox; author `shares`/`sharedCount`/Shares-tab all empty — pre-fix build).
+- **RE-CONFIRMED:** **S36** (home feed empty for own + followed posts).
+- **CHECKPOINT:** S36 top priority (dev code pass on `FeedService.BuildFeedUncachedAsync`). S28 re-verify deferred until the dev WIP fix is committed + deployed. S24 D1/D2 + S32 still open. M2–M12 + L2–L12 blocked on operator accounts.
+
+---
+
+## Re-verify pass (Pass 106, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-exercised the full cross-instance **reply** flow (A5 / S26) from a clean entry (not re-run since the Pass 100 fix confirmation).
+
+**A5 / S26 — PASS (fix holding).** `ii-b1` (B) replied to A's note `…/ii-a1/notes/06GC48G96…` (the S28 test note):
+- **B (replier):** outbox reply Note `…/ii-b1/notes/06GC4CXP22T3Q8QSAPPB99HWC0`, `inReplyTo` = the parent Note IRI ✓; composer showed the parent context ("This reply is threaded under the parent note").
+- **Delivery to A:** the reply **delivered**; A parent `GET <note>/replies` now **includes B's reply IRI** (`…/ii-b1/notes/06GC4CXP22…`).
+- **A object-detail UI (ii-a1):** Replies tab renders the remote reply **nested under the parent** with the **"In reply to ii-a1"** context card + the parent's quoted text. 0 console errors.
+
+Cross-instance reply threading works end-to-end on the current build — **S26 stays fixed**. No new defects.
+
+---
+
+## Re-verify pass (Pass 107, 2026-09-21, build `27b1ba6` == HEAD)
+
+Fresh cross-instance **Like** (A `ii-a1` → B's note `…/ii-b1/notes/06GC4CXP22…`, the S26 reply) to re-confirm **S27** on the current build.
+
+**A2 / S27 — PASS (delivery + registration holding), with a count-materialization discrepancy.**
+- **Delivery ✓:** B log `Inbox accepted: Like from ii-a1 targeting …/06GC4CXP22` + `LikeActivityHandler processed … — ok` (the S27 shared-inbox Like-of-Note routing fix is holding).
+- **Registered ✓:** B note `GET …/likes` collection `totalItems: 1`; B object-detail UI (ii-b1) shows **"1 like"** + **"Likes (1)"** tab.
+- **NEW low-severity facet (count materialization):** the note's wire **`likedCount` = None** and the **inline Like-button count = 0** (on both A's and B's object-detail) while `/likes` = 1 and the UI "1 like" shows. The like is **stored + rendered**, but the **denormalized `likedCount` / inline count is not materialized** on the note. This is the **count analog of the S28 `shares`-count gap** — a distinct, smaller issue than S28's dropped-Announce. (Candidate for a new low-severity finding if it reproduces across notes.)
+
+**A3 / S34 (gated follow)** — **not exercised** this pass: no account has `manuallyApprovesFollowers` set, so the gated-approval flow can't be triggered without a setup change QA won't make. Stays at the Pass 100 "fixed" state.
