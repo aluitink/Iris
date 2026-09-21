@@ -555,7 +555,10 @@ public static class ActivityPubServerExtensions
                 factory.Create(clientOptions, ServerOutboundTransport.Create()),
                 sp.GetRequiredService<IOptions<FeedOptions>>(),
                 // F-07 (apply the block edge): a follow the actor has blocked is excluded from its feed.
-                sp.GetRequiredService<IPersistenceProvider>().Moderation);
+                sp.GetRequiredService<IPersistenceProvider>().Moderation,
+                // Phase 146 feed observability: structured logging for feed build latency, follow counts,
+                // and item count by type.
+                sp.GetRequiredService<ILogger<FeedService>>());
         });
 
         // Public feed (54.27): computes the instance's public timeline (the union of all local

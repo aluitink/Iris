@@ -3,8 +3,11 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using CollectionPage = Iris.Core.Collections.CollectionPage;
+using Stopwatch = System.Diagnostics.Stopwatch;
 
 namespace Iris.Server.Services;
 
@@ -61,6 +64,7 @@ public sealed class FeedService : IFollowFeedService
     private readonly IActivityPubClient _client;
     private readonly FeedOptions _options;
     private readonly IModerationStore? _moderation;
+    private readonly ILogger<FeedService> _logger;
 
     /// <summary>
     /// Initializes a new followed-feed service.
@@ -75,6 +79,8 @@ public sealed class FeedService : IFollowFeedService
     /// <param name="moderation">The moderation store (F-07): when present, a follow the actor has
     /// <em>blocked</em> or <em>muted</em> is excluded from the feed. Null disables block/mute filtering
     /// (every follow is merged).</param>
+    /// <param name="logger">The logger for feed observability (per-follow fan-out timing, item count
+    /// by type, cache hit/miss). Null falls back to <see cref="NullLogger{T}"/>.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FeedService(
         IPersistenceProvider persistence,
@@ -82,7 +88,8 @@ public sealed class FeedService : IFollowFeedService
         IActorDocumentFetcher actorDocs,
         IActivityPubClient client,
         IOptions<FeedOptions> optionsAccessor,
-        IModerationStore? moderation = null)
+        IModerationStore? moderation = null,
+        ILogger<FeedService>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
@@ -95,6 +102,7 @@ public sealed class FeedService : IFollowFeedService
         _client = client;
         _options = optionsAccessor.Value;
         _moderation = moderation;
+        _logger = logger ?? NullLogger<FeedService>.Instance;
     }
 
     /// <summary>
@@ -214,6 +222,8 @@ public sealed class FeedService : IFollowFeedService
     /// </summary>
     private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedUncachedAsync(Iri actorIri, CancellationToken ct)
     {
+        var sw = Stopwatch.StartNew();
+
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
 
         // Deterministic order across follows (IRI order), like the community feed.
@@ -254,44 +264,85 @@ public sealed class FeedService : IFollowFeedService
             .Where(f => !blocked.Contains(f) && !muted.Contains(f))
             .ToList();
 
-        var perFollow = await Task.WhenAll(
+        var perFollowTimed = await Task.WhenAll(
             eligible.Select(async followIri =>
             {
+                var followSw = Stopwatch.StartNew();
+                List<IObjectOrLink> items;
                 try
                 {
                     if (await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false))
                     {
                         // A local follow's outbox is read from the local store (no network).
-                        return (await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)).ToList();
+                        items = (await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)).ToList();
                     }
-
-                    // A remote follow's feed is the union of (a) its outbox walked over the wire and
-                    // (b) the content this instance has already received in its inbox from that author
-                    // (stored in the object store by the CreateActivityHandler's StoreEmbeddedObjectAsync
-                    // when a remote Create was delivered to a local recipient — S25: the delivered post
-                    // must surface in the follower's home feed even when the live outbox walk yields
-                    // nothing, e.g. a broken/unreachable remote outbox or a fresh delivery not yet
-                    // reflected in the walked page). De-duplicated by IRI + content object in
-                    // TruncateDedup, so an item present in both is rendered once.
-                    var items = new List<IObjectOrLink>(await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false));
-                    items.AddRange(await GetDeliveredContentAsync(followIri, ct).ConfigureAwait(false));
-                    return items;
+                    else
+                    {
+                        // A remote follow's feed is the union of (a) its outbox walked over the wire and
+                        // (b) the content this instance has already received in its inbox from that author
+                        // (stored in the object store by the CreateActivityHandler's StoreEmbeddedObjectAsync
+                        // when a remote Create was delivered to a local recipient — S25: the delivered post
+                        // must surface in the follower's home feed even when the live outbox walk yields
+                        // nothing, e.g. a broken/unreachable remote outbox or a fresh delivery not yet
+                        // reflected in the walked page). De-duplicated by IRI + content object in
+                        // TruncateDedup, so an item present in both is rendered once.
+                        items = new List<IObjectOrLink>(await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false));
+                        items.AddRange(await GetDeliveredContentAsync(followIri, ct).ConfigureAwait(false));
+                    }
                 }
                 catch
                 {
                     // A single broken follow must not fail the whole feed (147.2).
-                    return new List<IObjectOrLink>();
+                    items = [];
                 }
+                followSw.Stop();
+                return (Items: items, ElapsedMs: followSw.ElapsedMilliseconds);
             }));
 
         // Merge in the deterministic IRI order of `eligible` (matches the previous sequential
         // iteration order, so the feed is reproducible for a given set of follows).
         for (var i = 0; i < eligible.Count; i++)
         {
-            feed.AddRange(perFollow[i]);
+            feed.AddRange(perFollowTimed[i].Items);
         }
 
-        return TruncateDedup(feed);
+        var result = TruncateDedup(feed);
+        sw.Stop();
+
+        // Phase 146 feed observability: structured log of the build (latency, follow counts,
+        // item count by type, slowest follow). Helps diagnose the S36 class of issues (feed
+        // dominated by noise) and track feed performance in production.
+        var localCount = 0;
+        var remoteCount = 0;
+        var slowestFollowMs = 0L;
+        for (var i = 0; i < eligible.Count; i++)
+        {
+            if (await _localActors.IsLocalActorAsync(eligible[i], ct).ConfigureAwait(false))
+            {
+                localCount++;
+            }
+            else
+            {
+                remoteCount++;
+            }
+
+            slowestFollowMs = Math.Max(slowestFollowMs, perFollowTimed[i].ElapsedMs);
+        }
+
+        var typeCounts = new Dictionary<string, int>();
+        foreach (var item in result)
+        {
+            var type = item is Activity a && a.Type is { } types && types.FirstOrDefault() is { } t ? t : "Object";
+            typeCounts[type] = typeCounts.GetValueOrDefault(type) + 1;
+        }
+
+        _logger.LogInformation(
+            "Feed built for {ActorIri}: {TotalMs} ms, {Follows} follows ({Local} local, {Remote} remote), " +
+            "{Items} items, slowest follow {SlowestMs} ms, types: {Types}",
+            actorIri.Value, sw.ElapsedMilliseconds, eligible.Count, localCount, remoteCount,
+            result.Count, slowestFollowMs, string.Join(", ", typeCounts.Select(kv => $"{kv.Key}={kv.Value}")));
+
+        return result;
     }
 
     /// <summary>
