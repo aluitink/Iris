@@ -171,7 +171,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 > **The loops never block on a question.** When either loop hits something it can't decide (a product fork, a conflict, a destructive action), it logs a short entry here and **moves on to another item** (stashing in-flight work first). A human clears this list when convenient; cleared entries fold their answer into the relevant slice/change doc. See [DEV_LOOP.md — Blocking without stopping](docs/reference/DEV_LOOP.md#blocking-without-stopping).
 
-- *(empty)*
+- **[QA, 2026-09-21] `qa` branch merge deferred — ownership overlap on `docs/qa/s31-…md` + PLAN.md.** QA's `qa` branch (Pass 100: S27/S31/S33 re-verified **fixed** on the rebuilt cluster @ HEAD `27b1ba6`) is committed and ready to merge, but the **main checkout has dev's uncommitted WIP** that touches the *same two files* QA's merge would write: `docs/qa/s31-edit-clears-published-timestamp.md` (dev set Status = "FIXED (dev)… live re-verify deferred to QA" — QA's version supersedes it with the live re-verify evidence) and `PLAN.md` (dev is editing the S2-sev list + has new S28 fix code in `ActivityPubServerExtensions.cs` + `SharedInboxIntegrationTests.cs`). **QA did not clobber dev's worktree and did not commit dev's code files** (ownership rule). **Resolve:** when dev lands its WIP (commit on `interop-testing`), re-run `git -C .worktrees/qa rebase interop-testing` then `git merge qa` — the S31 doc conflict should take the QA side (it has the live re-verify evidence). Also note: dev's WIP indicates **S28 is now fixed on the current build** (`AnnounceActivityHandler` + `/shares`) — QA should re-verify S28 in the next pass (it was "not reproducible via Playwright" before).
 
 ## Recently Completed
 
