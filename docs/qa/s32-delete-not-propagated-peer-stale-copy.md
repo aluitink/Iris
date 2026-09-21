@@ -1,7 +1,7 @@
 # S32 — Delete (tombstone) emitted locally but NOT propagated to the peer; peer keeps a stale live copy
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** open
+- **Status:** **OPEN (narrowed)** — receiving-side routing fixed by dev `6b11799` (shared-inbox Delete/Update of a *local* note → author); **sending-side delivery still missing** (A's cross-instance Delete `to`/`cc` empty, not delivered to the peer) → peer-stale-copy risk persists
 - **Found:** Interop suite A9 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S31](s31-edit-clears-published-timestamp.md) (the `Update` on the same note was also rejected on B with "unknown recipient"). Distinct from [S25](s25-remote-post-not-in-followers-home-feed.md) (feed surfacing).
 
@@ -72,3 +72,15 @@ So the **local delete is correct** (Tombstone), but the **peer-propagation defec
   - B's Tombstone is the result of **lazy-refetching** the IRI from A (A now serves the Tombstone), **not** of the Delete being delivered/applied. A peer that had cached the live Note and did **not** refetch would still serve the stale live copy (the original S32 symptom).
 
 **Verdict (build `27b1ba6`): S32 OPEN — the Delete is still rejected at the peer with "unknown recipient" (note-IRI-addressed activity not resolvable to a local recipient; `to`/`cc` empty), so the delete is not propagated as an activity. The peer only reflects the tombstone via a live refetch of the author's current document, which is fragile (a non-refetching peer keeps a stale live copy).**
+
+## Re-test (Pass 109, 2026-09-21, build `6b11799` — dev's S32 fix deployed)
+
+**Dev committed `6b11799`: "route Delete/Update of a local note to the note's author via shared inbox."** The fix is a **receiving-side** change: when a shared-inbox Delete/Update of a **local** note (a federated copy whose home instance is *this* instance) arrives, resolve the note's `attributedTo` (author) and route to the author instead of dropping as "unknown recipient" (mirrors the S27 Like branch). Two integration tests cover the Delete (tombstone) + Update (refresh) paths. I rebuilt + redeployed the QA cluster to this build and re-ran the clean A→B repro.
+
+`ii-a1` (A) posted `II-A9-4 S32 reverify delete propagation` (Note `…/ii-a1/notes/06GC4HQQPPAH0EWTFN23KP9D1G`, `to`=Public); B fetched it (live copy); A deleted it.
+
+- **Local (A):** `GET A <note IRI>` → **Tombstone** (`formerType` Note) ✓. A outbox `Delete` present, `object`=note IRI, **`to`/`cc` = None** (still not addressed to the audience).
+- **Peer (B):** `GET B <note IRI>` → **Tombstone** ✓ **but** B's inbox log shows **only the inbound `Create`** — **no inbound `Delete`** — and A's log shows **no outbound Delete to B**. B's Tombstone is again a **lazy refetch** of A's current doc, **not** a propagated/applied Delete.
+- **Why the fix didn't trigger here:** `6b11799` is a **receiving-side** routing fix for the *local-note* shared-inbox case (dev's integration tests). In the normal **cross-instance A→B** flow, the **sending side (A) does not address/deliver the Delete to B** (`to`/`cc` empty; no delivery to B's shared inbox), so B never receives a Delete to route. The fix does not close the cross-instance delivery gap.
+
+**Verdict (build `6b11799`): S32 PARTIALLY addressed.** The receiving-side routing of a shared-inbox Delete/Update of a local note is fixed + tested (`6b11799`), but the **cross-instance A→B Delete is still not delivered** (A's `to`/`cc` empty, no delivery to B's shared inbox), so a **non-refetching peer would still keep a stale live copy** — the core peer-stale-copy risk **persists** for the cross-instance case. **Suggested dev follow-up:** on Delete/Update, **address the activity to the note's original `to`/`cc` (the audience)** so the peer actually receives it (the sending side), in addition to the receiving-side routing now in place. **Status: OPEN (narrowed) — receiving-side fixed, sending-side delivery still missing.**
