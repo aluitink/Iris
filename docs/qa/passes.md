@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 125 (2026-09-21) — No new commit / no build change; dev S36 WIP grew to ~688 lines of tests across 3 files (EfPersistence 332 + FeedService 98 + new HomeFeedOwnPostIntegrationTests 258, incl. HomeFeed_Surfaces_OwnNoteCreate_*); still no src/ fix → S36 OPEN
+- **Build/Live:** No new commit (HEAD `aebe420`); QA cluster unchanged. **Dev S36 WIP grew to ~688 lines of tests across three files** — `EfPersistenceContractTests.cs` (332), `FeedServiceTests.cs` (98), and a **new** `tests/Iris.Web.Tests/HomeFeedOwnPostIntegrationTests.cs` (258, with `HomeFeed_Surfaces_OwnNoteCreate_WithSourcePeople` + `HomeFeed_Surfaces_OwnNoteCreate_WithoutSourceFilter`). **No `src/` changes yet** — the S36 fix itself is not written (tests only) → S36 still open.
+- **Explored:** Checked the dev S36 WIP state — confirmed the fix is still in the test-writing phase (now spanning server feed tests, EF persistence, and a Web home-feed integration test).
+- **Result:** **S36 remains OPEN (top priority).** Dev is building a comprehensive S36 repro/contract suite (feed service + EF persistence + Web home-feed integration) but has not yet changed any `src/` (the `FeedService`/EF fix is the unblock). No live re-verify possible until dev commits + the cluster is redeployed.
+- **Checkpoint:** S36 dev fix in progress (~688 test lines across 3 files, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. S31 re-confirmed FIXED (Pass 124). M2–M12 + L2–L12 blocked.
+
 ## Pass 124 (2026-09-21) — No new commit / no build change; S31 (edit clears `published`) re-verified with a fresh edit → FIXED (holding) (published preserved 04:03Z + updated stamped 06:03Z); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
 - **Explored:** Re-verified **S31** (edit clears `published`) with a **fresh edit** on the current build — edited note `06GC48G96` (A) via the object-detail Edit control.
