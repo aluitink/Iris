@@ -1,6 +1,6 @@
 # QA Findings
 
-One document per QA finding from the recurring **General UI/UX review** (Playwright-driven passes against `https://iris.luit.ink`). This folder is where new QA findings live — **not** in `PLAN.md`.
+One document per QA finding from the recurring **General UI/UX review** (Playwright-driven passes against the QA cluster, primarily `https://qa-iris-a.luit.ink`; peer services are `https://qa-lemmy.luit.ink` and `https://qa-mastodon.luit.ink`). `https://iris.luit.ink` is the production FQDN and should not be used for development or QA. This folder is where new QA findings live — **not** in `PLAN.md`.
 
 ## Process
 
@@ -56,6 +56,17 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | S19 | Community page 404s; actor page has no Requests tab; notifications lack Accept/Decline | bug | S2 | open (Pass 43 — scope changed: /c/{name} 404s, actor page has no Requests/Members tabs) | [s19](s19-community-requests-tab-fails.md) |
 | S20 | Home feed "Communities" tab is non-functional (no API call, same content as Posts) | bug / feature-gap | S2 | open (found Pass 42) | [s20](s20-home-feed-communities-tab-nonfunctional.md) |
 | S21 | Newly created community missing from Following tab; /c/{handle} 404s | bug / data-integrity | S2 | open (found Pass 46) | [s21](s21-new-community-missing-following-tab.md) |
+| S24 | Cross-instance follow: Following tab omits remote actors, spurious self-follow in outbox, remote-actor GET 404s | bug / data-integrity | S2 | open — **facet 1 (Following tab) CONFIRMED on fresh rebuild 2026-09-20; facets 2–3 (self-follow, remote GET 404) not reproduced** | [s24](s24-cross-instance-follow-state-inconsistent.md) |
+| S25 | Remote post delivered to inbox but not surfaced in follower's home feed | bug / data-integrity | S2 | open (found Interop A4) | [s25-remote-post-not-in-followers-home-feed.md](s25-remote-post-not-in-followers-home-feed.md) |
+| S26 | Remote reply delivered+stored but not threaded under parent Note's `replies` | bug / data-integrity | S2 | **NOT reproduced on fresh rebuild 2026-09-20 — appears fixed** (remote reply now threaded under parent); re-confirm next regression | [s26-remote-reply-not-threaded-under-parent.md](s26-remote-reply-not-threaded-under-parent.md) |
+| S27 | Cross-instance Like delivered to shared inbox but DROPPED ("no local recipient"), never applied | bug / federation-delivery | S2 | open (found Interop A6) — **not re-testable via Playwright on fresh rebuild 2026-09-20** (UI blocks remote like; outbox POST needs AP-HTTP-Sign); needs signed CLI client | [s27-like-dropped-at-shared-inbox-no-local-recipient.md](s27-like-dropped-at-shared-inbox-no-local-recipient.md) |
+| S28 | Remote Announce (Boost) delivered+stored on author but not surfaced in note's `shares` | bug / data-integrity | S2 | open (found Interop A7) — **not re-testable via Playwright on fresh rebuild 2026-09-20** (UI blocks remote boost; outbox POST needs AP-HTTP-Sign); needs signed CLI client | [s28-remote-announce-stored-not-in-shares.md](s28-remote-announce-stored-not-in-shares.md) |
+| S29 | Community (Group) not resolvable via WebFinger (`acct:!name@host` → 404) though Group doc exists | bug / discovery | S2 | open (found Interop A8) | [s29-community-webfinger-404.md](s29-community-webfinger-404.md) |
+| S30 | Cross-instance community join/view blocked (remote community unreachable from peer) | bug / federation | S2 | open (found Interop A8, blocks A8.2/A8.3) | [s30-cross-instance-community-join-blocked.md](s30-cross-instance-community-join-blocked.md) |
+| S31 | Editing a Note clears its `published` timestamp; `Update` object omits `updated` | bug / data-integrity | S3 | open (found Interop A9) | [s31-edit-clears-published-timestamp.md](s31-edit-clears-published-timestamp.md) |
+| S32 | Delete (tombstone) emitted locally but NOT propagated to peer; peer keeps stale live copy | bug / federation | S2 | open (found Interop A9) | [s32-delete-not-propagated-peer-stale-copy.md](s32-delete-not-propagated-peer-stale-copy.md) |
+| S33 | Unfollow (`Undo` of `Follow`) emitted locally but NOT propagated; peer's `followers` edge remains | bug / federation | S2 | open (found Interop A10) | [s33-unfollow-undo-not-propagated-peer-edge-remains.md](s33-unfollow-undo-not-propagated-peer-edge-remains.md) |
+| S34 | Gated (manually-approved) follow request added to public `followers` BEFORE acceptance | bug / data-integrity (privacy) | S2 | open (found Interop A3) | [s34-gated-follow-not-withheld-from-public-followers.md](s34-gated-follow-not-withheld-from-public-followers.md) |
 
 **8 open, 1 fix-committed-not-live (S6), 9 fixed (S5, S7, S8, S9, S10, S11, S12, S13, S15), 1 partially-fixed (S18), 1 core-fixed-UX-gap (S16). No S1/blockers.**
 
