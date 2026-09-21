@@ -61,3 +61,11 @@ Clean entry as `ii-a1` (A), fresh note `S31 re-verify v2 base` (Note `…/ii-a1/
 - `published` preservation = `True`; `updated` set = `True`.
 
 **S31 FIXED** — the timestamp defect (the S31 core) no longer reproduces on the current build. (Note: `GET B <note>` still 404s — that peer-copy-dropped behavior is **S32**, a separate finding; it does not affect the S31 verdict on A, the source of truth.)
+
+## Re-verify (Pass 124, 2026-09-21, current build `aebe420`) — FIXED, holding
+
+Fresh edit re-confirmed the fix holds on the current build. As `ii-a1` (A), edited note `…/ii-a1/notes/06GC48G96XE3WTTV3KK0D39QQ8` (body → `II-A7-3 reverify S28 remote boost shares [edited: S31 published-preservation reverify Pass 124]`):
+
+- `GET A <note>` → `content` updated, **`published` = `2026-09-21T04:03:25.6232431Z` (PRESERVED — the original, unchanged)**, **`updated` = `2026-09-21T06:03:49.2965649Z` (STAMPED — the new edit time)**. ✅
+
+**S31 FIXED (holding)** — a fresh edit on the current build preserves `published` and stamps `updated`. (The peer-side facet — B's cached copy going stale / the Update not being delivered to B — is **S32**, a separate finding.)

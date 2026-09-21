@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 124 (2026-09-21) — No new commit / no build change; S31 (edit clears `published`) re-verified with a fresh edit → FIXED (holding) (published preserved 04:03Z + updated stamped 06:03Z); S36 still OPEN (dev WIP unchanged, no src fix)
+- **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
+- **Explored:** Re-verified **S31** (edit clears `published`) with a **fresh edit** on the current build — edited note `06GC48G96` (A) via the object-detail Edit control.
+- **Result:** **S31 FIXED (holding).** After the fresh edit, `GET A <note>` → `content` updated, **`published` = `2026-09-21T04:03:25Z` (PRESERVED — the original, unchanged)**, **`updated` = `2026-09-21T06:03:49Z` (STAMPED)**. So the S31 timestamp defect (edit clearing `published`) does not reproduce on the current build — a fresh edit preserves `published` and stamps `updated`. (The peer-side facet — B's cached copy going stale / the Update not delivered to B — is **S32**, separate.) Consistent with the Pass-100 fix confirmation (`45f3038`).
+- **Checkpoint:** S31 re-verified FIXED (holding, fresh edit). S36 still top priority (dev fix in progress — 296 test lines, src pending). S24 (D2), S28 (count), S30 (A8.4 /feed), S32 (sending-side), S37 (count, local+remote) open. M2–M12 + L2–L12 blocked.
+
 ## Pass 123 (2026-09-21) — No new commit / no build change; S24 D2 (foreign activities in local outbox) re-confirmed → OPEN (ii-a1's A outbox contains 2 foreign ii-b1 Like activities among 20 items); S36 still OPEN (dev WIP unchanged, no src fix)
 - **Build/Live:** No new commit (HEAD `aebe420`); dev S36 WIP unchanged (296 test lines, no `src/` fix); QA cluster unchanged.
 - **Explored:** Re-verified **S24 D2** (the one remaining open facet of S24) — does ii-a1's A outbox contain foreign (actor=ii-b1) activities?
