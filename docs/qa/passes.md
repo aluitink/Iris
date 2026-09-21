@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 102 (2026-09-21) — Re-verify S28 (remote Boost → shares) on current build → REGRESSED; S36 re-confirmed
+
+- **Build/Live:** QA cluster `== HEAD` `27b1ba6` (built 03:04Z, unchanged since Pass 101). Dev's S28 fix (`AnnounceActivityHandler` + `/shares`) is in **uncommitted WIP**, not deployed → re-verify is against the **pre-fix** build.
+- **Explored:** Clean-entry re-verify of **S28** (A7 remote Boost → note `shares`), which is now UI-testable (the remote-boost block is gone). Also re-confirmed **S36** (home feed) still open.
+- **Result:** **S28 OPEN — REGRESSED.** `ii-a1` (A) posted `II-A7-3 reverify S28 remote boost shares` (Note `…/06GC48G96…`); `ii-b1` (B) pressed **Boost** (B outbox `Announce` ✓, local side ✓). On A the Announce is now **DROPPED at the shared inbox** (`Shared inbox: no local recipient; accepting and dropping`) — no `AnnounceActivityHandler processed` line (unlike the original run, which accepted it). A note wire `shares.totalItems`=0, `sharedCount`=None; A object-detail Shares tab = **"No boosts yet."**, Boost count 0. Same class as S27 (Like dropped) — the shared-inbox recipient resolution doesn't route an inbound `Announce` to the **local note author**. The earlier "partially improved" (Shares-tab-populated) state is **gone** on this build. **S36 re-confirmed** — B (ii-b1) home still "Your timeline is empty" despite posts/follows.
+- **Checkpoint:** **S36 is top priority** (home feed empty for own + followed posts; needs a dev code pass on `FeedService.BuildFeedUncachedAsync`). **S28** needs the dev WIP fix (`AnnounceActivityHandler` + `/shares` + shared-inbox Announce→author routing) **committed + deployed** before re-verify. S24 D1/D2 + S32 still open. M2–M12 (Mastodon) + L2–L12 (Lemmy) still **BLOCKED** on operator-provided peer accounts.
+
 ## Pass 101 (2026-09-21) — Re-verify S25/S24/S32 on current build → NEW S36 (broad home-feed regression)
 
 - **Build/Live:** QA cluster `== HEAD` `27b1ba6` (rebuilt 03:04Z, current). S25 fix (`GetDeliveredContentAsync`) confirmed **in the running `Iris.Server.dll`** (`grep -c` = 3). B restarted to clear the in-memory feed cache before the S25 check.

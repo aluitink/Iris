@@ -353,3 +353,24 @@ Re-verified the still-open S2-sev items deferred to the two-instance stack: **S2
 - **STILL OPEN:** **S24 D1** (Following tab / `following`-edge sync) + **S24 D2** (foreign activities in local outbox); **S32** (Delete rejected at peer, note-IRI-addressed).
 - **SUPERSEDED:** **S25** (by S36).
 - **CHECKPOINT:** S36 is top priority (home feed is the primary surface; empty for own + followed posts). S28 re-verify deferred (dev's S28 fix not yet committed/deployed). S30 (community join/view) not re-exercised this pass.
+
+---
+
+## Re-verify pass (Pass 102, 2026-09-21, build `27b1ba6` == HEAD)
+
+Re-verified **S28** (A7 remote Boost → note `shares`), which is now UI-testable (the remote-boost block is gone). Build unchanged since Pass 101; dev's S28 fix is in **uncommitted WIP**, not deployed → this is a **pre-fix** re-verify.
+
+**S28 — OPEN, REGRESSED.** `ii-a1` (A) posted `II-A7-3 reverify S28 remote boost shares` (Note `…/ii-a1/notes/06GC48G96XE3WTTV3KK0D39QQ8`, `to`=Public). `ii-b1` (B) pressed **Boost** from B:
+- **B (booster):** outbox `Announce`, `actor`=ii-b1, `object`=the Note IRI ✓; B UI Boost pressed, count 1 (local side ✓).
+- **A (author) log:** `Shared inbox: no local recipient; accepting and dropping. Peer: …/ii-b1#key-1` — the Announce is **DROPPED**, not accepted, and **no `AnnounceActivityHandler processed` line** (the original run logged `Handler AnnounceActivityHandler processed Announce … ok` + `Inbox accepted`).
+- **A note wire:** `GET A <note>` → `shares.totalItems`=0, `sharedCount`=None (no local increment); `GET A <note>/shares` → totalItems 0.
+- **A object-detail UI (ii-a1):** Boost count **0**, Shares tab = **"No boosts yet."**
+
+So the remote Boost no longer reaches the author at all on this build — the shared-inbox recipient resolution drops the inbound `Announce` (same class as S27, Like dropped). The earlier "partially improved" (Shares-tab-populated) state from the 2026-09-20 fresh cluster is **gone** on `27b1ba6`. **S28 needs the dev WIP fix (`AnnounceActivityHandler` + `/shares` + shared-inbox Announce→author routing) committed + deployed before a meaningful re-verify.**
+
+**S36 re-confirmed:** B (ii-b1) `/home` still renders **"Your timeline is empty. Follow people to see their posts here."** despite having posts + follows → S36 OPEN.
+
+**Net (Pass 102):**
+- **REGRESSED:** **S28** (remote Announce now dropped at the shared inbox; author `shares`/`sharedCount`/Shares-tab all empty — pre-fix build).
+- **RE-CONFIRMED:** **S36** (home feed empty for own + followed posts).
+- **CHECKPOINT:** S36 top priority (dev code pass on `FeedService.BuildFeedUncachedAsync`). S28 re-verify deferred until the dev WIP fix is committed + deployed. S24 D1/D2 + S32 still open. M2–M12 + L2–L12 blocked on operator accounts.

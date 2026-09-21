@@ -52,3 +52,15 @@
 - **But the Boost button count on A stays 0 / not pressed** even though the Shares tab shows the boost and "1 boost" text appears. Also `GET A <note>/shares` wire returned **count 0** (the Shares *collection endpoint* is empty while the object-detail Shares *tab* renders the item) — an inconsistency between the tab and the wire collection.
 
 So the remote Boost now reaches the author (Shares tab populated), but the **button count** and the **`/shares` collection endpoint** do not reflect it. **S28: partially improved (Shares tab now populated) but the button-count / `shares`-endpoint discrepancy remains — OPEN on the 2026-09-21 fresh cluster.**
+
+## Re-verify (Pass 102, 2026-09-21, build `27b1ba6`)
+
+**REGRESSION — the remote Announce is now DROPPED at the shared inbox (not accepted), so nothing surfaces.** This is a *different* (and more severe) failure mode than the earlier "accepted but not surfaced" runs: the shared-inbox routing change made for S27 (Like) / S33 (Undo) now **drops the Announce** because the note's author (a local actor) is not resolved as a local recipient for an inbound Announce.
+
+- `ii-a1` (A) posted `II-A7-3 reverify S28 remote boost shares` (Note `…/ii-a1/notes/06GC48G96XE3WTTV3KK0D39QQ8`, `to`=Public).
+- `ii-b1` (B) pressed **Boost** from B (B outbox → `Announce`, `actor`=ii-b1, `object`=the Note IRI; B UI Boost pressed, count 1 — local side ✓).
+- **A (author's instance) log:** `Shared inbox: no local recipient; accepting and dropping. Peer: …/ii-b1#key-1` — the Announce is **dropped**, not accepted, and **no `AnnounceActivityHandler processed` line** appears (unlike the original run, which logged `Handler AnnounceActivityHandler processed Announce … ok` + `Inbox accepted`).
+- **A note wire:** `GET A <note>` → `shares.totalItems` = **0**, `sharedCount` = **None** (no local count increment at all); `GET A <note>/shares` → `totalItems` 0.
+- **A object-detail UI (as ii-a1):** Boost button count **0**, Shares tab = **"No boosts yet."**
+
+**Verdict (build `27b1ba6`): S28 OPEN — REGRESSED.** The remote Boost is now **dropped at the shared inbox** ("no local recipient"), so the author's `shares` / `sharedCount` / Shares tab are all empty. This is the same class as S27 (Like dropped at the shared inbox) — the shared-inbox recipient resolution does not route an inbound `Announce` (or `Like`) to the **local note author**. The earlier "partially improved" state (Shares tab populated, 2026-09-20 fresh cluster) is **gone** on the current build. The S28 fix in dev's uncommitted WIP (`AnnounceActivityHandler` + `/shares`) has **not** been deployed to the QA cluster, so this re-verify is against the pre-fix build `27b1ba6`.
