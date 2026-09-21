@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 200 (2026-09-21) — build `8243361c` / P200 confirms notification-inlining + feed-omission asymmetry
+- **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** Fresh A post II-S36-P200; B cache/proxy/outbox/notifications/home-feed for P200.
+- **Result:**
+  - **P200 delivery + notification inlining (CONFIRMS Pass 196-199):** A post P200 (note `06GCA3WEPTPME30JXWMM61WHM8`): B cache 404 at 30s, B proxy 200 but no content. B `/local/v1/notifications` (totalItems=33) has P200 Create with **full content inlined** (actor=ii-a1, "II-S36-P200 fresh A post..."). UI shows "ii-a1 posted 1m ago" with content. Notification inlining works for the newest post.
+  - **B home feed still empty:** "Your timeline is empty" — P200's Create is in B's notifications but NOT in B's home feed. The feed-omission asymmetry is confirmed for the newest post (not just historical data).
+  - **S36 35th consecutive.** 0 console errors.
+- **Checkpoint:** P200 confirms the asymmetry is live and ongoing (not a historical artifact): notification inlines, feed omits. S36+S24 D2 root cause (missing object-fetch/caching on inbound Create; feed path uses object store, notification path inlines) is fully characterized with 5 passes of evidence (196-200). Next: new exploration.
+
 ## Pass 199 (2026-09-21) — build `8243361c` / search + object-detail render remote content; home-feed shows "Content unavailable" for Announces
 - **Build/Live:** `8243361c` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Search for P193 on both instances; object detail for P193 on B; home-feed "Content unavailable" items.
