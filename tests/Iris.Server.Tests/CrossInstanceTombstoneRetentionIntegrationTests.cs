@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server;
@@ -299,6 +300,79 @@ public sealed class CrossInstanceTombstoneRetentionIntegrationTests : IDisposabl
         // formerType + deleted).
         Assert.Single(results);
         Assert.Equal(noteIri.Value, results[0].Id);
+    }
+
+    // --- S32: the outbound Delete is addressed to the note's original audience ---------------
+
+    [Fact]
+    public async Task DeleteActivity_IsAddressedTo_NotesOriginalAudience()
+    {
+        // Step 1: alice (A) posts a direct note to bob (to=[bob]). The Create's
+        // RewriteOutboundAudienceAsync appends the followers to cc. The stored note has to=[bob]
+        // (the composed direct recipient) and cc=[followers].
+        var m1 = new Iri($"https://{AHost}/ap/v1/u/{Alice}/notes/s32-{Guid.NewGuid():N}");
+        var createIri = new Iri($"https://{AHost}/activities/create-{Guid.NewGuid():N}");
+        var create = new Create
+        {
+            Id = createIri.Value,
+            Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+            Object =
+            [
+                new Note
+                {
+                    Id = m1.Value,
+                    Content = ["s32 audience marker"],
+                    AttributedTo = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+                    To = [new Link { Href = new Uri(_bobActorIri.Value) }],
+                },
+            ],
+        };
+        using var createRequest = SignedOutboxRequest(_aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
+        using var createResponse = await _aHttp.SendAsync(createRequest);
+        Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
+
+        // Wait for A to store the note.
+        await WaitForAsync(async () => await _aPersistence.Objects.TryGetObjectAsync(m1, out _),
+            timeout: TimeSpan.FromSeconds(30));
+
+        // Step 2: alice (A) deletes the note. The Delete activity's to/cc should be copied from the
+        // stored note's to/cc (the note's original audience). The server mints its own IRI for the
+        // Delete (MintActivityIds), so the 202 response body carries the minted IRI.
+        var delete = BuildDelete(_aliceActorIri, m1, new Iri($"https://{AHost}/activities/delete-{Guid.NewGuid():N}"));
+        using var deleteRequest = SignedOutboxRequest(_aliceActorIri, _aliceKey, delete, $"/ap/v1/u/{Alice}/outbox");
+        using var deleteResponse = await _aHttp.SendAsync(deleteRequest);
+        Assert.Equal(HttpStatusCode.Accepted, deleteResponse.StatusCode);
+
+        // Parse the minted Delete IRI from the 202 response body.
+        var deleteJson = await deleteResponse.Content.ReadAsStringAsync();
+        var deleteDoc = JsonDocument.Parse(deleteJson);
+        var mintedDeleteIri = new Iri(deleteDoc.RootElement.GetProperty("id").GetString()!);
+
+        // Wait for A to tombstone the note.
+        await WaitForAsync(
+            async () =>
+            {
+                if (!await _aPersistence.Objects.TryGetObjectAsync(m1, out var a))
+                {
+                    return false;
+                }
+
+                return a is Tombstone;
+            },
+            timeout: TimeSpan.FromSeconds(30));
+
+        // Read the stored Delete activity from A's activity store (by its minted IRI) and verify its to/cc.
+        Assert.True(
+            await _aPersistence.Activities.TryGetActivityAsync(mintedDeleteIri, out var storedDelete),
+            "The Delete activity should be stored in the activity store.");
+        Assert.NotNull(storedDelete);
+        Assert.IsType<Delete>(storedDelete);
+
+        var del = (Delete)storedDelete!;
+
+        // The Delete's to should include bob (the note's original direct recipient).
+        Assert.NotNull(del.To);
+        Assert.Contains(del.To!, e => e.ResolveObjectIri() is { } iri && iri.Value == _bobActorIri.Value);
     }
 
     // --- Helpers ----------------------------------------------------------------------------

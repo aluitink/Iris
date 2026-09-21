@@ -6491,6 +6491,21 @@ public static class ActivityPubServerExtensions
                     create.To = MergeAudience(create.To, [parentAuthor]);
                 }
                 break;
+
+            // S32 (sending-side audience): a Delete/Update for a Note must be addressed to the note's
+            // original audience (the note's to/cc) so a conforming receiver that reads to/cc sees the
+            // correct distribution list and the peer actually receives the activity. The note's to/cc
+            // (already populated by the Create's RewriteOutboundAudienceAsync, which appends the
+            // followers to cc) is read from the stored object and copied onto the activity. A bare
+            // link reference (the common Delete shape) or a missing/stored-as-Tombstone object is a
+            // no-op (the audience cannot be recovered).
+            case Delete del:
+                await ApplyStoredObjectAudienceAsync(del, persistence, ct).ConfigureAwait(false);
+                break;
+
+            case Update upd:
+                await ApplyStoredObjectAudienceAsync(upd, persistence, ct).ConfigureAwait(false);
+                break;
         }
     }
 
@@ -6529,6 +6544,36 @@ public static class ActivityPubServerExtensions
         }
 
         return links.Count == 0 ? null : links;
+    }
+
+    /// <summary>
+    /// S32 (sending-side audience): copies the stored object's <c>to</c>/<c>cc</c> onto a
+    /// <see cref="Delete"/> or <see cref="Update"/> activity so the activity is addressed to the
+    /// note's original audience. The stored object's <c>to</c>/<c>cc</c> (already populated by the
+    /// Create's <see cref="RewriteOutboundAudienceAsync"/>, which appends the followers to <c>cc</c>)
+    /// is read from the object store and assigned to the activity. A missing object or a non-
+    /// <see cref="KristofferStrube.ActivityStreams.Object"/> (e.g. a <see cref="Tombstone"/>) is a
+    /// no-op (the audience cannot be recovered).
+    /// </summary>
+    private static async Task ApplyStoredObjectAudienceAsync(
+        Activity activity,
+        IPersistenceProvider persistence,
+        CancellationToken ct)
+    {
+        var objIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+        if (objIri is not { } oi)
+        {
+            return;
+        }
+
+        if (!await persistence.Objects.TryGetObjectAsync(oi, out var storedObj, ct).ConfigureAwait(false)
+            || storedObj is not KristofferStrube.ActivityStreams.Object ao)
+        {
+            return;
+        }
+
+        activity.To = ao.To;
+        activity.Cc = ao.Cc;
     }
 
     /// <summary>
