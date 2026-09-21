@@ -3983,6 +3983,27 @@ public static class ActivityPubServerExtensions
                 var ownerIri = await ResolveObjectOwnerForDeliveryAsync(persistence, null, new Iri(likedObjectIri), ct).ConfigureAwait(false);
                 recipients.Add(ownerIri);
             }
+            else if (typedActivity is Delete or Update
+                     && typedActivity.Object is { } editObjects
+                     && FirstIriFromCollection(editObjects) is { } editedObjectIri)
+            {
+                // A Delete (or Update) of an object: the object is a Note (not an actor), so its IRI is
+                // not a valid inbox recipient — routing to it would drop the activity as "unknown
+                // recipient" (S32) and the peer's copy would never be tombstoned / refreshed. Resolve the
+                // object's owner (its attributedTo) and address the delivery to the owner instead; the
+                // owner's DeleteActivityHandler / UpdateActivityHandler then tombstones / updates the
+                // stored object (authorizing the remote owner — the delete's actor is the note's
+                // attributedTo). A local object's owner is read from the object store (no wire hop); an
+                // unresolvable owner degrades to the object IRI, which the per-recipient actor-existence
+                // check below then drops as before (no local recipient). Only route to the owner if the
+                // owner is a local actor (the note's home instance); if the owner is remote, the note is
+                // not this instance's to delete/update, so the activity is dropped (no local recipient).
+                var ownerIri = await ResolveObjectOwnerForDeliveryAsync(persistence, null, new Iri(editedObjectIri), ct).ConfigureAwait(false);
+                if (await localActors.IsLocalActorAsync(ownerIri, ct).ConfigureAwait(false))
+                {
+                    recipients.Add(ownerIri);
+                }
+            }
             else
             {
                 // Object-addressed: route to the object (e.g. a Follow to a local actor).

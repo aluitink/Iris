@@ -284,6 +284,135 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             "A Like of a local note delivered to the shared inbox should record the like edge on the note (S27).");
     }
 
+    // --- S32: a Delete of a LOCAL note delivered to the shared inbox must route to the note's AUTHOR
+    // --- (the note's attributedTo), not the note's own IRI. A Delete references the deleted object (a
+    // --- bare Link to the note IRI — a content object, not an actor), so routing to the note IRI 404s
+    // --- as "unknown recipient" and the peer's copy is never tombstoned (it keeps a stale live Note).
+    // --- The shared inbox must resolve the note's owner and dispatch the Delete to the author, whose
+    // --- DeleteActivityHandler tombstones the stored object (authorizing the remote owner — the delete's
+    // --- actor is the note's attributedTo). ---
+
+    [Fact]
+    public async Task DeleteOfLocalNote_DeliveredToSharedInbox_RoutesToAuthorAndTombstonesNote()
+    {
+        // bob (local, hosted by B) authored a note that is stored in B's object store (a federated copy
+        // B holds via the outbound Create federation). bob is a LOCAL actor on B (the note's home
+        // instance), so the shared inbox can route the Delete to bob (the note's owner). The note IRI is
+        // in B's serving namespace (the /ap/v1 route) so B serves it on a GET.
+        var noteIri = $"https://{BHost}/ap/v1/u/{Bob}/notes/{Guid.NewGuid():N}";
+        await _bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri,
+            Content = ["a note by bob"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        });
+
+        // alice (remote, hosted by A) deletes bob's note: a Delete whose object is a bare Link to the
+        // note IRI (a content object, not an actor). The Delete's actor is bob (the note's owner) —
+        // in the real federation, bob's instance would deliver this Delete to B's shared inbox. For
+        // the test, alice signs it (B resolves alice's key from A's actor doc over the wire). The
+        // shared inbox must route the Delete to the note's author (bob), whose DeleteActivityHandler
+        // tombstones the stored object.
+        var deleteIri = $"https://{AHost}/activities/delete-{Guid.NewGuid():N}";
+        var delete = new Delete
+        {
+            Id = deleteIri,
+            Actor = [new Link { Href = new Uri(BobActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            Object = [new Link { Href = new Uri(noteIri) }],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, delete);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B validated the signature and stored the Delete under its IRI (proving the shared inbox routed it
+        // to a local recipient and processed it, rather than 404'ing it as "unknown recipient <note-IRI>").
+        Assert.True(
+            await _bPersistence.Activities.TryGetActivityAsync(new Iri(deleteIri), out _),
+            "A Delete delivered to the shared inbox should be stored (routed to the note's owner), not dropped (S32).");
+
+        // B's DeleteActivityHandler tombstoned the stored note — B no longer serves the live Note (the
+        // stale-copy defect is gone): a later GET of the note IRI serves the Tombstone. Routing the Delete
+        // to the note's own IRI would have 404'd it as "unknown recipient" and left the live Note stored.
+        Assert.True(
+            await _bPersistence.Objects.TryGetObjectAsync(new Iri(noteIri), out var tombstoned),
+            "The note should still be present in B's object store after a Delete (as a tombstone).");
+        Assert.True(
+            tombstoned is Tombstone,
+            "A Delete of a local note delivered to the shared inbox should tombstone the stored note (S32), not leave the live Note.");
+    }
+
+    // --- S32: an Update of a LOCAL note delivered to the shared inbox must route to the note's AUTHOR
+    // --- (the note's attributedTo), not the note's own IRI. The Update carries the updated object
+    // --- embedded (a reference-only Update is not interpreted), so routing to the note IRI 404s as
+    // --- "unknown recipient" and the peer's copy is never refreshed (it keeps the stale pre-edit Note).
+    // --- The shared inbox must resolve the note's owner and dispatch the Update to the author, whose
+    // --- UpdateActivityHandler refreshes the stored object with the new content (authorizing the remote
+    // --- owner — the update's actor is the note's attributedTo). ---
+
+    [Fact]
+    public async Task UpdateOfLocalNote_DeliveredToSharedInbox_RoutesToAuthorAndRefreshesNote()
+    {
+        // bob (local, hosted by B) authored a note that is stored in B's object store (a federated copy
+        // B holds via the outbound Create federation). bob is a LOCAL actor on B (the note's home
+        // instance), so the shared inbox can route the Update to bob (the note's owner). The note IRI is
+        // in B's serving namespace (the /ap/v1 route) so B serves it on a GET.
+        var noteIri = $"https://{BHost}/ap/v1/u/{Bob}/notes/{Guid.NewGuid():N}";
+        await _bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri,
+            Content = ["a note by bob (original)"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        });
+
+        // alice (remote, hosted by A) edits bob's note: an Update whose object is the EMBEDDED updated
+        // Note (id + new content + attributedTo). The Update's actor is bob (the note's owner) — in
+        // the real federation, bob's instance would deliver this Update to B's shared inbox. For the
+        // test, alice signs it (B resolves alice's key from A's actor doc over the wire). The shared
+        // inbox must route the Update to the note's author (bob), whose UpdateActivityHandler
+        // refreshes the stored object.
+        var updateIri = $"https://{AHost}/activities/update-{Guid.NewGuid():N}";
+        var updatedNote = new Note
+        {
+            Id = noteIri,
+            Content = ["a note by bob (edited)"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        };
+        var update = new Update
+        {
+            Id = updateIri,
+            Actor = [new Link { Href = new Uri(BobActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            Object = [updatedNote],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, update);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B validated the signature and stored the Update under its IRI (proving the shared inbox routed
+        // it to a local recipient and processed it, rather than 404'ing it as "unknown recipient <note-IRI>").
+        Assert.True(
+            await _bPersistence.Activities.TryGetActivityAsync(new Iri(updateIri), out _),
+            "An Update delivered to the shared inbox should be stored (routed to the note's author), not dropped (S32).");
+
+        // B's UpdateActivityHandler refreshed the stored note with the new content — B no longer serves
+        // the stale pre-edit Note. Routing the Update to the note's own IRI would have 404'd it as
+        // "unknown recipient" and left the original content stored.
+        Assert.True(
+            await _bPersistence.Objects.TryGetObjectAsync(new Iri(noteIri), out var refreshed),
+            "The note should still be present in B's object store after an Update (with refreshed content).");
+        var refreshedContent = (refreshed as KristofferStrube.ActivityStreams.Object)?.Content
+            ?.Select(c => c.ToString())
+            .ToArray();
+        Assert.NotNull(refreshedContent);
+        Assert.Contains("a note by bob (edited)", refreshedContent);
+    }
+
     // --- A Create whose author is not local is accepted and dropped (not this instance's concern) ---
 
     [Fact]
