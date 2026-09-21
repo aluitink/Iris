@@ -76,6 +76,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly IActorDocumentFetcher? _actorDocuments;
     private readonly IInboundTagNormalizer? _tagNormalizer;
     private readonly IActivityPubClient? _objectFetcher;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -128,6 +129,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         _actorDocuments = actorDocuments;
         _tagNormalizer = tagNormalizer;
         _objectFetcher = objectFetcher;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateActivityHandler>.Instance;
     }
 
     /// <inheritdoc/>
@@ -244,12 +246,28 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
             var linkIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
             if (linkIri is { } iri)
             {
+                _logger?.LogDebug("S36: fetching bare-link object {ObjectIri} for Create {CreateId}", iri.Value, activity.Id);
                 var fetched = await _objectFetcher.GetObjectAsync(iri, ct).ConfigureAwait(false);
                 if (fetched is not null && fetched is not Tombstone)
                 {
+                    _logger?.LogInformation("S36: fetched + will store object {ObjectIri} (type: {Type}, attributedTo: {AttributedTo})",
+                        iri.Value, fetched.GetType().Name,
+                        (fetched as KristofferStrube.ActivityStreams.Object)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri()?.Value ?? "(null)");
                     embedded = fetched;
                 }
+                else
+                {
+                    _logger?.LogWarning("S36: fetch of {ObjectIri} returned {Result}", iri.Value, fetched is null ? "null" : "Tombstone");
+                }
             }
+            else
+            {
+                _logger?.LogDebug("S36: bare-link Create {CreateId} has no resolvable object IRI", activity.Id);
+            }
+        }
+        else if (embedded is null && _objectFetcher is null)
+        {
+            _logger?.LogWarning("S36: bare-link Create {CreateId} but _objectFetcher is null (IActivityPubClient not registered?)", activity.Id);
         }
 
         if (embedded is not null)
