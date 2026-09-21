@@ -54,12 +54,15 @@ git worktree remove .worktrees/qa                     # destroy (when clean)
 
 > **CRITICAL RUNTIME RULE FOR WEBPAGE ACCESS:** prevent stale data / frontend caching on every action. For every new task, navigation, or data-refresh step, do a **hard reload / cache bypass** *before* reading any data — navigate with the `networkidle` wait and don't proceed until fresh server requests have settled. Never rely on previously opened states, in-memory page references, or a cached (content-hash) Blazor WASM. **When re-verifying after a rebuild, use a fresh browser context (close/reopen).**
 
-### 0. Worktree + staleness pre-flight (every pass, before anything else)
+### 0. Worktree sync + staleness pre-flight (every pass, before anything else)
 
-1. **Ensure your worktree exists** and is current: `scripts/qa-worktree.sh status`. If dev has merged new commits, rebase your `qa` branch onto main (`scripts/qa-worktree.sh sync`, or `git -C .worktrees/qa rebase <main-branch>`) so you're reading the latest `docs/qa/` + PLAN.md with your committed work replayed on top. **If `docs/qa/` is missing from the worktree, the shared docs aren't committed on the main branch yet — stop and get them committed first** (see the [prerequisite note](#isolation-model-worktrees)).
-2. **Staleness check — the #1 false-finding source.** Read PLAN.md's **Live state** `deployed:` and compare to `git log -1 --oneline`.
-   - **They differ** → the live container is **stale** (dev committed but hasn't redeployed, or redeployed without updating Live state). **Do not start a pass against a stale build.** Record it in the pass log ("blocked: deployed `<X>` ≠ HEAD `<Y>`") and either (a) wait for dev to redeploy, or (b) if you have deploy access and it's safe, rebuild + redeploy and update Live state. **Never log findings against a build you know is behind.**
-   - **They match** → proceed.
+> **The sync is the #1 discipline.** QA has drifted before (71 ahead / 19 behind) because the down-sync and the merge-back were skipped for many passes. A pass that doesn't start from a synced `qa` is testing a stale codebase and its findings may be wrong; a pass that doesn't merge back means dev never sees the work. **Both are mandatory, every pass, no exceptions.**
+
+1. **Sync `qa` DOWN onto the main branch first (mandatory).** `git -C .worktrees/qa merge <main-branch>` (or `scripts/qa-worktree.sh sync`). This pulls in dev's new commits (code + change docs + PLAN.md dev sections) so your `qa` branch is a **strict superset** of main: it contains everything dev has *plus* your committed QA docs. Verify after: `git rev-list --count <main-branch>..qa` should be **0 behind** (i.e. `git rev-list --count qa..<main-branch>` = 0). **If it's behind, you did not sync — stop and fix it before testing.** A clean merge is expected (disjoint file sets); a conflict → [Conflict policy](#conflict-policy).
+   - **If `docs/qa/` is missing from the worktree, the shared docs aren't committed on the main branch yet — stop and get them committed first** (see the [prerequisite note](#isolation-model-worktrees)).
+2. **Staleness check — the #1 false-finding source (two-part).**
+   - **(a) Code staleness:** compare the **deployed build** (PLAN.md **Live state** `deployed:`, or the QA cluster's current image commit) to the synced `qa` HEAD. **If `src/` changed** since the deployed build (`git log --oneline <deployed>..HEAD -- src/` is non-empty) → the live cluster is **stale**: **rebuild + redeploy the QA cluster to HEAD** (or wait for dev to), then re-check. **Never log findings against a build you know is behind.**
+   - **(b) Build unchanged:** if `src/` is unchanged since the deployed build, **no rebuild is needed** — proceed. Record the deployed commit in the pass log ("build `<commit>` (== HEAD? y/n)").
 3. **Restart the MCP Playwright service** if it looks down/stale: `bash scripts/start-playwright.sh` (recreates the `playwright-mcp-service` container, caching disabled, `--isolated`, host port 8931).
 
 ### 1. Plan the pass
@@ -99,11 +102,14 @@ For every finding:
   4. **Fail** → set Status back to `open`, note *what* still fails + new repro. This goes back to dev via the Dev Queue.
 - **No evidence, no `fixed`.**
 
-### 5. Commit + merge back
+### 5. Commit + merge back (mandatory — this is how dev sees your work)
+
+> **A pass is not done until it's merged back.** If you only commit on `qa` and don't merge, dev never sees the finding and the Re-verify contract can't start. This is the single point where QA work becomes visible — **it is not optional.**
 
 - In your worktree: `git -C .worktrees/qa add docs/qa/ PLAN.md && git -C .worktrees/qa commit -m "qa: pass NN — <summary>"`.
-- **Merge back** to the main branch: `scripts/qa-worktree.sh merge` (or `git merge qa` from `/workspace`). This is the single point where your doc work becomes visible to dev.
-- If the merge is clean (expected, per the ownership map), done. If it conflicts, **stop** → [Paused Questions](#conflict-policy).
+- **Merge back** to the main branch: from `/workspace`, `git checkout <main-branch> && git merge qa` (or `scripts/qa-worktree.sh merge`). Because Step 0 already synced `qa` down onto main, `qa` is now a **strict superset** of main → this merge is a **fast-forward** (or a trivial merge) and **cannot conflict on code** (QA never touches `src/`/`tests/`).
+- **Verify the merge landed:** `git -C /workspace log --oneline -1 <main-branch>` should show your pass commit (or the merge commit). **If you can't see it on main, the merge didn't happen — redo it before ending the pass.**
+- If a conflict *does* appear (it shouldn't), **stop** → [Conflict policy](#conflict-policy).
 
 ### 6. Prune + checkpoint
 
@@ -162,6 +168,9 @@ A conflict is a signal the ownership rule was broken — fix the rule (or the pr
 
 | Failure mode | Guard |
 |---|---|
+| **`qa` drifts behind main (dev's fixes never pulled down) → findings on a stale codebase** | Step 0.1: **mandatory down-sync** (`merge <main-branch>` into `qa`) every pass; verify `qa` is 0 behind before testing |
+| **QA work never merged back → dev never sees the findings, Re-verify can't start** | Step 5: **mandatory merge-back** every pass; verify the pass commit is on main before ending |
+| **Cluster not redeployed after a `src/` change → testing the old build** | Step 0.2(a): if `src/` changed since the deployed build, **rebuild + redeploy** (or wait) before logging findings |
 | **Testing a stale build → "finding" an already-fixed bug** | Step 0 staleness pre-flight: never start a pass if Live state ≠ HEAD |
 | **Worktree starts without `docs/qa/` (docs not committed yet)** | [Prerequisite note](#isolation-model-worktrees): a worktree checks out a commit, not the working tree — get the shared docs committed on the main branch before the first pass |
 | QA and dev clobber the same file | Worktree isolation + [ownership map](#ownership-map) + [conflict policy](#conflict-policy) |

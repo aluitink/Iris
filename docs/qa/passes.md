@@ -17,6 +17,19 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 180 (2026-09-21) — **WORKTREE SYNC + SANITY RETEST** — `qa` was 71 commits ahead / 19 behind `interop-testing` (dev's S32/S37/S30/S36-test commits had never been pulled down; Passes 110–179 had never been merged back to dev). Synced `qa` onto `interop-testing` (clean merge, no conflict; `src/`+`tests/` now identical to `interop-testing`, all dev fixes present), then ran a sanity retest — **all open items STABLE post-sync; cluster build `4431006` still current (no `src/` change since `4431006`, no rebuild needed)**
+- **Build/Live:** `src/` on `interop-testing` unchanged since `4431006` (the deployed build) → **no rebuild needed**; cluster unchanged (build `4431006`; A + B health 200; follow edges intact).
+- **Process fix (the gap this pass closed):** QA had been committing docs on `qa` every pass but **never syncing down / merging back** — so dev hadn't seen Passes 110–179 and `qa` was 19 commits behind. This pass ran the missing `sync` (merge `interop-testing` into `qa`) + a sanity retest, and will `merge` `qa` back (publishing Passes 110–179 + the sync). QA_LOOP.md protocol updated to make sync+retest+redeploy+merge mandatory every pass (see below).
+- **Explored:** **Sanity retest of open items after the sync** (S36, S39, S24 D2, S24 D4, S38, S32-holding).
+- **Result:**
+  - **S36 (home feed) STILL OPEN (top priority).** Home feed still boost-wrapper only, no own content (unchanged post-sync).
+  - **S39 (A-side notifications) STILL OPEN.** ii-a1 `/local/v1/notifications` → `totalItems=0` (unchanged).
+  - **S24 D2 (foreign activities in local outbox) STILL OPEN (flat).** `totalItems`=**63**, page 1 = **7 foreign (ii-b1)** (flat vs Pass 179).
+  - **S24 D4 (remote-actor collection routes 404) STILL OPEN.** doc **200**; `/outbox` + `/followers` **404** (own-instance control 200).
+  - **S38 (cross-instance webfinger) STILL OPEN.** A `wf(ii-b1@B)` + B `wf(ii-a1@A)` = 404 (own-instance control 200).
+  - **S32 (FULLY FIXED) holding check:** A-side II-S32-5 note `06GC7X75` = **Tombstone** (correct); B cached copy = 404 (lazy-refetch — same "B shared-inbox drop" mechanism noted Pass 142/173, not a regression; the observable cross-instance Delete propagation was confirmed in Pass 173).
+  - **S33 remains RE-OPENED (Pass 171).** S30/S26/S31/S29/S34/S27 hold.
+
 ## Pass 179 (2026-09-21) — No `src/` change / cluster unchanged (`4431006`, healthy). Open-item stability sweep — **all open items STABLE (19th consecutive stable pass for S36/S39/S24 D4/S38; S24 D2 flat at 63/7)**
 - **Build/Live:** No `src/` change since `4431006` → no rebuild. QA cluster unchanged (build `4431006`; A + B health 200; follow edges intact: ii-a1 followers=2, ii-a2 following=2).
 - **Explored:** **Open-item stability sweep** (S36, S39, S24 D2, S24 D4, S38, S37/S28).
