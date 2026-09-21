@@ -17,6 +17,27 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 224 (2026-09-21) — build `401c08b5` / Notifications + actor page show P223 (remote post visible); home feed omits it — content-source map complete (8 surfaces)
+- **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
+- **Explored:** A notifications for P223; A actor page for ii-b1 (P223 visibility).
+- **Result:**
+  - **A notifications:** P223 inlined (4m ago, "II-S36-P223 fresh B post (build 401c08b5)..."). P212 also inlined (40m ago). Notifications show remote posts.
+  - **A actor page for ii-b1:** P223 is the first item in the Posts tab (5m ago). P212 (40m ago), P189 (2h ago), P184 (3h ago), etc. (8 items total). Actor page shows remote posts.
+  - **Content-source map (complete, 8 surfaces):**
+    | Surface | Remote posts | Own posts |
+    |---------|-------------|-----------|
+    | Notifications | ✓ (inlined) | ✓ |
+    | Actor page (Posts) | ✓ | ✓ |
+    | Object-detail | ✓ (from notif store) | ✓ |
+    | Profile (Your posts) | N/A | ✓ |
+    | Community feed | N/A | ✓ (member posts) |
+    | Directory "All known" | ✓ (actors) | ✓ |
+    | Search | ✓ | ✓ |
+    | **Home feed** | **✗ (S36)** | **✗ (S36)** |
+  - **Home feed is the ONLY surface that omits posts** (both own and remote). All other 7 surfaces show posts correctly.
+  - 0 console errors.
+- **Checkpoint:** Content-source map complete (8 surfaces). Home feed is the ONLY broken surface. Notifications + actor page show P223. S36 55th consecutive. No new angles. Next: waiting for dev to fix home feed query.
+
 ## Pass 223 (2026-09-21) — build `401c08b5` / P223 (B→A) confirms S36 pattern (5th fresh post): notification inlines, AP 404, object-detail renders, home feed omits (54th consecutive)
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** Fresh B post II-S36-P223 (note `06GCAVHY2NJCS32M66CV64J0V4`); A notification/AP route/object-detail/home feed for P223.
