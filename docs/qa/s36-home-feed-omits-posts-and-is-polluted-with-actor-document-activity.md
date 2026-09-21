@@ -53,3 +53,27 @@ The `Delete` + `Update` + `Remove`/`Add` on notes/actor IRIs in the feed is also
 - Feed cache cleared (B restart) → no change. 0 console errors on all three.
 
 **S36 OPEN — broad home-feed regression on the current build; supersedes/blocks S25 (and re-opens the S18 local-timeline symptom).**
+
+## Pass 129 (2026-09-21, current build `aebe420`) — S36 still reproduces live; captured the exact signed `/feed` body + outbox IRIs/types per dev's `162159b` request
+
+Dev's `162159b` **isolated S36 and proved it non-reproducible in-process** (4 independent reproductions — FeedService in-memory, FeedService over EF/PostgreSQL, the real endpoint via WebAppFactory+TestServer signed owner `GET /u/{me}/feed?source=people` + unfiltered, and the `TruncateDedup` coalescing pass — **all PASS**: the owner's own note `Create` is returned, survives coalescing, and is served by the endpoint; the client `OutboxFilter.IsContentItem` is correct too). Conclusion: the server path (service → coalesce → endpoint → enrich → serialize) + client filter are **provably correct for the owner's own content in a fresh state**; the **live drop is data/environment-specific** (the live actors have accumulated S25/S32 noise the fresh reproductions don't have). **No code change** (no defect found in-process). Dev added 4 green regression-net tests and handed S36 back to QA for a two-instance re-verify **with a request to capture the exact signed `/feed` body + outbox IRIs/types if it still reproduces.**
+
+**S36 STILL REPRODUCES on the live two-instance cluster (build `aebe420`):** `ii-a1` (A) `/home` renders only a **boost wrapper** ("Content unavailable — view original post", boosted by ii-b1, Boost=1) — **no own content posts** (the "timeline is empty" content-omission facet). This is the live data/environment state dev's fresh reproductions don't capture.
+
+**Captured signed `GET /ap/v1/u/ii-a1/feed?source=people` (the exact body dev requested) → HTTP 200, 20 items, type breakdown:**
+
+| type | count | notes |
+|---|---|---|
+| `Update`+`Activity` | **6** | **with FULL note content embedded** (e.g. `06GC5422N6…` → `II-A7-3 … [edited: S31 …]`, `06GC4N1YQ5…`, `06GC3VHEV6…` `S31 re-verify v2 edited`, `06GC3TCW00…` `S31 re-verify base text v2 (edited)`, `06GC3FH9RA…` `II-A9-1 edited cross-instance`, `06GC3DFXD3…` empty) — these are the owner's content posts **surfacing as `Update` (from edits), NOT `Create`** |
+| `Like` | 4 | on own + remote notes |
+| `Delete` | 3 | note tombstones (S32 noise) |
+| `Follow` | 2 | self + remote |
+| `Undo` | 1 | |
+| **`Create`+`Activity`** | **1** | `creates/06GC3EAP04…` — a **community Group** (the only content `Create`; **not a content post**) |
+| `Announce` | 1 | `ii-b1/announces/06GC3DYA5A…` → `06GC3AWSH…` (the **boost wrapper** that IS rendered) |
+| `Remove`+`Activity` | 1 | actor-doc |
+| `Add`+`Activity` | 1 | actor-doc |
+
+**Key finding for dev:** the owner's content posts **ARE in the signed feed, but as `Update` activities (full content embedded), not `Create`** — because these notes were created-then-edited during the earlier re-verify passes (S31/S32 edits). The feed is dominated by `Update`/`Like`/`Delete`/`Follow`/`Undo`/`Remove`/`Add` (19 of 20 non-`Create`/`Announce`), with the **only `Create` being a community Group** and the **only `Announce` being the boost wrapper**. The UI renders only the `Announce` (boost) + (content) `Create`s; the content-bearing `Update`s are **not rendered as timeline items** (the client `OutboxFilter.IsContentItem` evidently doesn't treat an `Update`-with-embedded-content as renderable content). **So in a state where the owner's posts have been edited, the home feed surfaces the boost wrapper but omits the posts themselves** — the S36 content-omission, reproduced in the live data state. **This is the data/environment-specific shape (edited posts → `Update`, plus accumulated S32 `Delete`/`Undo` noise) that dev's fresh in-process reproductions (fresh `Create`, no edits, no noise) do not have.**
+
+**Status: OPEN (S36) — reproduced live; dev's in-process proof of correctness holds for fresh state, but the live edited+noisy state still drops content. Suggested dev follow-up:** (a) confirm whether an `Update` activity whose embedded object is a Note **should** render as a timeline item (it carries the current content) — if yes, the client `IsContentItem` / server feed coalescing must surface `Update`(note) as content; (b) the feed should **coalesce** an `Update`(note) with the original `Create`(note) so an edited post appears **once** (current content) rather than as a non-renderable `Update` + an absent `Create`; (c) keep filtering the actor-doc `Update`/`Add`/`Remove` + `Undo`/`Delete`/`Follow`/`Like` noise out of the home timeline.
