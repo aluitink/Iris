@@ -47,3 +47,13 @@ The shared-inbox handler resolves a local recipient for an incoming activity and
 **CANNOT REPRODUCE via UI (tooling limitation, not a code verdict).** A cross-instance `Like` must be POSTed to the **author's** outbox (`POST /ap/v1/u/{handle}/outbox`, `ActivityPubServerExtensions.cs:4015`), which requires **AP-HTTP-Sign** (`SignatureValidationMiddleware.GetResult`, line 4031 → 401 without a signature); the Blazor WASM client signs it via WebCrypto, so it cannot be forged with a raw in-browser `fetch`. Additionally the **UI deliberately blocks liking/boosting remote objects** (`apps/Iris.Web.Client/Ui/UiContext.cs:704` — "The user cannot like/boost remote objects"), so `ii-b1` (B) has no Like control for a remote A note to drive via Playwright.
 
 The original S27 evidence was produced by a signed client in the prior run. To re-verify S27 on the fresh build, repeat it with a **signed CLI/AP client** (not the browser). **S27 status this run: not re-testable via Playwright; OPEN (unconfirmed on fresh build).**
+
+## Re-test (interop A6, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED — reproduces (now testable via UI; the remote-like block is gone).** Note: the prior run's note that "the UI deliberately blocks liking/boosting remote objects" (`UiContext.cs:704`) is **no longer the case** on this build — `ii-b1` (B) had a working **Like** control on a remote A note.
+
+- `ii-a1` (A) liked ii-b1's post (the A5 reply, Note `…/ii-b1/notes/06GC3BJ0SHJMT4ZV87KYY056ZC`) from A. A UI: Like button `pressed`, count 1 (A6.1 ✓ local).
+- A `ii-a1/outbox` → `Like` activity, `object` = the remote Note IRI ✓ (the Like is created + emitted on the liker's instance).
+- **B (author's instance):** `GET B <note>/likes` → **count 0**; B object-detail UI (as ii-b1): Like button count **0**, not pressed; Likes tab = **"No likes yet."** (A6.2 ✗)
+
+So the cross-instance Like is created and emitted by the liker, but is **not applied on the author's instance** — the note's `likes` collection / count stays 0. (Mechanism this run: the Like didn't land in B's note `likes`; consistent with the original shared-inbox "no local recipient" drop, though B's log was not captured this pass.) **S27 OPEN (reproduces on the 2026-09-21 fresh cluster; now UI-testable).**

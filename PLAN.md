@@ -162,9 +162,10 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned — see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **4 open. No blockers (all S2/S3-sev).** (Pass 96: S4 re-confirmed 22nd pass; S17 re-confirmed 39 outbox requests; S16-UX re-confirmed 1 votes NO badge. S23 FIXED (routes registered after redeploy). S22 FIXED. S3 FIXED (Create IRI now serves Note, Pass 68).)
-- **Top priority:** S4 (remote communities missing from Following tab — 22nd pass), S17 (profile tabs over-fetch — 39 outbox requests for 3 tabs), S2 (proxy 401 for unsigned Mastodon GETs — 2 console errors), S14 (proxy 401 + CSP on actor detail). S16-UX (poll "You voted" badge missing on object detail page).
-- **Last pass:** 96 (2026-09-20). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — S13, S15, S7, S8, S3 (UI + Create IRI), S18 partially fixed; S20, S21, S22, S19 (all facets), S23 FIXED. Remaining open: S2, S4 (remote), S14, S16-UX, S17, S18 (partial).
+- **Open (2026-09-21 fresh-cluster interop re-test):** S2, S3, S4, S14, S17, S19, S20, S21, S24, S25, S27, S28, S30, S31, S32, S33, **S35 (new, S1)** — 17 open (count in [docs/qa/README.md](docs/qa/README.md)). **Fixed this re-test:** S26 (reply threading), S29 (community webfinger), S34 (gated follow withheld until accept).
+- **New S1 (S35):** cross-instance **Mastodon** actor discovery 404s (Iris proxy → upstream 404 on the Mastodon AP actor doc; every `/ap/users/{id}`, `/api/v1/accounts/*`, `/@{handle}` route 404s while webfinger resolves + `user_count:1`). **Attributed Mastodon-side (this cluster provisioning), not an Iris defect** — [s35](docs/qa/s35-remote-actor-discovery-proxy-404.md).
+- **BLOCKERS (operator action) — both peer interop suites gated on accounts:** (1) **Mastodon M2–M12** — `registrations: false` (invite-only) + pre-seeded `imuser` password unknown + its actor docs 404 (S35). Operator: supply the `imuser` password, **or** open registration / re-provision the account. (2) **Lemmy L2–L12** — `iluser` lands **pending** (Pending registration, admin approval) + 10–60 char password policy. Operator: approve `iluser` (Lemmy admin) **or** set `registration_mode=Open`. Lemmy's federation surface is otherwise **healthy** (unlike Mastodon), so L2–L12 are runnable once approved.
+- **Last passes:** 97 (Iris↔Iris A1–A10), 98 (M1 + S35), 99 (L1). **Resume checkpoint:** see [docs/qa/passes.md](docs/qa/passes.md) — Iris↔Iris done (S24–S34 re-tested); **M2–M12 + L2–L12 blocked** pending operator-provided peer accounts.
 
 ## Paused Questions
 

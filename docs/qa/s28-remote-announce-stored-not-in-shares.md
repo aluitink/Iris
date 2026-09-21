@@ -41,3 +41,14 @@
 ## Re-test (fresh rebuild, 2026-09-20)
 
 **CANNOT REPRODUCE via UI (same tooling limitation as S27).** A cross-instance `Announce`/Boost is POSTed to the **author's** outbox (`POST /ap/v1/u/{handle}/outbox`), which requires **AP-HTTP-Sign** and cannot be forged with a raw in-browser `fetch`. The **UI also blocks boosting remote objects** (`apps/Iris.Web.Client/Ui/UiContext.cs:704`), so `ii-b1` (B) has no Boost control for a remote A note to drive via Playwright. The original S28 evidence came from a signed client. To re-verify on the fresh build, repeat with a **signed CLI/AP client**. **S28 status this run: not re-testable via Playwright; OPEN (unconfirmed on fresh build).**
+
+## Re-test (interop A7, 2026-09-21, fresh QA cluster)
+
+**PARTIALLY IMPROVED — reproduces (now testable via UI; the remote-boost block is gone).** Note: the prior run's note that "the UI blocks boosting remote objects" (`UiContext.cs:704`) is **no longer the case** — `ii-b1` (B) had a working **Boost** control on a remote A note.
+
+- `ii-b1` (B) boosted ii-a1's post (Note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW`) from B. B UI: Boost button `pressed`, count 1 (A7.1 ✓ local).
+- B `ii-b1/outbox` → `Announce` activity, `object` = the remote Note IRI ✓.
+- **A (author's instance):** the Announce **did land** — A object-detail UI (as ii-a1) shows **"1 boost"** and the **Shares tab lists ii-b1** (Shares (1)). This is an **improvement** over the original run (where `shares` was empty).
+- **But the Boost button count on A stays 0 / not pressed** even though the Shares tab shows the boost and "1 boost" text appears. Also `GET A <note>/shares` wire returned **count 0** (the Shares *collection endpoint* is empty while the object-detail Shares *tab* renders the item) — an inconsistency between the tab and the wire collection.
+
+So the remote Boost now reaches the author (Shares tab populated), but the **button count** and the **`/shares` collection endpoint** do not reflect it. **S28: partially improved (Shares tab now populated) but the button-count / `shares`-endpoint discrepancy remains — OPEN on the 2026-09-21 fresh cluster.**

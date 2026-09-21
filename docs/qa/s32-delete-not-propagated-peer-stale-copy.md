@@ -51,3 +51,11 @@ Together these mean a cross-instance `Delete` (and `Update`) is not applied on t
 - Note: this run B's `GET <note IRI>` returned the **Tombstone** (not a stale live Note) because B **lazy-refetched** the IRI after the Delete; in the original run the proxy served the cached stale copy. The core defect — the `Delete`/`Update` being **rejected at the peer with "unknown recipient"** and thus not propagated as an activity — reproduces identically. The stale-vs-tombstone outcome depends on whether the peer refetches before serving.
 
 S32 OPEN (reproduces on a fresh build).
+
+## Re-test (interop A9, 2026-09-21, fresh QA cluster)
+
+**Local delete correct; peer state vacuous (note already dropped by the prior Update).** `ii-a1` (A) deleted the note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW` (after having edited it — see S31).
+- **Local (A):** `GET A <note IRI>` → **200, `type` = Tombstone** ✓. A outbox has a `Delete` activity, `object` = the note IRI.
+- **Peer (B):** `GET B <note IRI>` → **404**. B's copy was **already removed by the earlier `Update`** (S31 re-test: the Update dropped B's copy), so at delete time B had no live copy to tombstone — the Delete had nothing to apply against.
+
+So the **local delete is correct** (Tombstone), but the **peer-propagation defect persists in a different form**: the note's lifecycle on B was already broken by the Update (which dropped the copy), so the Delete could not produce a clean Tombstone-on-both-sides outcome. The underlying issue (note-IRI-addressed Update/Delete not cleanly applied on the peer) is the same class as the original S32. **S32: local delete correct; peer propagation still broken (peer copy already lost to the Update) — OPEN on the 2026-09-21 fresh cluster.**

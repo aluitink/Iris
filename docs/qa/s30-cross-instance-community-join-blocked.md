@@ -47,3 +47,13 @@ No `file:line` yet — needs a code pass on (a) the remote-follow path (does it 
 - `GET B /ap/v1/c/ii-comm` → **HTTP 404** (non-JSON "Community not found" body) — B has no local community by that name and does not serve the cached remote Group at that route.
 
 No remote-community follow entry point, no federated community discovery, `/c/{name}` local-only. S30 OPEN (reproduces on a fresh build) — still blocks A8.2/A8.3.
+
+## Re-test (interop A8, 2026-09-21, fresh QA cluster)
+
+**PARTIALLY IMPROVED — remote-community follow now works via the actor page; discovery still blocked.** `ii-a1` created community `ii-a8-community` (Group `…/qa-iris-a.luit.ink/ap/v1/c/ii-a8-community`) on A.
+
+- **A8.2 (discoverability): still BLOCKED.** `GET B /ap/v1/c/ii-a8-community` → **404**; B **search** for `ii-a8-community` → **0 results**; B Communities "All on this instance" / directory → no remote community. So a user **cannot discover** the remote community from B's surfaces.
+- **A8.3 (follow): now WORKS via the full-IRI actor page.** Navigating directly to `GET B /actor?iri=https://qa-iris-a.luit.ink/ap/v1/c/ii-a8-community` **renders** the community (name "II-A8 Test Community", "Community" badge) — B lazily fetches the remote Group by IRI. Pressing **Follow**: `GET A /ap/v1/c/ii-a8-community/followers` → **`[ii-b1@B]`** (the follow edge is recorded on A). (B `ii-b1/following` collection showed only 1 of 2 relationships — the S24 facet-1 under-report.)
+- **A8.4 (community post → follower feed): BLOCKED.** There is **no UI to post into a community** (compose offers only Public/Followers/Direct, no community selector). A plain-public note posted by ii-a1 was **not** community-addressed (`to`=Public, `cc`=ii-a1/followers, no community IRI) and did **not** appear in ii-b1's B home feed (which is empty — also S25). Community-post federation is not exercisable.
+
+Net: the **follow** path is fixed (remote Group resolvable via S29 + followable via the actor page), but **discovery** (directory/search/`/c/{name}`) and **community-post federation** remain broken. **S30: partially improved (A8.3 fixed) — OPEN on discovery + community-post (A8.2/A8.4).**

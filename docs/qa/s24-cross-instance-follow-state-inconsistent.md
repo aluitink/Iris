@@ -85,3 +85,13 @@ Re-ran A2 on the from-scratch stack (accounts `ii-a1`/`ii-a2` on A, `ii-b1` on B
 | 3 — remote-actor direct GET 404 | 404 both ways | `GET A /ap/v1/u/ii-b1` = 200, `GET B /ap/v1/u/ii-a1` = 200 | **NOT reproduced** |
 
 Defect 1 (Following-tab omits remote actors) is the **stable, reproducible** facet of S24. Defects 2 and 3 did not reproduce on the fresh build — either fixed, or flaky/order-dependent in the original run. **S24 OPEN (1 facet confirmed; 2 not reproduced).**
+
+## Re-test (interop A2, 2026-09-21, fresh QA cluster)
+
+Re-ran A2 (cross follow `ii-a1`↔`ii-b1`) on the rebuilt QA cluster.
+
+- **Facet 1 — Following tab omits remote actors: CONFIRMED (both instances).** A `ii-a1/following` = `[ii-b1@B]` (wire) but A profile **Following tab = "Not following anyone yet."** B `ii-b1/following` = `[ii-a1@A]` (wire) but B profile **Following tab = "Not following anyone yet."**
+- **Facet 2 — foreign activity in outbox: CONFIRMED (variant).** A `ii-a1/outbox` contained a `Follow` activity whose **actor = ii-a1@A** (foreign, id on A's host) that had been **stored in ii-b1's local outbox on B** (B `ii-b1/outbox` listed a Create/Follow whose object was ii-a1's note on A's host). The relationship state is still being persisted to the wrong actor's outbox. (Same "outbox stores foreign activities" family as the original self-follow facet.)
+- **Facet 3 — remote-actor direct GET 404: NOT reproduced.** `GET A /ap/v1/u/ii-b1` = 200; `GET B /ap/v1/u/ii-a1` = 200.
+
+**S24: Facet 1 OPEN (stable); Facet 2 OPEN (variant — foreign activity stored in local outbox); Facet 3 fixed.**

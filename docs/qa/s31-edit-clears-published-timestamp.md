@@ -41,3 +41,12 @@ When a Note is updated, the handler replaces the stored Note with the incoming `
 - B's log: `Inbox rejected: unknown recipient …/notes/06GC1GR5XZG3ZRFDG8YH34J3TR` (the `Update` delivery, note-IRI object, is rejected at the peer — see S32); B's cached copy of the note nonetheless shows the new content + `published`=None via lazy refetch.
 
 S31 OPEN (reproduces on a fresh build).
+
+## Re-test (interop A9, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED — reproduces (timestamp defect), with an added federation side-effect.** `ii-a1` (A) posted `II-A4-1 hello cross-instance` (Note `…/ii-a1/notes/06GC3AWSHG64NJHJ24EM27HZSW`), then edited the body to `II-A9-1 edited cross-instance`.
+- `GET A <note>` → `content` = `II-A9-1 edited cross-instance`, `updated` = `2026-09-21T02:14:20Z`, **`published` = None** (absent — the note has **only `updated`, no `published`**). The edited note's object keys: `attributedTo, content, dislikedCount, likedCount, repliedCount, score, sharedCount, id, to, type, updated, url` — **no `published`**.
+- **UI no-refresh:** after Save, the object-detail page **still showed the old content** (`II-A4-1 hello cross-instance`) — the edit saved on the wire but the UI did not re-render.
+- **Federation side-effect (new, see S32):** the `Update` was addressed to the note IRI and B's copy of the note was **removed** — `GET B <note>` → **404** after the edit (the note had previously federated and was fetchable on B before the edit). So the Update not only clears `published` on A, it also drops the peer's copy.
+
+**S31 OPEN (reproduces on the 2026-09-21 fresh cluster; `published` cleared + UI no-refresh + peer copy dropped).**

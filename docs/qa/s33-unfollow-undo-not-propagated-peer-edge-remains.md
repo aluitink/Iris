@@ -51,3 +51,11 @@ Compare S32 (Delete `to`/`cc` empty + note-IRI recipient rejected). No `file:lin
 Same bare-IRI `Undo` + peer "unknown recipient" rejection + stale peer `followers` as the original (A→B direction). Restored afterward: `ii-a1` re-followed `ii-b1` (new Follow `…/ii-a1/follows/06GC1HTBP45RBES6T46H8FM65C`, accepted on B), edge back on both sides.
 
 S33 OPEN (reproduces on a fresh build).
+
+## Re-test (interop A10, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED — reproduces (A→B direction).** `ii-a1` (A) unfollowed `ii-b1` (B).
+- **Local (A):** `GET A /ap/v1/u/ii-a1/following` no longer contains ii-b1 (count 1, only the community). A outbox has `Undo` `…/ii-a1/undos/…`, `object` = **bare IRI** `…/ii-a1/follows/06GC3A27RBQ9CWG54D35PR3MW0` (the original Follow IRI; not an embedded Follow).
+- **Peer (B):** `GET B /ap/v1/u/ii-b1/followers` → **still `[ii-a1@A]` (count 1)** after ~12 s — the unfollow did **not** propagate; B's `followers` edge remains. (A10.3 ✗)
+
+Same bare-IRI `Undo` + stale peer `followers` as the prior runs. **S33 OPEN (reproduces on the 2026-09-21 fresh cluster).**

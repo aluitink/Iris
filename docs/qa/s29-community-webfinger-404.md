@@ -45,3 +45,12 @@ The WebFinger handler resolves `acct:handle@host` only for **Person** actors (`/
 - Control: `GET A /.well-known/webfinger?resource=acct:ii-a1@qa-iris-a.luit.ink` → **200**.
 
 S29 OPEN (reproduces on a fresh build).
+
+## Re-test (interop A8, 2026-09-21, fresh QA cluster)
+
+**CONFIRMED FIXED — not reproduced.** `ii-a1` created community `ii-a8-community` on A (name "II-A8 Test Community").
+- `GET A /ap/v1/c/ii-a8-community` → **200** Group doc (`id` `…/ap/v1/c/ii-a8-community`, `preferredUsername` `ii-a8-community`, owner `…/u/ii-a1`).
+- `GET A /.well-known/webfinger?resource=acct:!ii-a8-community@qa-iris-a.luit.ink` → **200** (community resolves via WebFinger). ← the fix
+- Control: `GET A /.well-known/webfinger?resource=acct:ii-a1@qa-iris-a.luit.ink` → 200 (no regression).
+
+Community (Group) WebFinger resolution now works. **S29: FIXED (not reproduced on the 2026-09-21 fresh cluster).**
