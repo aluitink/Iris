@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 322 (2026-09-22) — Community edit + S49 feed deep-dive — NEW S51
+- **Build/Live:** No rebuild (same build as Pass 315–321, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Community member management:** Members (0) tab shows "No members yet" — the owner (ii-b1) is NOT listed as a member. Owners tab correctly shows ii-b1 as "Owner". No "Add member" UI.
+  2. **Community edit:** Edited name/description of `qa-pass-319-feed` → Save → form closes, no message. UI still shows old values after F5. **Hard reload** shows new values. AP doc via `curl` returns updated values. **Server-side cache not invalidated on edit.** Group doc has **no `updated` timestamp** (`updated: null`). **NEW S51.**
+  3. **S49 feed deep-dive:** The Group doc shows `iris:followersCount: 1` (owner IS counted), but `/feed?refresh=true` → `orderedItems: []`. The note has correct `attributedTo` + `to` structure. **The feed query does not match notes attributed to the community regardless of followers state.**
+- **Result:** **1 new defect (S51).** S49 scope clarified. Open count: **8** (S35, S44, S45, S47, S48, S49, S50, S51).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 321 (2026-09-22) — Cross-instance community post — NEW S50
 - **Build/Live:** No rebuild (same build as Pass 315–320, `d5b50948`). Both instances healthy.
 - **Explored:**

@@ -44,6 +44,8 @@ After posting a note to the community via "Post to this community" (HTTP 202, no
 
 **Reproduced again (Pass 320):** Created `qa-pass-319-feed`, posted a note (HTTP 202, `06GCNP4CNZ6X130KW4F8D7EQ1C`). `GET /ap/v1/c/qa-pass-319-feed/feed` → `orderedItems: []`. `GET /ap/v1/c/qa-pass-319-feed/followers` → `totalItems: 0`. **The facet is consistent and reproducible.**
 
+**Pass 322 clarification:** `GET /ap/v1/c/qa-pass-319-feed` (Group doc) shows `iris:followersCount: 1` — the owner IS counted in the followers collection. However, `GET /ap/v1/c/qa-pass-319-feed/followers` (the actual collection) returned `totalItems: 0` in Pass 320. The note `06GCNP4CNZ6X130KW4F8D7EQ1G` has the correct structure: `attributedTo: [ii-b1, qa-pass-319-feed]`, `to: [qa-pass-319-feed/followers, #Public]`, type "Note". Despite this, `GET /feed?refresh=true` → `orderedItems: []`. **The feed query is not matching notes attributed to the community, regardless of the followers collection state.**
+
 ## Fix
 
 TBD — needs investigation of:
