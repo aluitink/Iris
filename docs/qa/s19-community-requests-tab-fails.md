@@ -1,7 +1,7 @@
 # S19 — Community "Requests" tab always fails to load (no request fires, no retry)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** partially fixed (Pass 91, 2026-09-20, container 13:19:52) — facet 1 FIXED, facet 3 FIXED, facet 2 CANNOT RE-VERIFY (new bug: follow notifications not created)
+- **Status:** ALL FACETS FIXED — facet 1 FIXED (Pass 90), facet 3 FIXED (Pass 91), facet 2 FIXED (S22 `ee47565` + S23 `ca0637c`). Awaiting QA re-verify.
 - **Found:** Pass 30 (2026-09-20) — re-confirmed Passes 34, 36
 - **Related:** [s04](s04-communities-following-remote.md), [s06](s06-remote-join-csp-blocked.md) (community join flow), [s09](s09-report-silent-noop.md) (silent-failure pattern)
 
