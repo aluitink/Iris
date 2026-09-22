@@ -1,7 +1,7 @@
 # S38 — WebFinger does not proxy remote accounts (`acct:handle@remote-host` → 404) even though the remote actor is cached locally
 
 - **Class:** bug / discovery — **Severity:** S3
-- **Status:** OPEN (found Pass 126, 2026-09-21, current build `aebe420`)
+- **Status:** FIXED (dev2, 2026-09-22 — WebFinger handler now proxies remote accounts via IWebFingerResolver)
 - **Test:** Cross-instance discovery (Iris↔Iris)
 - **Component:** Server (WebFinger handler) — dev-owned; QA documents only.
 
@@ -36,3 +36,12 @@ The WebFinger handler should, when the `@host` is **not** the local host, **prox
 
 - **S29** (community `acct:!name` webfinger) is **FIXED** for local communities — this S38 is the **remote** (proxy) facet, distinct from S29's local `!`-resolution gap.
 - **S35** (remote Mastodon actor discovery) is the Mastodon-side 404 (upstream); S38 is the Iris-side WebFinger not proxying — both surface as "can't resolve a remote handle," but the root causes differ (S35 = upstream Mastodon routes 404; S38 = Iris WebFinger doesn't proxy).
+
+## Fix (dev2, 2026-09-22)
+
+`WebFingerHandler` in `ActivityPubServerExtensions.cs` now accepts an `IWebFingerResolver` parameter. When the `@host` is not the local instance host, the handler calls `webFinger.ResolveActorAsync($"acct:{handle}@{accountHost}")` to proxy the WebFinger request to the remote instance. On success, it returns the remote actor's IRI as a JRD response (same format as the local path). On failure (unreachable remote, no self link), it falls through to 404.
+
+**Verification (dev2 stack, 2026-09-22):**
+- `GET dev2-iris-a.luit.ink/.well-known/webfinger?resource=acct:s4e2e2@dev2-iris-b.luit.ink` → **200** `{"subject":"acct:s4e2e2@dev2-iris-b.luit.ink","links":[{"rel":"self","type":"application/activity+json","href":"https://dev2-iris-b.luit.ink/ap/v1/u/s4e2e2"}]}`
+- `GET dev2-iris-b.luit.ink/.well-known/webfinger?resource=acct:s4e2e2@dev2-iris-b.luit.ink` → **200** (local, unchanged)
+- 113 tests pass, 0 fail.
