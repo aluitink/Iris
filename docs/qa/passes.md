@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 291 (2026-09-22) — "Post to this community" flow + community search — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A): **(a)** "Post to this community" flow: `/compose?community=…/c/ii-a8-community` → compose page shows "Posting as ii-a1" + "Posting to II-A8 Test Community" (with link) + "This post is attributed to the community and visible to its members." → typed "QA Pass 291 community post test" → "Post to community" → "Posted (HTTP 202)." + IRI `…/creates/06GCKHYAGC0A1EE3T4RWHDCJ1C`. Verified the post appears in the community feed as "just now". **(b)** Community search: `/search?q=ii-a8` → 2 results: (1) **Community** `c/ii-a8-community` ("II-A8 Test Community" / "QA community test", with link to the community page), (2) **Note** "II-A8-4 community post test" (1d ago, by ii-a1). Community is correctly searchable by its handle. 0 console errors throughout.
+- **Result:** **0 new defects.** "Post to this community" flow works correctly (HTTP 202, appears in community feed). Community search works correctly (community appears in search results by handle). Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** "Post to this community" flow + community search verified. Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 290 (2026-09-22) — Community detail page (feed, members, owners, requests tabs) — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/c/ii-a8-community`: **(a)** Community header: banner, name "ii-a8-community", description "QA community test", "Edit community" button, "This is your community." (ii-a1 is owner), "Post to this community" link. **(b)** Feed tab: 20+ posts (mix of notes, boosted posts, community create activities, follow activities), 0 console errors. **(c)** Members (1) tab: ii-b1 (remote) with Promote/Mute/Block/Remove buttons, 0 console errors. **(d)** Owners tab: ii-a1 as Owner, 0 console errors. **(e)** Requests tab: "No pending join requests.", 0 console errors.
