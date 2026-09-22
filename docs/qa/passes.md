@@ -17,6 +17,22 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 328 (2026-09-22) — Peers "Look up" disabled — NEW S54
+- **Build/Live:** No rebuild (same build as Pass 315–327, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Peers tab (Follow as this community):** On `qa-pass-319-feed` Peers tab, typed `ii-a1@qa-iris-a.luit.ink` in the "Follow a community or actor" textbox. The **"Look up" button remains disabled** even with valid input. "Follow as this community" also disabled. 0 console errors. **The community Peers follow feature is completely unusable.**
+  2. **Requests tab:** "No pending join requests." (correct empty state).
+- **Result:** **1 new defect (S54).** Open count: **11** (added S54).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51/S52/S53/S54 once dev provides fixes.
+
+## Pass 326 (2026-09-22) — S21 regression re-confirmed on instance A
+- **Build/Live:** No rebuild (same build as Pass 315–325, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **S21 cache invalidation on A:** Created `qa-pass-326-s21` community on A. `GET /ap/v1/u/ii-a1/following` (no `?refresh`) → `totalItems: 4` (includes the new community). But the UI Following tab shows only 2 communities. After a **hard reload**, the new community appears. **S21 regression reproduces on A, not just B.**
+  2. **Community mute/block:** `/ap/v1/c/<handle>/mutes` and `/blocks` both return 200 with empty collections. No UI for community-level mute/block on the community page (expected — these are for members to manage).
+- **Result:** No new defects. S49 S21 facet re-confirmed on instance A. Open count: **10** (unchanged).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51/S52/S53 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 325 (2026-09-22) — Community-scoped search always 0 — NEW S53
 - **Build/Live:** No rebuild (same build as Pass 315–324, `d5b50948`). Both instances healthy.
 - **Explored:**

@@ -46,6 +46,8 @@ After posting a note to the community via "Post to this community" (HTTP 202, no
 
 **Pass 322 clarification:** `GET /ap/v1/c/qa-pass-319-feed` (Group doc) shows `iris:followersCount: 1` — the owner IS counted in the followers collection. However, `GET /ap/v1/c/qa-pass-319-feed/followers` (the actual collection) returned `totalItems: 0` in Pass 320. The note `06GCNP4CNZ6X130KW4F8D7EQ1G` has the correct structure: `attributedTo: [ii-b1, qa-pass-319-feed]`, `to: [qa-pass-319-feed/followers, #Public]`, type "Note". Despite this, `GET /feed?refresh=true` → `orderedItems: []`. **The feed query is not matching notes attributed to the community, regardless of the followers collection state.**
 
+**Pass 326 — S21 facet re-confirmed on instance A:** Created `qa-pass-326-s21` on A. `GET /ap/v1/u/ii-a1/following` (no `?refresh`) → `totalItems: 4` (includes the new community). But the UI Following tab shows only 2 communities (the new one is missing). After a **hard reload**, the new community appears. **The S21 cache invalidation regression reproduces on instance A, not just B.**
+
 ## Fix
 
 TBD — needs investigation of:
