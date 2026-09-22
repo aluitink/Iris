@@ -10,6 +10,7 @@ using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Testing;
+using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
 using KeyPair = Iris.Core.Identity.KeyPair;
 
@@ -156,6 +157,42 @@ public sealed class CommunityDeleteIntegrationTests : IDisposable
         read.EnsureSuccessStatusCode();
         var readBody = await read.Content.ReadAsStringAsync();
         Assert.DoesNotContain(communityIri.Value, readBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DeleteCommunity_TombstonesObjectStoreGroup_NoOrphanedLiveGroup()
+    {
+        // S42: the community-creation path (RecordCreateLocalAsync) stores the Group in the OBJECT store
+        // (persistence.Objects.PutObjectAsync) as well as the community store, so the IRI can be served
+        // and refreshed. DeleteCommunityAsync removes the community-store row and edges, but none of the
+        // store providers reaches the object store, so the deleted community's live Group document is
+        // orphaned — it persists as ObjectType=Group, IsTombstoned=f forever. The delete must tombstone
+        // it (F-10) so the IRI resolves to the AS2.0 "deleted" marker rather than a live object.
+        var communityIri = await CreateCommunityAsync();
+
+        // Precondition: the community creation stored a live Group object in the object store.
+        Assert.True(
+            await _persistence.Objects.TryGetObjectAsync(communityIri, out var liveGroup),
+            "precondition: the community-creation path stores the Group in the object store");
+        Assert.NotNull(liveGroup);
+        Assert.False(liveGroup is Tombstone, "precondition: the freshly created community is a live object");
+
+        // Delete the community (as the creator).
+        var response = await _http.SendAsync(DeleteRequest(communityIri));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        // The community-store row is gone...
+        Assert.False(await _persistence.Communities.TryGetCommunityAsync(communityIri, out _));
+
+        // ...and S42: the object-store entry is no longer a live Group. It is now the AS2.0 Tombstone
+        // (the IRI still resolves to the "deleted" marker, F-10) rather than an orphaned live document.
+        Assert.True(
+            await _persistence.Objects.TryGetObjectAsync(communityIri, out var afterDelete),
+            "the community IRI must still resolve after deletion (tombstoned, not hard-removed)");
+        Assert.IsType<Tombstone>(afterDelete);
+        var tombstone = (Tombstone)afterDelete;
+        Assert.Equal(communityIri.Value, tombstone.Id);
+        Assert.Contains("Group", tombstone.FormerType ?? []);
     }
 
     [Fact]
