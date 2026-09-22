@@ -1,9 +1,9 @@
 # S45 — @mention of a hyphenated handle is truncated at the hyphen (broken link)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (found Pass 308, 2026-09-22)
+- **Status:** **PARTIALLY FIXED (dev1 `03b9c90d`, QA re-verified Pass 312, 2026-09-22)** — the regex fix (render-time `MentionLinkify` + inbound `InboundTagNormalizer`) is live and effective for the display-time re-linkify. However, the **compose-time mention resolution** (in the Blazor WASM compose UI, not in this repo) still truncates the handle when building the `Mention` tag's actor IRI, so the stored `tag` array carries the truncated IRI (`…/u/ii` instead of `…/u/ii-a2`). The mention now renders as plain text (no link) because the `MentionLinkify.Linkify` cannot match the full token `@ii-a2` against the truncated display text `@ii`. **Remaining facet:** the compose UI's mention resolution logic needs the same hyphen-class widening. This is outside the scope of the dev1 fix (the compose UI is a separate project not in this repo).
 - **Found:** Pass 308 (2026-09-22)
-- **Related:** [S12](s12-mention-case-and-autocomplete.md) (mention linkify case-sensitivity + autocomplete, fixed Pass 38); the composing surface builds the correct `Mention` tag (see below) but the render-time re-linkify truncates the token.
+- **Related:** [S12](s12-mention-case-and-autocomplete.md) (mention linkify case-sensitivity + autocomplete, fixed Pass 38).
 
 ## Symptom
 
@@ -56,3 +56,17 @@ Add/adjust a unit test asserting `Linkify("… @ii-a2 …", mentions=[ii-a2])` p
 3. Open the object-detail page: the mention must render as a single link `@ii-a2` → `…/ap/v1/u/ii-a2`; clicking it opens ii-a2's profile (200, no "Actor not found.", no console 404). No literal `-a2` text.
 4. Cross-check a hyphen-free handle (`@ii`) still links correctly, and a federated mention `@user@remote.host` still resolves.
 5. Inbound: have B post a note mentioning `@ii-a1`; on A confirm the inbound note's mention renders as the full `@ii-a1` link (exercises `InboundTagNormalizer`).
+
+## Re-verify (Pass 312, 2026-09-22, build `47ecc674` — `--no-cache` rebuild)
+
+**S45 PARTIALLY FIXED.** QA stack rebuilt with `--no-cache` to carry dev1's S45 fix (`03b9c90d`, merged to main `47ecc674`). The server-side `Iris.Core.dll` and the client-side `Iris.Core.x7aeavznkg.wasm` both contain the widened regex (`[A-Za-z0-9_-]+` with hyphen), confirmed via `strings` on both binaries.
+
+**Test 1 (client-side compose, pre-no-cache rebuild):** Composed `QA Pass 312 S45 re-verify: @ii-a2 hello` → posted (HTTP 202). Object-detail page: mention rendered as truncated link `@ii` (→ `/ap/v1/u/ii`) + literal `-a2 hello`. Stored content: `<p>…<a class="mention" href="…/u/ii">@ii</a>-a2 hello</p>`. `tag` array: `["…/u/ii"]`. **Old behavior confirmed** (the pre-no-cache build was serving stale WASM).
+
+**Test 2 (client-side compose, post-no-cache rebuild, fresh browser context):** Composed `QA Pass 312 S45 re-verify (2): @ii-a2 hello` → posted (HTTP 202). Object-detail page: mention rendered as **plain text** `@ii-a2 hello` (NO link at all). Stored content: `<p>QA Pass 312 S45 re-verify (2): @ii-a2 hello</p>`. `tag` array: `["…/u/ii"]` (still truncated). **New behavior:** the truncation is gone (no broken link), but the mention is not linked because the `MentionLinkify.Linkify` cannot match the full token `@ii-a2` against the truncated display text `@ii` (the compose UI's mention resolution still builds the `Mention` tag with the truncated IRI).
+
+**Root cause of remaining facet:** the compose-time mention resolution (in the Blazor WASM compose UI, a separate project not in this repo) resolves `@ii-a2` to the actor IRI `…/u/ii` (truncated at the hyphen). The `ComposeNote.Build` method receives this truncated IRI and adds it to the `tag` array. The `MentionLinkify.Linkify` then tries to wrap the token `@ii-a2` in a link using the resolved mention (display text `@ii`, IRI `…/u/ii`), but since the display text `@ii` does not match the full token `@ii-a2` in the content, no link is added. The result is plain text (no link), which is better than the old broken link, but still not the desired full-handle link.
+
+**0 console errors.** Both test posts deleted after verification.
+
+**Conclusion:** the dev1 fix (`03b9c90d`) is **partial**. The regex widening in `MentionLinkify` + `InboundTagNormalizer` is correct and live, but the compose UI's mention resolution logic (which builds the `Mention` tag's actor IRI from the handle) needs the same hyphen-class widening. The compose UI is a separate project not in this repo, so this remaining facet requires a fix in the compose UI codebase.
