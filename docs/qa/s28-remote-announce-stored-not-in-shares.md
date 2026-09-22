@@ -1,7 +1,7 @@
 # S28 — Remote Announce (Boost) delivered+stored on the author, but NOT surfaced in the note's `shares`
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** **FIXED (live-re-verified 2026-09-22 on dev1, commit `5355e968`)** — the shared-inbox Announce-drop is RESOLVED **and** the Boost's denormalized `sharedCount` now materializes **immediately** (no 30 s periodic wait). The fix (`5355e968`) routes an inbound `Announce` at the shared inbox to the **announced object's owner** (mirroring the Like branch), so the owner's `AnnounceActivityHandler` records the announcer→object edge + calls `RefreshObjectCountsAsync` (materializing `…/ns#sharedCount` on the next read). **UI facet CLOSED (live-re-verified 2026-09-22 on dev1):** the object-detail **Boost button now renders the denormalized `sharedCount`** (see "Live UI re-verification" below) — the `EngagementBar` fast path reads `iris:likedCount`/`iris:sharedCount` off the object doc and updates the button live on a like/boost; the earlier "renders 0" was observed on the older `7620faa1` build **before** the count-refresh fix. **Status: FIXED — wire `sharedCount` + `/shares` + object-detail Boost-button UI all verified.**
+- **Status:** **WIRE FIXED / UI FACET REOPENED (cross-instance)** — the shared-inbox Announce-drop is RESOLVED **and** the Boost's denormalized `sharedCount` now materializes **immediately** (no 30 s periodic wait). The fix (`5355e968`) routes an inbound `Announce` at the shared inbox to the **announced object's owner** (mirroring the Like branch), so the owner's `AnnounceActivityHandler` records the announcer→object edge + calls `RefreshObjectCountsAsync` (materializing `…/ns#sharedCount` on the next read). **Wire is fully fixed:** `sharedCount` + `/shares` endpoint + the object-detail **Shares tab / header count** all reflect a cross-instance Boost (re-verified Pass 272 on the QA stack, 2026-09-22). **BUT the object-detail Boost BUTTON (the `EngagementBar` `sharedCount` seed) still renders "0" for a cross-instance Boost** while the Shares tab on the SAME page shows "(1)" (Pass 272, live DOM). The earlier "UI facet CLOSED" (below) was verified only by a **local self-Boost** (s3ui boosting its own note), which exercises the fast path when the booster is the viewer — it does **not** cover the cross-instance case. **Status: wire FIXED; the cross-instance Boost-button UI facet is OPEN (low).**
 - **Found:** Interop suite A7 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S25](s25-remote-post-not-in-followers-home-feed.md) (delivered+stored, not surfaced), [S26](s26-remote-reply-not-threaded-under-parent.md) (stored, not threaded) — same family. **Distinct from [S27](s27-like-dropped-at-shared-inbox-no-local-recipient.md):** the Announce is **received + accepted** by A (not dropped at the shared inbox as the Like is).
 
@@ -110,3 +110,26 @@ The earlier "Boost button renders 0" was observed on the **older `7620faa1` buil
 - **0 console errors** on the object-detail page (the `connect-src 'self'` CSP errors seen earlier were an artifact of driving the WASM client through `127.0.0.1` instead of the FQDN; via the FQDN the same-origin AP fetches succeed).
 
 **Verdict: S28 FIXED — wire `sharedCount` + `/shares` + object-detail Boost-button UI all verified live.**
+
+> **CAVEAT (added Pass 272):** the Boost-button UI verification above was a **local self-Boost** (s3ui@A boosting s3ui's own note, then viewing as s3ui) — the viewer is the booster, so `isShared`/the fast path reflect it. That does **not** cover the **cross-instance** case (a B actor boosts an A note; the A **owner** views). Pass 272 found the button still shows **0** in that case. See below.
+
+## Re-verify (Pass 272, 2026-09-22, QA stack, build carries `5355e968` + `e1e1aa88`)
+
+**Wire fully FIXED; the cross-instance Boost-button UI facet is REOPENED.** Repro: `ii-a1` (A) posted a fresh Public note via the UI (Note `…/ii-a1/notes/06GCG0FRQGDTVK2TZQGH4P821G`); `ii-b1` (B) signed in on B, opened the A note, pressed **Boost** (cross-instance Announce).
+
+**Wire (A) — correct, the `5355e968` fix holds:**
+- `GET A <note>` → `…/ns#sharedCount: 1` (and `…/ns#likedCount: 0`); the object doc is a plain `Note` (type Note), top-level `sharedCount=1`, embedded `shares.totalItems=0`.
+- `GET A <note>/shares` → `totalItems: 1` (the Announce, `actor`=ii-b1, `object`=the Note IRI).
+
+**UI (A object-detail page, signed in as the owner ii-a1) — the residual defect (live DOM, 0 console errors):**
+- **Boost button (`EngagementBar`): `engagement-count` = "0"** (not pressed).
+- **Shares tab: "Shares (1)"** and the header summary line: **"1 boost"** — both correct.
+- So on the SAME page the button says 0 while the tab/header say 1.
+
+**Analysis (why the button diverges from the tab, both reading `doc.GetSharedCount(ns)`):**
+- The page's tab count (`ObjectDetail.razor` `LoadEngagementAsync` fast path) and the header summary read `ObjectDoc.GetSharedCount(ns)` → 1, and both render correctly.
+- The `EngagementBar` (`apps/Iris.Web.Client/Components/EngagementBar.razor:193`) seeds `_boostCount` from the **same** `Object.GetSharedCount(ns)` in its fast path (lines 193–202) — which *should* also yield 1.
+- Yet the button renders 0. The fast path is skipped when `Ui.IsRemoteObjectIri(iri)` is true, when `ns` is null, or when `Object` is null; for this local A note (same host as the browser origin) none of those should hold. The exact runtime branch that leaves `_boostCount=0` was **not confirmed statically** and needs a dev with runtime tracing (add a log in the `EngagementBar` fast path / fallbacks, or instrument `_boostCount` on render).
+- **Hypothesis (dev to confirm):** in the **cross-instance** case the object doc's `sharedCount` extension is present on the **wire** but is either (a) not carried on the in-memory `Object` instance the `EngagementBar` receives (a cached/stale `ObjectDoc` copy, or a deserialization that drops the extension for the bar's path), or (b) the `EngagementBar` takes the `isRemote`/fallback branch and reads the embedded `shares.totalItems=0` instead of the top-level `sharedCount`. The tab's path evidently reads the top-level extension (→1), so the two paths disagree on the same doc.
+
+**Verdict (Pass 272, QA stack):** **wire FIXED; the cross-instance Boost-button UI facet is OPEN (low).** The `5355e968`/`e1e1aa88` wire fix is correct and verified; the remaining gap is purely the object-detail **Boost button** count (0) for a **cross-instance** Boost, diverging from the correct Shares-tab/header count (1) on the same page. **File to dev:** trace the `EngagementBar` fast-path seed for a cross-instance-boosted note (why `_boostCount` stays 0 when `doc.GetSharedCount(ns)=1`).
