@@ -91,6 +91,9 @@ probe_*.txt
 ## Backups (local backup archives — never commit)
 backups/
 
+## Shared agent-state files (one-line live status per agent — never commit; see docs/reference/DUAL_DEV_PROTOCOL.md)
+.state/
+
 ## QA worktree (second checkout for the QA loop — never commit; see docs/reference/QA_LOOP.md)
 .worktrees/
 .tmp_deser/
