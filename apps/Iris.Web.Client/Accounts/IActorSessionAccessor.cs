@@ -28,6 +28,17 @@ public static class ActorClaims
     /// browses — the union of all local actors' outbox activities, 54.27).
     /// </summary>
     public const string PublicFeedIri = "public_feed_iri";
+
+    /// <summary>
+    /// The claim key for the instance's effective advertised base (the public FQDN the server
+    /// actually serves its ActivityPub endpoints and <c>iris:</c> extension namespace under). Served
+    /// by the session endpoints from the server's <c>ActivityPubServerOptions.BaseUri</c> (the
+    /// per-deployment <c>Iris:AdvertiseBase</c>) rather than the WASM's baked-in <c>appsettings.json</c>
+    /// <c>AdvertiseBase</c> — the two diverge when one WASM build is deployed to multiple instances
+    /// (each with its own FQDN), which otherwise makes the client read the <c>iris:</c> counters
+    /// (<c>likedCount</c>/<c>sharedCount</c> …) under the wrong namespace and skip the fast path.
+    /// </summary>
+    public const string ServerBaseUri = "server_base_uri";
 }
 
 /// <summary>
@@ -382,6 +393,18 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     {
         get
         {
+            // The server advertises its effective base (the FQDN it serves its iris: namespace under) in
+            // the session's ServerBaseUri claim. Prefer it over the baked-in appsettings AdvertiseBase
+            // (which diverges when one WASM build is deployed to multiple instances, each with its own
+            // FQDN) so the client reads the counters under the SAME namespace the server stamped them.
+            var serverBase = _state?.User.FindFirst(ActorClaims.ServerBaseUri)?.Value;
+            if (!string.IsNullOrWhiteSpace(serverBase)
+                && Uri.TryCreate(serverBase, UriKind.Absolute, out var serverUri)
+                && Iri.TryParse($"{serverUri.Scheme}://{serverUri.Authority}/ns#", out var serverNs))
+            {
+                return serverNs;
+            }
+
             var baseUri = _rewriteBase ?? _browserBase;
             return Iri.TryParse($"{baseUri.Scheme}://{baseUri.Authority}/ns#", out var ns) ? ns : null;
         }
