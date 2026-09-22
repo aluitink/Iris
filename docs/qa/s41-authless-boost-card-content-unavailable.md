@@ -1,7 +1,7 @@
 # S41 — Authless home-feed boost cards render "Content unavailable" (bare-link Announce target never resolved when signed out)
 
 - **Class:** UX / bug (authless landing feed degraded) — **Severity:** S3 (annoying — every cross-actor boost on the public landing page renders as a dead link instead of a content preview)
-- **Status:** open
+- **Status:** **CLOSED (QA re-verified Pass 279, 2026-09-22 — dev1 `933750d4`, merged to main `f64c4d1b`; QA stack rebuilt to carry the fix)**
 - **Found:** Pass 275 (2026-09-22), `qa-iris-a.luit.ink`, build `2686795a`
 - **Related:** [s02](s02-signed-out-proxy-bypass.md) (same signed-out proxy seam, actor facet), [s14](s14-signed-out-actor-detail-csp.md)
 - **Surface:** signed-out `GET /` (the anonymous public feed, `PagedCollection` → `ObjectView` per item)
@@ -120,3 +120,25 @@ the direct local GET avoids the proxy hop for the common local case.
 5. Sign in — the same cards still render correctly (no regression to the signed-in 121.7 path).
 6. A boost of a **deleted/404** note still degrades to "Content unavailable — view original post"
    (the fallback is intact).
+
+## Resolution (Pass 279, 2026-09-22) — CLOSED
+
+Dev1 landed the fix exactly as the Suggested fix above: `933750d4` (`fix(web): S41 — resolve
+signed-out boost-card content via anonymous seam`), merged to main `f64c4d1b`. `GetContentObjectAsync`
+no longer returns null when signed out — a **remote** object IRI is read through
+`FetchViaAnonymousProxyAsync` (the same `/ap/v1/proxy/{target}` seam `FetchActorAsync` uses) and a
+**local** one through a new `FetchContentObjectAnonymousAsync` (plain unsigned same-origin GET),
+preserving the `_contentObjects` cache + `_contentInFlight` coalescing; non-2xx/failure still
+degrades to "Content unavailable".
+
+**QA re-verified on a fresh QA build (rebuilt to carry `933750d4`), clean cookie-less entry:**
+
+| Check | Result |
+|---|---|
+| Signed-out `GET /` — `ii-b1`-by-`ii-a1` boost cards | render the **full note preview** ("Boosted by ii-b1" + author ii-a1 + "QA pass273 S28 repro: fresh A note for cross-instance boost re-verify"), **no "Content unavailable"** |
+| Signed-out `/actor?iri=…/qa-iris-b.luit.ink/ap/v1/u/ii-b1` (the Pass-276 widened facet) | all 4 boost cards render the full note content (`hasContentUnavailable: false`, `hasBoostedBy: true`, `hasNoteText: true`), **no "Content unavailable"** |
+| Console errors (both pages) | **0** |
+| Anonymous proxy seam exercised | `GET /ap/v1/proxy/https%3A%2F%2Fqa-iris-b.luit.ink%2Fap%2Fv1%2Fu%2Fii-b1` → **200** (signed-out) |
+
+Both the original `GET /` facet and the Pass-276 widened remote-actor facet now render the content.
+S41 is **closed**.
