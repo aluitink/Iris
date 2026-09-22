@@ -1,7 +1,7 @@
 # S38 — WebFinger does not proxy remote accounts (`acct:handle@remote-host` → 404) even though the remote actor is cached locally
 
 - **Class:** bug / discovery — **Severity:** S3
-- **Status:** FIXED (dev2, 2026-09-22 — WebFinger handler now proxies remote accounts via IWebFingerResolver)
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`).** WebFinger handler proxies remote `acct:handle@remote-host` via `IWebFingerResolver`. Re-verify: `GET qa-iris-a /.well-known/webfinger?resource=acct:ii-b1@qa-iris-b.luit.ink` = **200** with a valid JRD (`subject` = B's actor IRI, `aliases` = B's public profile IRI) — the cross-instance (iris-iris) case that was the reported defect now works. (Lemmy/Mastodon return 404, but those clusters have no matching `admin` account, so that is an account-existence result, not the Iris proxy bug. Note: the UI footer links to the wrong path `/ap/v1/webfinger`; the working endpoint is `/.well-known/webfinger`.)
 - **Test:** Cross-instance discovery (Iris↔Iris)
 - **Component:** Server (WebFinger handler) — dev-owned; QA documents only.
 

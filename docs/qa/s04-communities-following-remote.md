@@ -1,7 +1,7 @@
 # S4 — Communities "Following" tab drops followed REMOTE communities
 
 - **Class:** UX / bug — **Severity:** S2
-- **Status:** fixed (dev2, 2026-09-22, commits `83eb22aa` + `cca01fa7`)
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`)** (fixes `83eb22aa` + `cca01fa7`). Re-verify: after `ii-b1`@B joined the remote community `ii-a8-community`@A, the remote community appears in **both** Communities→Following and Profile→Communities with a "Leave" button. (An initial "No communities" reading was a timing artifact — the cross-instance proxy fetch was still in flight; it rendered once the fetch completed.)
 - **Found:** Pass 12 (2026-09-20) — re-confirmed Passes 13, 14, 15, 37
 
 ## Symptom

@@ -1,7 +1,7 @@
 # S2 — Signed-out remote reads bypass the proxy (CORS/blank avatars)
 
 - **Class:** bug (console-noise + broken avatars) — **Severity:** S2
-- **Status:** FIXED (Pass 259, 2026-09-21, build `401c08b5` — signed-out `/` → 0 console errors; proxy GET works for unsigned reads)
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`).** Re-verify: signed-out `GET qa-iris-a /ap/v1/u/ii-b1` = **200** (proxied remote actor doc) — signed-out remote reads route through the proxy (the S2/S14 proxy-bypass fix holds on the fresh build).
 - **Found:** Pass 11 (2026-09-20) — re-confirmed Passes 15, 20, 23, 24, 25, 27, 32, 36
 - **Related:** [S14](s14-signed-out-actor-detail-csp.md) (same root, actor-detail facet)
 

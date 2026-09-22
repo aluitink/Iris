@@ -1,7 +1,7 @@
 # S19 — Community "Requests" tab always fails to load (no request fires, no retry)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** ALL FACETS FIXED — facet 1 FIXED (Pass 90), facet 3 FIXED (Pass 91), facet 2 FIXED (S22 `ee47565` + S23 `ca0637c`). Awaiting QA re-verify.
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`).** Re-verify: on `ii-a8-community` (owner `ii-a1`), the Communities section now includes a **Requests tab**; clicking it fires `GET /local/v1/c/ii-a8-community/requests` (**200**) and renders the empty state **"No pending join requests."** — the old dead-end "couldn't load the join requests" error is gone. (Facets 1/3 were Pass 90/91; facet 2 was S22 `ee47565` + S23 `ca0637c`.)
 - **Found:** Pass 30 (2026-09-20) — re-confirmed Passes 34, 36
 - **Related:** [s04](s04-communities-following-remote.md), [s06](s06-remote-join-csp-blocked.md) (community join flow), [s09](s09-report-silent-noop.md) (silent-failure pattern)
 
