@@ -119,6 +119,47 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
             "S21: the creator must be auto-followed on community creation (follow edge creator → community)");
     }
 
+    [Fact]
+    public async Task CreateCommunityAsync_AutoFollow_InvisibleUntilCacheInvalidated()
+    {
+        // S21 residual: the community-creation path records the auto-follow edge but, before the fix,
+        // did NOT drop the creator's `following` collection-page cache (a 60s fresh / 300s
+        // stale-while-revalidate read cache). So the creator's /following — and therefore the
+        // Communities page's Following tab (which walks it) — served the stale pre-creation page (the
+        // new community missing) until the TTL lapsed. This test warms the `following` cache (empty,
+        // before the community exists) and then asserts a NON-?refresh read AFTER creation already
+        // reflects the new follow, proving the creation path invalidates the cached page (the ?refresh
+        // bypass would hide a missing invalidation).
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        // Warm the creator's `following` page-1 cache in its empty (pre-creation) state.
+        using (var warmRequest = new HttpRequestMessage(HttpMethod.Get,
+            $"https://{AHost}/ap/v1/u/{Alice}/following"))
+        using (var warmResponse = await _server.CreateClient().SendAsync(warmRequest))
+        {
+            Assert.Equal(System.Net.HttpStatusCode.OK, warmResponse.StatusCode);
+            var warmBody = await warmResponse.Content.ReadAsStringAsync();
+            using var warmDoc = System.Text.Json.JsonDocument.Parse(warmBody);
+            Assert.Equal(0, warmDoc.RootElement.GetProperty("totalItems").GetInt32());
+        }
+
+        var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(result.IsSuccess, $"the person-authored Create of a Group must be accepted (got {result.StatusCode})");
+
+        // A plain (NON-?refresh) read of the creator's `following` must ALREADY list the new
+        // community. Without the creation-path cache invalidation this read would serve the stale
+        // empty page (the community absent) until the 60s TTL lapsed.
+        using var readRequest = new HttpRequestMessage(HttpMethod.Get,
+            $"https://{AHost}/ap/v1/u/{Alice}/following");
+        using var readResponse = await _server.CreateClient().SendAsync(readRequest);
+        Assert.Equal(System.Net.HttpStatusCode.OK, readResponse.StatusCode);
+        var readBody = await readResponse.Content.ReadAsStringAsync();
+        using var readDoc = System.Text.Json.JsonDocument.Parse(readBody);
+
+        Assert.Equal(1, readDoc.RootElement.GetProperty("totalItems").GetInt32());
+        Assert.Contains(communityIri.Value, readBody, StringComparison.Ordinal);
+    }
+
     // --- Re-creating the same community is idempotent (key is reused, not re-minted) ----------
 
     [Fact]
