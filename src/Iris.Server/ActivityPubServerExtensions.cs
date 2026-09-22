@@ -11396,6 +11396,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         LocalCollectionPageCache collectionCache,
+        IFollowFeedService followFeed,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -11414,10 +11415,31 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        // S40: capture the community's attributedTo (owner) BEFORE deletion, so after the delete we can
+        // drop the owner's auto-follow Follow edge (the S21 fix records a Follow edge creator → community
+        // on creation) and invalidate the owner's `following` + feed caches. A community has a single
+        // owner (its creator); when there is none there is no auto-follow edge to clean up.
+        var ownerIri = community.AttributedTo
+            ?.Select(a => a.ResolveObjectIri())
+            .FirstOrDefault(o => o is not null);
+
         await persistence.Communities.DeleteCommunityAsync(communityIri, ct).ConfigureAwait(false);
         InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
         InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
         InvalidateLocalCollectionPage(collectionCache, communityIri, "feed");
+
+        // S40: remove the owner's auto-follow Follow (EdgeKind.Follow = 0) edge to the now-deleted
+        // community. DeleteCommunityAsync already removes the community-scoped edges (incl. the EF
+        // store's inbound Follow edge); this is the store-agnostic removal that also covers the
+        // InMemory provider (the integration-test path) and any provider whose DeleteCommunityAsync does
+        // not drop the user→community Follow edge. Without it the deleted community lingers in the
+        // owner's /following (and the Communities Following tab) and a re-resolution 404s.
+        if (ownerIri is { } owner)
+        {
+            await persistence.Follows.RemoveFollowAsync(owner, communityIri, ct).ConfigureAwait(false);
+            InvalidateLocalCollectionPage(collectionCache, owner, "following");
+            followFeed.InvalidateActorFeedCache(owner, ct);
+        }
 
         return Results.NoContent();
     }
