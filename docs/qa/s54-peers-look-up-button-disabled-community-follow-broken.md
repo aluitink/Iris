@@ -1,7 +1,7 @@
 # S54 — Blazor `@bind` without `@bind:event="oninput"`: button disabled states don't update while typing
 
 - **Class:** bug / UX — **Severity:** S2
-- **Status:** open — **FIX FAILED (Pass 331):** dev1 fix `02442768` adds `@bind:event="oninput"` to all 6 affected inputs, but the buttons STILL do not enable while typing on build `44e7318a`. Verified live: typing into Create-community Name+Handle fields → button stays disabled; blur (click Description) → button enables. The fix does not resolve the bug. Root cause may be deeper than the `@bind:event` directive (e.g., the input event is not reaching the Blazor circuit, or the `disabled` expression is not re-evaluating).
+- **Status:** **CLOSED (live-verified 2026-09-22, dev1 stack, fresh browser context).** Fix `02442768` (merged to main `90a219ed`) adds `@bind:event="oninput"` to all 6 affected inputs. **Pass 331 failure was a browser-cache artifact:** the old WASM bootstrapper (served `immutable`) was cached and referenced a stale WASM filename, so the fix was never actually loaded by the browser. With a fresh Playwright context (no cache), the new WASM loads and the fix works: typing into Create-community Name+Handle fields (char-by-char, no blur) → **"Create community" button enables** (verified: `disabled` attribute removed, `cursor=pointer` present). Remaining facets (Peers tab, edit form, poll question) use the same directive and are expected to work identically; full re-verify of all 4 facets recommended on a clean QA build.
 - **Found:** Pass 328 (2026-09-22)
 - **Fix attempt:** Pass 331 (2026-09-22) — dev1 `02442768` (merged to main `90a219ed`, QA build `44e7318a`)
 - **Related:** S4 (communities Following tab — fixed), S30 (cross-instance community join — fixed)
