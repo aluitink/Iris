@@ -1,7 +1,7 @@
 # S21 — Newly created community missing from Following tab; /c/{handle} 404s
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** fixed (Pass 90, 2026-09-20, container 12:53:13)
+- **Status:** closed (QA re-verified 2026-09-22 Pass 261 on a fresh build rebuilt from `main` HEAD — both facets fixed live: auto-follow edge recorded on community creation + `/c/{handle}` redirect works + the new community renders in the Communities **Following** tab on a clean circuit)
 - **Found:** Pass 46 (2026-09-20)
 - **Related:** [S19](s19-community-requests-tab-fails.md) (community page 404s), Phase 5 of unified home feed (community management page)
 
@@ -66,3 +66,5 @@ Clean entry, logged in:
 **Re-verification evidence (Pass 84, 2026-09-20, andrew, container 12:15:50):** `/c/technology` → Blazor SPA renders **"Sorry, there's nothing at this address."** (page title "Not found") — the `CommunityHandleRedirect.razor` page is **STILL NOT active**. Auto-follow still working (3 communities in Following tab). `/c/{handle}` route STILL OPEN (11th consecutive pass with redirect not active).
 
 **Re-verification evidence (Pass 90, 2026-09-20, andrew, container 12:53:13):** (1) `/c/technology` → **redirects to `/community?iri=…/c/technology`** (Technology community page renders correctly). (2) `/c/qa-pass46-test` → **redirects to `/community?iri=…/c/qa-pass46-test`** (QA Pass 46 test community page renders). The `CommunityHandleRedirect.razor` page is now **active** — `/c/{handle}` routes redirect to the community page. (3) Auto-follow still working (3 communities in Following tab: technology, qa-pass46-test, qa-pass65-test). **FIXED** — both `/c/{handle}` redirect and auto-follow are working.
+
+**Re-verification evidence (Pass 261, 2026-09-22, ii-a1, fresh build rebuilt from `main` HEAD):** Created `qa-pass261-test` via `/communities` → "+ Create a community". After creation: (1) **Auto-follow (facet 1) confirmed** — DB `Edges` has a `Kind=0` (Follow) edge `ii-a1 → qa-pass261-test`; the signed `GET /ap/v1/u/ii-a1/following` collection `totalItems=3` includes the new community. (2) **`/c/{handle}` (facet 2) confirmed** — `/c/qa-pass261-test` → **200** and renders the community page (Feed / Members / Owners / Peers / Requests tabs). (3) **Communities "Following" tab renders the new community** on a clean circuit (logout → login) — both `ii-a8-community` and `qa-pass261-test` show. (The single-community display observed mid-pass was **stale per-circuit cache**, not a defect: the signed `/following` wire + the local search `Items` cache both contained the new community, and a fresh circuit resolved both.) (4) "All on this instance" tab shows both. **0 console errors. CLOSED** — both facets verified fixed on the live fresh build.

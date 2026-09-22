@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 261 (2026-09-22) — fresh QA build (rebuilt from `main` HEAD) / S3 + S21 re-verified FIXED on the live cluster; S6 fix present (not re-exercised — no remote-join target); S35 still Mastodon-side
+- **Build/Live:** QA worktree synced to `main` (fast-forward, 0 behind) + **rebuilt + redeployed** (`docker compose … -p qa up -d --build` from `.worktrees/qa`; 18 files changed incl. S28/S37 + S24-D2). Both `qa-iris-a`/`qa-iris-b` healthy, HTTP 200 on first try. (Mastodon containers NOT rebuilt — `qa-mastodon-web` Up 7h.)
+- **Explored:** Clean-entry re-verify of the previously-open Iris items: S3 (Create-IRI deep link), S21 (new-community auto-follow + `/c/{handle}` + Communities tabs), S6 (remote join), S35 (Mastodon actor discovery), S36 (home feed, re-confirmed).
+- **Result:** **S3 CLOSED** — `/object?iri=…/creates/…` renders the Note, Replies/Likes/Shares tabs load, 0 console errors. **S21 CLOSED** — created `qa-pass261-test`: auto-follow edge recorded (Kind=0), `/c/qa-pass261-test` → 200 + renders, **Following + All-on-this-instance tabs both show it** (the earlier "single community in Following" was stale circuit cache — on a fresh circuit both render), 0 console errors. **S6** — fix `68ae703` is present in the fresh build but **not re-exercised live**: B has no local community, so there is no remote-join target on the current stack. **S35 UNCHANGED (still Mastodon-side, not Iris)** — `GET qa-mastodon.luit.ink/ap/users/117306213651189335` = 404, `/@imuser` = 404, but webfinger `acct:imuser@…` = 200 + `user_count:1` → the pre-seeded `imuser` AP doc is simply not served by the Mastodon cluster. **S36 holds** (home feed renders, 0 errors). No new Iris defects.
+- **Checkpoint:** Remaining open = **S35 only** (Mastodon-cluster provisioning, not an Iris defect) + S28/S37 wire-level residual UI facets. S3/S21/S36 re-verified closed on the fresh build; S6 fix present (no live repro surface). Next: merge QA worktree back to main.
+
 ## Pass 260 (2026-09-22) — build `7620faa1` / S24-D2 outbox-integrity REFUTED (not a defect): DB audit shows 0 foreign Likes; live signed-wire remote Like lands in the inbox, never the outbox
 - **Build/Live:** `7620faa1` (no rebuild — diagnostic pass on the existing QA stack).
 - **Explored:** S24-D2 *outbox-integrity* facet — direct DB audit of `ii-a1`'s raw local outbox (`BoxItems` `Direction=0`) + a live cryptographically-validated remote-Like delivery (dev2 signed-wire probe, `probep`@B → ii-a1 note@A).
