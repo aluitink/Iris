@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 308 (2026-09-22) — Hashtag + @mention parsing in a post — NEW S45
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) composed `#testtag #qatag @ii-a2 hello` → posted (HTTP 202). **(a) Hashtags CORRECT:** both `#testtag` + `#qatag` link to `/search?q=%23…` and resolve. **(b) @mention BROKEN:** `@ii-a2` (a hyphenated local handle) is truncated at the hyphen → the post renders a link to `@ii` (→ `/ap/v1/u/ii`) followed by literal `-a2 hello`; clicking `@ii` → "Actor not found." + a console 404 on `GET /ap/v1/u/ii`. Root cause: the local-handle token class `[A-Za-z0-9_]+` (no `-`) in `src/Iris.Core/Rendering/MentionLinkify.cs:246` (render-time re-linkify) and `src/Iris.Server/Inbox/InboundTagNormalizer.cs:36` (inbound normalizer). The compose surface builds the correct full-handle `Mention` tag (`ComposeNote.cs:214`), so the defect is display/normalizer only. Every QA test account uses a hyphenated handle (`ii-a1`, `ii-a2`, …), so all same-instance mentions break. Hashtags unaffected. Test post deleted. 0 console errors beyond the S45 404. See [s45](s45-hyphenated-mention-truncated-broken-link.md).
+- **Result:** **1 new defect (S45, S2, bug).** Hashtag parsing is correct; @mention of a hyphenated handle is truncated → broken link to a non-existent actor. Open count: **S35 + S43 + S44 + S45 (4)**.
+- **Checkpoint:** Hashtag + mention parsing tested. Open: S35 (operator-blocked) + S43 (dev-owned) + S44 (dev-owned, S3) + S45 (dev-owned, S2). Next: explore visibility levels (Followers/Direct), or re-verify S43/S44/S45 once dev fix builds land.
+
 ## Pass 307 (2026-09-22) — Article post type + Content Warning flow — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A): (a) Article create → posted (HTTP 202), URL uses `/articles/` path. (b) CW create → checkbox reveals summary textbox → posted. (c) CW display → summary + "This content may be sensitive." + "Show" button, content hidden. (d) CW reveal → clicked "Show" → content revealed, button → "Hide". 0 console errors.
