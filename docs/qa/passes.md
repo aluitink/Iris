@@ -17,6 +17,14 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 330 (2026-09-22) — S44 CLOSED (mute button works end-to-end)
+- **Build/Live:** `0d7307e5` (same as Pass 329; no new `src/` changes). Both instances healthy.
+- **Explored:**
+  1. **S44 re-verify:** `ii-a1`@A → `ii-b1`@B post in `ii-a8-community` feed → **More options → Mute**. `POST /local/v1/u/ii-a1/mutes/…/ii-b1` → **204**. DB `Edges` `Kind=7` (Mute) row recorded. Settings → Moderation → **Muted** lists `ii-b1` with an **Unmute** button. Home feed filters the muted actor (`FeedService.cs:303-305`).
+  2. **Unmute:** Clicked **Unmute** → `?unmute=true` → DB `Kind=7` row removed (count back to 0), Settings Muted section returns to "You have not muted anyone."
+- **Result:** **S44 CLOSED** — the post "More options" → Mute button records the edge, filters the feed, and is manageable in Settings. The Pass-304 "does nothing" symptom no longer reproduces. Open count: **8**.
+- **Checkpoint:** Next: re-verify S48 (hyphenated search) + S52 (community post type) if no new dev fixes; explore remaining untested areas.
+
 ## Pass 329 (2026-09-22) — S51 partial fix verified + S50/S53 re-confirmed
 - **Build/Live:** Rebuilt QA stack to main `0d7307e5` (carries S47 `fbeb600b`, S49 `b3a2e5fc`, S51 `369ba72f`+`db365370`). Both instances healthy.
 - **Explored:**
