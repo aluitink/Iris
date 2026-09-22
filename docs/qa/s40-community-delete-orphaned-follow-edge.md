@@ -1,7 +1,7 @@
 # S40 — Deleting a community leaves the creator's auto-follow `Follow` edge; the deleted community lingers in the Following tab (with a 404 re-fetch)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** fixed in dev1 (commit `59afe497`), pending live re-verify + merge to main
+- **Status:** FIXED + live-verified (commit `59afe497`); regression test + full suite + live EF-path check all green
 - **Found:** Pass 268 (2026-09-22, `ii-a1`@A, no-cache build carrying `1f941cfb`)
 - **Related:** [S21](s21-new-community-missing-following-tab.md) (the auto-follow edge this leaks), [S24](s24-cross-instance-follow-state-inconsistent.md) (Following-tab state consistency), [S4](s04-communities-following-remote.md) (Following-tab resolution)
 
@@ -52,3 +52,21 @@ Clean entry, logged in as the creator:
 4. The signed `GET /ap/v1/u/{creator}/following` does not list the deleted community.
 5. DB: no `Follow` (Kind=0) edge targeting the deleted community IRI.
 6. 0 console errors on the delete + reload.
+
+## Live verification (dev1 stack, commit `59afe497`, EF/Postgres path)
+
+Verified end-to-end on the `dev1` stack (a `--no-cache` rebuild carrying the fix) with a fresh registered
+account `s40ui` (key-signed community create + cookie-authenticated owner delete, the exact S40 UI repro):
+
+- `CreateCommunityAsync` (signed Create → outbox) → **202**; the creator auto-follows the community.
+- `GET /ap/v1/u/s40ui/following` (public, pre-delete) → **200, totalItems=1**, lists the community.
+- `DELETE /local/v1/c/s40live` (cookie-authenticated) → **204**.
+- `GET /ap/v1/u/s40ui/following` (public, **no** `?refresh`, post-delete) → **200, totalItems=0**, does **not**
+  list the community (the warm creation-path cache was invalidated by the fix — no 60s stale window).
+- `GET /ap/v1/c/s40live` (post-delete) → **404**.
+- DB (`iris_a`): `SELECT count(*) FROM "Edges" e WHERE e."Kind"=0 AND NOT EXISTS (SELECT 1 FROM "Actors" a WHERE a."Id"=e."Target")` → **0** (no orphaned Follow edges), and no `Actors` row for the deleted community.
+
+(The WASM UI path itself was not usable for the re-verify in this environment: the browser reached the
+app on `127.0.0.1:10081` while the client's ActivityPub fetches target the FQDN origin, which the
+document CSP (`connect-src 'self'`) blocks — a test-harness networking gap, not an Iris defect. The raw
+API exercises the identical handler + store code the UI drives.)
