@@ -17,13 +17,18 @@ On a community page → **Peers** tab:
 
 **The community's Peers feature is non-functional.**
 
-## Root cause hypothesis
+## Root cause
 
-The "Look up" button's `disabled` state is not bound to the textbox value (or the binding is broken). The button should enable when the textbox is non-empty and contain a valid handle/IRI format. The WASM UI may have a missing or broken `@bind` / event handler that updates the button's enabled state on input change.
+`CommunityDetail.razor:249` — the peer IRI textbox uses plain `@bind="PeerIriInput"`, which defaults to `@bind:event="onchange"` in Blazor. The C# property is only updated when the input **loses focus**, not on every keystroke. The "Look up" button (line 267) checks `string.IsNullOrWhiteSpace(PeerIriInput)` in its `disabled` expression, which is re-evaluated during render — but `PeerIriInput` is never updated while typing, so the button never enables.
+
+**Contrast:** the community feed search box in the same file (line 160) uses `@bind="FeedQueryInput" @bind:event="oninput"` — so its Search button enables as you type.
 
 ## Fix
 
-The "Look up" button should enable when the textbox contains a non-empty value that matches a valid handle (`@host`) or IRI (`https://…`) pattern. The "Follow as this community" button should enable after a successful "Look up" resolves the target actor/community.
+Add `@bind:event="oninput"` to the `#peer-iri` input (line 249), matching the feed-search pattern at line 160:
+```razor
+<input id="peer-iri" type="text" @bind="PeerIriInput" @bind:event="oninput" ... />
+```
 
 ## Re-verify
 
