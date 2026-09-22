@@ -11461,11 +11461,51 @@ public static class ActivityPubServerExtensions
         }
 
         await persistence.Communities.DeleteCommunityAsync(communityIri, ct).ConfigureAwait(false);
+
+        // S42: the community-creation path (RecordCreateLocalAsync) stores the Group in the OBJECT store
+        // (persistence.Objects.PutObjectAsync, so the IRI can be served, refreshed, tombstoned) as well as
+        // the community store. DeleteCommunityAsync removes the community-store row (the ActorEntity) and
+        // the edges, but none of the store providers (EF, in-memory, file-backed) reach the object store,
+        // so the deleted community's live Group document is orphaned — it persists forever as a live
+        // object (ObjectType=Group, IsTombstoned=f) even though the actor row + edges are gone. Tombstone
+        // it here, provider-agnostic (mirroring the S40 inbound-Follow-edge cleanup done in this handler
+        // for the same reason), using the AS2.0 Tombstone the Delete path uses (F-10): the IRI still
+        // resolves and serves the "deleted" marker (formerType Group) rather than a hard 404, matching the
+        // platform's delete semantics. A best-effort store read of the Group's formerType; the Group is a
+        // community, so "Group" is the expected value when the read is unavailable.
+        var formerType = await TryGetObjectTypeAsync(persistence.Objects, communityIri, ct).ConfigureAwait(false) ?? "Group";
+        await persistence.Objects
+            .PutObjectAsync(communityIri.BuildTombstone(formerType), ct)
+            .ConfigureAwait(false);
+
         InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
         InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
         InvalidateLocalCollectionPage(collectionCache, communityIri, "feed");
 
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Reads the stored object's first AS2.0 <c>type</c> (its <c>formerType</c> for a
+    /// <see cref="IriExtensions.BuildTombstone"/>) without throwing. Returns <c>null</c> when the object
+    /// is absent or the read fails — callers fall back to a known default (e.g. "Group" for a community).
+    /// </summary>
+    private static async Task<string?> TryGetObjectTypeAsync(IObjectStore objects, Iri objectIri, CancellationToken ct)
+    {
+        try
+        {
+            if (await objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false)
+                && obj is { } stored)
+            {
+                return stored.Type?.FirstOrDefault();
+            }
+        }
+        catch
+        {
+            // A store failure leaves the formerType unset; the caller falls back to a default.
+        }
+
+        return null;
     }
 
     /// <summary>
