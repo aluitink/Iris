@@ -69,7 +69,17 @@ public sealed class InMemoryActivityStore : IActivityStore
     {
         ct.ThrowIfCancellationRequested();
         var outbox = _outboxes.TryGetValue(actorIri, out var items) ? items : [];
-        return Task.FromResult<IReadOnlyList<IObjectOrLink>>(outbox.ToList());
+        var actorValue = actorIri.Value;
+
+        // S24-D2: an outbox is the actor's OWN authored activities. Filter to items the actor
+        // actually authored (inbound handlers may have recorded foreign activities for UI visibility).
+        var filtered = outbox.Where(item =>
+        {
+            var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
+            return itemActor is null || itemActor == actorValue;
+        }).ToList();
+
+        return Task.FromResult<IReadOnlyList<IObjectOrLink>>(filtered);
     }
 
     /// <inheritdoc/>

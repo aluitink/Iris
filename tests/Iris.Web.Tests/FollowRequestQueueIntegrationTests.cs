@@ -98,10 +98,16 @@ public sealed class FollowRequestQueueIntegrationTests : IDisposable
         await DeliverFollowAsync(followerIri);
 
         var persistence = GetPersistence();
-        var outbox = await persistence.Activities.GetOutboxAsync(_actorIri);
-        var follows = outbox.Where(i => i is Activity a && a.Type?.FirstOrDefault() == "Follow").ToList();
-        Assert.Single(follows);
+        // S24-D2: the outbox is now ownership-filtered — foreign (inbound) Follow activities are no
+        // longer returned. Use the dedicated follow-request queue (the production API) instead.
+        var modClient = BuildLocalModerationClient(_actorIri, "alice", "alice");
+        var result = await modClient.GetFollowRequestsAsync(_actorIri);
+        Assert.True(result.IsSuccess, $"queue list should succeed, got HTTP {(int)result.StatusCode}");
+        var actors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body) ?? [];
+        Assert.Equal([followerIri.Value], actors);
 
+        // No Accept activity should have been auto-sent (the follow is held for approval).
+        var outbox = await persistence.Activities.GetOutboxAsync(_actorIri);
         var accepts = outbox.Where(i => i is Activity a && a.Type?.FirstOrDefault() == "Accept").ToList();
         Assert.Empty(accepts);
     }
@@ -124,15 +130,10 @@ public sealed class FollowRequestQueueIntegrationTests : IDisposable
         var followerIri = new Iri($"{Base}/ap/v1/u/follower1");
         await DeliverFollowAsync(followerIri);
 
-        var persistence = GetPersistence();
-        var outbox = await persistence.Activities.GetOutboxAsync(_actorIri);
-        var followItem = outbox.FirstOrDefault(i => i is Activity a && a.Type?.FirstOrDefault() == "Follow");
-        Assert.NotNull(followItem);
-
-        var followActivity = (KristofferStrube.ActivityStreams.Activity)followItem!;
-        var followIri = new Iri(followActivity.Id!);
-        var client = BuildSignedClient(_actorIri, _actorKey);
-        var result = await client.AcceptAsync(_actorIri, followIri);
+        // S24-D2: the outbox is now ownership-filtered — foreign (inbound) Follow activities are no
+        // longer returned. Use the dedicated follow-request queue (the production API) instead.
+        var modClient = BuildLocalModerationClient(_actorIri, "alice", "alice");
+        var result = await modClient.AcceptFollowRequestAsync(_actorIri, followerIri);
         Assert.True(result.IsSuccess, $"Accept should succeed, got HTTP {(int)result.StatusCode}");
     }
 
@@ -144,15 +145,10 @@ public sealed class FollowRequestQueueIntegrationTests : IDisposable
         var followerIri = new Iri($"{Base}/ap/v1/u/follower1");
         await DeliverFollowAsync(followerIri);
 
-        var persistence = GetPersistence();
-        var outbox = await persistence.Activities.GetOutboxAsync(_actorIri);
-        var followItem = outbox.FirstOrDefault(i => i is Activity a && a.Type?.FirstOrDefault() == "Follow");
-        Assert.NotNull(followItem);
-
-        var followActivity = (KristofferStrube.ActivityStreams.Activity)followItem!;
-        var followIri = new Iri(followActivity.Id!);
-        var client = BuildSignedClient(_actorIri, _actorKey);
-        var result = await client.RejectAsync(_actorIri, followIri);
+        // S24-D2: the outbox is now ownership-filtered — foreign (inbound) Follow activities are no
+        // longer returned. Use the dedicated follow-request queue (the production API) instead.
+        var modClient = BuildLocalModerationClient(_actorIri, "alice", "alice");
+        var result = await modClient.RejectFollowRequestAsync(_actorIri, followerIri);
         Assert.True(result.IsSuccess, $"Reject should succeed, got HTTP {(int)result.StatusCode}");
     }
 
@@ -161,13 +157,20 @@ public sealed class FollowRequestQueueIntegrationTests : IDisposable
     {
         Assert.True(await CallSetFlagAsync(true));
 
-        await DeliverFollowAsync(new Iri($"{Base}/ap/v1/u/follower1"));
-        await DeliverFollowAsync(new Iri($"{Base}/ap/v1/u/follower2"));
+        var follower1Iri = new Iri($"{Base}/ap/v1/u/follower1");
+        var follower2Iri = new Iri($"{Base}/ap/v1/u/follower2");
+        await DeliverFollowAsync(follower1Iri);
+        await DeliverFollowAsync(follower2Iri);
 
-        var persistence = GetPersistence();
-        var outbox = await persistence.Activities.GetOutboxAsync(_actorIri);
-        var follows = outbox.Where(i => i is Activity a && a.Type?.FirstOrDefault() == "Follow").ToList();
-        Assert.Equal(2, follows.Count);
+        // S24-D2: the outbox is now ownership-filtered — foreign (inbound) Follow activities are no
+        // longer returned. Use the dedicated follow-request queue (the production API) instead.
+        var modClient = BuildLocalModerationClient(_actorIri, "alice", "alice");
+        var result = await modClient.GetFollowRequestsAsync(_actorIri);
+        Assert.True(result.IsSuccess, $"queue list should succeed, got HTTP {(int)result.StatusCode}");
+        var actors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body) ?? [];
+        Assert.Equal(2, actors.Count);
+        Assert.Contains(follower1Iri.Value, actors);
+        Assert.Contains(follower2Iri.Value, actors);
     }
 
     // --- Phase 100: the dedicated follow-request queue (GET /local/v1/u/{handle}/requests) ----

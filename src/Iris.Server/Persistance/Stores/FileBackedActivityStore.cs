@@ -115,12 +115,21 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
         {
             var outboxes = OutboxMap(s);
             var result = new List<IObjectOrLink>();
-            if (outboxes.TryGetValue(actorIri.Value, out var items))
+            var actorValue = actorIri.Value;
+            if (outboxes.TryGetValue(actorValue, out var items))
             {
                 foreach (var itemJson in items)
                 {
                     var item = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
-                    if (item is not null)
+                    if (item is null)
+                    {
+                        continue;
+                    }
+
+                    // S24-D2: an outbox is the actor's OWN authored activities. Filter to items the
+                    // actor actually authored (inbound handlers may have recorded foreign activities).
+                    var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
+                    if (itemActor is null || itemActor == actorValue)
                     {
                         result.Add(item);
                     }

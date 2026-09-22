@@ -127,7 +127,20 @@ public sealed class EfActivityStore : IActivityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<IObjectOrLink>> GetOutboxAsync(Iri actorIri, CancellationToken ct = default)
-        => await GetBoxAsync(Outbox, actorIri, ct).ConfigureAwait(false);
+    {
+        var items = await GetBoxAsync(Outbox, actorIri, ct).ConfigureAwait(false);
+        var actorValue = actorIri.Value;
+
+        // S24-D2: an outbox is the actor's OWN authored activities. Inbound handlers (Follow, Announce,
+        // CommunityContentRecorder, …) have historically recorded a foreign (remote-actor-authored)
+        // activity in the recipient's outbox for UI visibility; those items must not leak into the
+        // wire outbox. Filter to items the actor actually authored.
+        return items.Where(item =>
+        {
+            var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
+            return itemActor is null || itemActor == actorValue;
+        }).ToList();
+    }
 
     /// <inheritdoc/>
     public async Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default)
