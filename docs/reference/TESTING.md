@@ -22,16 +22,27 @@
 ```
 tests/
 ├── Iris.Testing/                 shared harness: ActivityPubHostFactory (the single real-pipeline
-│                                 TestServer bootstrap), TestSeeder, Jwk, JsonDoc, assertion helpers
+│                                 TestServer bootstrap), TestSeeder, Jwk, JsonDoc, TestCategories,
+│                                 LiveGuard/LiveInteropOptions (live-interop gate)
 ├── Iris.Core.Tests/              focused unit tests ONLY for pure logic:
 │                                 sign/verify round-trip (both profiles), tamper detection,
 │                                 key generation, IRI helpers, cache TTL/eviction/stale-revalidate
 ├── Iris.Client.Tests/            integration: client ↔ live TestServer (auth flow, discovery,
 │                                 paged enumeration, cache hit/bypass, proxy fallback)
-└── Iris.Server.Tests/            integration: multi-instance federation (follow/accept/create/announce,
-                                  community feed propagation, signature validation across instances,
-                                  WebFinger/NodeInfo, cache refresh)
+├── Iris.Client.Extensions.Tests/ integration: DI/runtime integration of the client extensions
+├── Iris.Server.Tests/            integration: multi-instance federation (follow/accept/create/announce,
+│                                 community feed propagation, signature validation across instances,
+│                                 WebFinger/NodeInfo, cache refresh, delivery + dead-letter)
+├── Iris.Server.Data.Tests/       EF Core (PostgreSQL) persistence provider behavior
+├── Iris.WebCrypto.Tests/         browser/WebCrypto signing (JS-interop boundary)
+├── Iris.Web.Tests/               production host + WASM client pipeline (expendable during UI
+│                                 stabilization — see the web test policy in DEV_LOOP.md)
+├── Iris.LiveInterop.Tests/       live peer interop: gated by IRIS_LIVE_INTEROP (see below)
+├── SampleServer.Tests/           the SampleServer host end-to-end
+└── SampleBlazorClient.Tests/     the SampleBlazorClient host end-to-end
 ```
+
+The layout is authoritative in `Iris.slnx` — when a project is added, update that list.
 
 ## Running the suite: fast vs. full
 
@@ -42,21 +53,23 @@ The full `dotnet test` run is the **source of truth** (all tests, including the 
 | **Fast** (default for the loop) | `dotnet test --filter "Category!=Slow"` | Excludes tests tagged `Category=Slow` (the ones that wait out real backoff). Everything else runs. |
 | **Full** (source of truth) | `dotnet test` | Runs every test, including the slow ones. Use this for the final green check before a phase closes. |
 
-**How a test is marked slow.** Apply `[Trait(TestCategories.Category, TestCategories.Slow)]` (constants in `Iris.Testing.TestCategories`) to the test method or class. Only mark tests that actually wait on wall-clock time (a non-zero `DeliveryRetryOptions.BaseDelay`, a real multi-second backoff) — a short polling `Task.Delay(50)` used to await an async hop is cheap and stays in the fast run. Currently tagged: `DeliveryDeadLetterIntegrationTests` (waits the full default retry budget) and `DeliveryRetryTests.TransientFailure_WaitsConfiguredBackoff_BetweenRetries` (a real 150ms backoff).
+**How a test is marked slow.** Apply `[Trait(TestCategories.Category, TestCategories.Slow)]` (constants in `Iris.Testing.TestCategories`) to the test method or class. Only mark tests that actually wait on wall-clock time (a non-zero `DeliveryRetryOptions.BaseDelay`, a real multi-second backoff, or a measured single-test duration >15 s per the blame procedure below) — a short polling `Task.Delay(50)` used to await an async hop is cheap and stays in the fast run. As of 2026-09-21 the tagged surface is the delivery/reliability family in `Iris.Server.Tests` (`DeliveryDeadLetterIntegrationTests`, `DeliveryRetryTests`, `DeliveryReliabilityIntegrationTests`, `RecreationStabilityIntegrationTests`, the outbox fan-out/audience/relay propagation suites) — verify with `grep -rl "TestCategories.Slow" tests --include="*.cs"`.
 
-**Honest note on the payoff.** The `Slow` exclusion is a *correct partition* but a *small* time saving (~1s of ~5.5 min): the backoff waits are a tiny fraction of total wall-clock. The real cost is the aggregate of ~900 test methods each building hosts and driving multi-hop deliveries (xunit creates a fresh test-class instance per method). A larger speedup would come from reusing hosts across a class's methods or cutting delivery round-trips — a structural follow-up, not a per-test tag. Until then, treat the fast run as the loop's quick green check and the full run as the authoritative one.
+**Isolating slow / hanging tests (blame).** When the suite stalls or a test runs long, let the runner name the offender instead of guessing:
 
-**Pending reclassification (requested 2026-09-06).** On the **next full `dotnet test` run**, reclassify any test method that takes longer than **5 seconds** as `Slow` (add `[Trait(TestCategories.Category, TestCategories.Slow)]`). This broadens the current wall-clock-backoff-only rule to a measured threshold: it will catch slow tests whose cost is host startup / multi-hop delivery rather than an explicit backoff wait. Record the newly-tagged tests + the resulting fast-vs-full split in the change doc for that run.
+1. **Per-test timings (fastest signal):** `dotnet test tests/<proj> -v n --logger "console;verbosity=detailed"` — prints a line per test with its duration; anything >15 s is an offender.
+2. **Blame mode:** `dotnet test --blame-hang --blame-hang-timeout 15s --blame-hang-dump-type none` — terminates and names the hung test (no dump). Combine with a project filter to keep it quick.
+3. **Action on an offender:** if it legitimately waits on wall-clock time, tag it `Slow` (it drops out of the fast run); otherwise **skip it with a date** (`[Fact(Skip = "slow >15s — <date>")]`). **Log every tag/skip** (test name, action, reason, restore-by) in the change doc — no silent deletions; the phase closeout reviews the ledger.
 
-## Live Mastodon Compatibility Test (deferred — far later)
+**Honest note on the payoff.** The `Slow` exclusion is a *correct partition* but a *modest* time saving: the backoff waits are a small fraction of total wall-clock, and the real cost is the aggregate of hundreds of test methods each building fresh in-process hosts and driving multi-hop deliveries (xunit creates a fresh test-class instance per method). A larger speedup would come from reusing hosts across a class's methods or cutting delivery round-trips — a structural follow-up, not a per-test tag. Until then, treat the fast run as the loop's quick green check and the full run as the authoritative one.
 
-- **Deferred until instance-to-instance viability is first confirmed** with our own in-process servers. This is a downstream goal, not part of the near-term phases. See [Phase 8](ROADMAP.md#phase-8--live-mastodon-compatibility-test-deferred--after-instance-to-instance-viability).
-- A **separate, opt-in** integration suite (not part of the default `dotnet test` run) that:
-  - Runs in a **fully isolated, routable Docker Compose environment**: our server instance + a **Dockerized Mastodon** (+ optional relay) on an internal network with routable hostnames.
-  - Orchestrates Mastodon via its **admin/REST API** to create test accounts, posts, and follows.
-  - Runs our Iris server instance against it: our instance follows a Mastodon account, receives its posts, and (where possible) posts to Mastodon and confirms delivery.
-  - Asserts **server-to-external-server compatibility** — the ultimate interop proof.
-- Gated behind an environment flag (e.g. `IRIS_MASTODON_TEST=1`) and the Docker Compose environment, so CI can run it as a dedicated job while local/dev runs skip it.
+## Live interop suite (opt-in, gated)
+
+`tests/Iris.LiveInterop.Tests` is the live peer-interop surface — the "server-to-external-server compatibility" goal from the original plan, now **built and in use** (not deferred):
+
+- **Gate:** `LiveGuard.TryRequires()` at the top of each live test. It loads `LiveInteropOptions` from the environment and the suite runs only when **`IRIS_LIVE_INTEROP=1`** *and* the target FQDN is configured (`IRIS_LIVE_INTEROP_BASE_URI` + actor credentials; see `LiveInteropOptions` for the full env-var set). When disabled — the default — live tests **return early as no-op passes**, so the everyday `dotnet test` (fast or full) stays green without contacting any live instance.
+- **What it covers today:** peering trust/identity against a **real Lemmy key** (fetch the key live, sign over it, verify Iris-signed requests a Lemmy peer would verify), peering **failure-mode drills** (real Lemmy shared-inbox delivery happy path + unreachable-inbox dead-letter path), and the `IRIS_LIVE_INTEROP` scenario seam (`LiveScenarioTests`) where per-platform targets + admin-API adapters are filled in as peers come up.
+- **Running it:** set `IRIS_LIVE_INTEROP=1` + the base-URI/credential vars against a provisioned peer (the dev stacks provide Lemmy/Mastodon peers per [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md)), then `dotnet test tests/Iris.LiveInterop.Tests`. Note the local-port drill constants (e.g. `localhost:8091` for Lemmy) assume the peer's host port — align them with the active environment's port block before running.
 
 ## Coverage Principle
 

@@ -22,20 +22,30 @@ A set of .NET libraries that facilitate ActivityPub communications, designed to 
 ## Solution Layout
 
 ```
-Iris.sln
+Iris.slnx
 ├── src/
 │   ├── Iris.Core/                  net10.0 — identity, keys, signatures, IRI, caching abstractions (on top of ActivityStreams)
 │   ├── Iris.Client/                net10.0 — HTTP client, signing, auth, proxy fallback, paged collections
+│   ├── Iris.Client.Extensions/     net10.0 — DI/runtime integration for client apps
 │   ├── Iris.Server/                net10.0 — ASP.NET Core extensions, endpoints, middleware, community feeds
-│   └── Iris.Server.InMemory/       net10.0 — in-memory persistence implementation
+│   ├── Iris.Server.Data/           net10.0 — EF Core (PostgreSQL) persistence provider
+│   ├── Iris.Server.InMemory/       net10.0 — in-memory persistence implementation
+│   └── Iris.WebCrypto/             net10.0 — browser/WebCrypto signing support
+├── apps/
+│   ├── Iris.Web/                   net10.0 — ASP.NET Core host serving the WASM client + AP endpoints
+│   └── Iris.Web.Client/            net10.0 — Blazor WebAssembly client (the app's UI)
 ├── tests/
-│   ├── Iris.Testing/               shared TestServer harness: ActivityPubHostFactory + TestSeeder/Jwk/JsonDoc
-│   ├── Iris.Core.Tests/
-│   ├── Iris.Client.Tests/
-│   └── Iris.Server.Tests/
-└── samples/
-    ├── SampleServer/               minimal ASP.NET Core app hosting Iris.Server
-    └── SampleBlazorClient/         Blazor WebAssembly app using Iris.Client
+│   ├── Iris.Testing/               shared TestServer harness: ActivityPubHostFactory + TestSeeder/Jwk/JsonDoc + LiveGuard
+│   ├── Iris.Core.Tests/            ├── Iris.Client.Tests/            ├── Iris.Client.Extensions.Tests/
+│   ├── Iris.Server.Tests/          ├── Iris.Server.Data.Tests/       ├── Iris.WebCrypto.Tests/
+│   ├── Iris.Web.Tests/             ├── Iris.LiveInterop.Tests/       ├── SampleServer.Tests/
+│   └── SampleBlazorClient.Tests/
+├── samples/
+│   ├── SampleServer/               minimal ASP.NET Core app hosting Iris.Server
+│   ├── SampleBlazorClient/         Blazor WebAssembly app using Iris.Client
+│   └── IrisStaticHost/             static-file host for the published WASM client
+└── tools/
+    └── IrisSigner/
 ```
 
 ## Cross-Cutting Concerns

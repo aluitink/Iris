@@ -55,16 +55,22 @@ Iris.slnx
 │   ├── Iris.Client/                net10.0 — HTTP client, signing, auth, proxy fallback, paged collections
 │   ├── Iris.Client.Extensions/     net10.0 — DI/runtime integration for client apps
 │   ├── Iris.Server/                net10.0 — ASP.NET Core endpoints, middleware, community feeds
+│   ├── Iris.Server.Data/           net10.0 — EF Core (PostgreSQL) persistence provider
 │   ├── Iris.Server.InMemory/       net10.0 — in-memory persistence implementation
 │   └── Iris.WebCrypto/             net10.0 — browser/WebCrypto signing support
+├── apps/
+│   ├── Iris.Web/                   net10.0 — ASP.NET Core host; serves the WASM client + AP endpoints (prod 8088)
+│   └── Iris.Web.Client/            net10.0 — Blazor WebAssembly client (the app's UI)
 ├── tests/
-│   ├── Iris.Testing/               shared multi-instance test harness
+│   ├── Iris.Testing/               shared multi-instance TestServer harness + live-interop gate
 │   ├── Iris.Core.Tests/            ├── Iris.Client.Tests/            ├── Iris.Client.Extensions.Tests/
-│   ├── Iris.Server.Tests/          ├── Iris.LiveInterop.Tests/       ├── SampleServer.Tests/
+│   ├── Iris.Server.Tests/          ├── Iris.Server.Data.Tests/       ├── Iris.WebCrypto.Tests/
+│   ├── Iris.Web.Tests/             ├── Iris.LiveInterop.Tests/       ├── SampleServer.Tests/
 │   └── SampleBlazorClient.Tests/
 ├── samples/
 │   ├── SampleServer/               minimal ASP.NET Core host
-│   └── SampleBlazorClient/         sample explorer using Iris.Client
+│   ├── SampleBlazorClient/         sample explorer using Iris.Client
+│   └── IrisStaticHost/             static-file host for the published WASM client
 └── tools/
     └── IrisSigner/
 ```

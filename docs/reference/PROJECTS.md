@@ -197,3 +197,25 @@ ASP.NET Core extension package. Adds ActivityPub server capability to any existi
   - `AddIrisClient(services, serverBaseUri)` — pre-configured `IHttpClientFactory` with proxy fallback pointed at our server.
   - `IrisSession` — manages login/identity selection, token storage (in Blazor: `LocalStorage`/`SessionStorage` via abstraction).
   - Rich-media helpers, notification polling, etc.
+
+## 6. `Iris.Server.Data` (net10.0)
+
+- The **EF Core (PostgreSQL)** `IPersistenceProvider` — the durable persistence implementation that stands in for `Iris.Server.InMemory` in real deployments.
+- `IrisDbContext` (EF Core model) + entity mappings for the persisted aggregates (actors, communities, follows, activities, delivery state, dead letters).
+- `EntityFrameworkPersistenceProvider` + `EntityFrameworkPersistenceExtensions` (`AddEntityFrameworkPersistence(...)` service-registration, mirroring the InMemory extension's surface).
+- `DesignTimeDbContextFactory` for EF migrations tooling (`dotnet ef migrations add ...`).
+- **Dependency**: `Iris.Core` + `Iris.Server` (it implements the server's persistence interfaces); packages: `Microsoft.EntityFrameworkCore` + `Npgsql.EntityFrameworkCore.PostgreSQL`.
+- Tests: `tests/Iris.Server.Data.Tests` (EF-specific behavior, e.g. signing-identity restart survival).
+
+## 7. `Iris.WebCrypto` (net10.0)
+
+- **Browser-side signing** support: the WebCrypto implementation of the client→server signing profile (the restricted `(request-target) host date` header set that Blazor/WASM `fetch` can set, per the CORS constraint in `Iris.Core`).
+- JS-interop boundary (`IJSRuntime` bridge) so `Iris.Client` can sign requests in the browser without exposing key material to JS; the key stays in .NET and only signed headers cross the bridge.
+- **Dependency**: `Iris.Core`; consumed by `apps/Iris.Web.Client`.
+- Tests: `tests/Iris.WebCrypto.Tests` (signing against a fake/missing JS runtime).
+
+## 8. `apps/` — the production app
+
+- **`Iris.Web`** (net10.0, ASP.NET Core host) — serves the published WASM client from `wwwroot/` and hosts the `Iris.Server` AP endpoints on the same origin (prod: `iris.luit.ink`, port 8088; per-agent dev stacks: see [DUAL_DEV_PROTOCOL.md](DUAL_DEV_PROTOCOL.md)). The build copies the WASM output from `Iris.Web.Client` into `wwwroot/_framework/`.
+- **`Iris.Web.Client`** (net10.0, Blazor WebAssembly) — the app's UI (feed, directory, profile, communities, admin). References `Iris.Client.Extensions` + `Iris.Client` + `Iris.Core` + `Iris.WebCrypto`. This is where the web-UI work (Playwright-verified, per the [web test policy](DEV_LOOP.md#web-test-policy-binding-while-web-ui-work-is-active)) lives.
+- Tests: `tests/Iris.Web.Tests` (integration tests for the host + client pipeline; expendable during UI stabilization — see the web test policy).

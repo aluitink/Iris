@@ -167,7 +167,6 @@ QA's staleness check is unchanged: compare PLAN.md's **Live state** `deployed:` 
 | An agent's state file is stale/missing → other dev picks its item | `.state/` is best-effort live status; PLAN.md's Active Slice is the durable tie-breaker; a missing file reads as "unknown", not "free" |
 | dev2 writes to PLAN.md dev sections → clobbers dev1's state | Ownership rule: dev2 writes only Active Slice's own-item lines + `docs/changes/` |
 | dev2's branch drifts behind main | dev2 syncs down (`merge main`) every turn, before working |
-| Worktree missing .env files | .env files are committed in `environments/` (shared, not per-worktree) |
 | Agent builds from wrong worktree | `REPO_ROOT` in each `.env` points to the correct worktree path |
 
 ## Setup (one-time)
