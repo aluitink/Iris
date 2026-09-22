@@ -108,20 +108,78 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             "A Follow delivered to the shared inbox should record the alice -> bob follow edge");
     }
 
-    // --- alice (remote) announces (re-posts) a note, delivered to B's shared inbox. B fans it out to
-    // --- alice's local followers (bob, who follows alice) and processes it — stored under its IRI. This
-    // --- is the "shared-inbox-preferring sender posts, local follower receives it" path that was
-    // --- silently dropped before the route existed.
+    // --- S28 / S37: a remote Announce (boost) of a LOCAL note delivered to B's shared inbox must route
+    // --- to the note's AUTHOR (the note's attributedTo), not the announcer's local followers. The note's
+    // --- /shares collection + denormalized sharedCount (decision 056 (d)) live on the note's owner, so the
+    // --- boost is recorded on the note's home (B). Before the fix the Announce branch fanned out to the
+    // --- announcer's LOCAL followers — and when the announcer (remote) has none here, the delivery was
+    // --- dropped as "no local recipient" and the note's sharedCount / shares stayed at 0 (the S28 / S37
+    // --- boost-count facet). The AnnounceActivityHandler (running for the note's author) records the
+    // --- announcer → note edge + refreshes sharedCount, then fans the boost out to the announcer's
+    // --- followers itself (the follower-feed surface) — so the shared inbox no longer needs to.
 
     [Fact]
-    public async Task Announce_DeliveredToSharedInbox_FannedOutToFollowersAndStored()
+    public async Task AnnounceOfLocalNote_DeliveredToSharedInbox_RoutesToAuthorAndRecordsBoostEdge()
     {
-        // bob follows alice (so alice's content is federation-targeted to bob).
+        // bob (local, hosted by B) authored a note that is stored in B's object store.
+        var noteIri = $"https://{BHost}/ap/v1/u/{Bob}/notes/{Guid.NewGuid():N}";
+        await _bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri,
+            Content = ["a note by bob"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        });
+
+        // alice (remote, hosted by A) boosts bob's note: an Announce whose object is the note IRI (a
+        // content object, not an actor). Deliver it to B's shared inbox over the wire (B resolves alice's
+        // key from A's actor doc). The shared inbox must route the Announce to the note's author (bob),
+        // whose AnnounceActivityHandler records the boost edge on the note.
+        var announceIri = $"https://{AHost}/activities/announce-{Guid.NewGuid():N}";
+        var announce = new Announce
+        {
+            Id = announceIri,
+            Actor = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            Object = [new Link { Href = new Uri(noteIri) }],
+            To = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, announce);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B validated the signature and stored the Announce under its IRI (proving the shared inbox routed
+        // it to a local recipient and processed it, rather than "no local recipient; accepting and dropping").
+        Assert.True(
+            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announceIri), out _),
+            "An Announce of a local note delivered to the shared inbox should be stored (routed to the note's author), not dropped (S28/S37).");
+
+        // B recorded the boost edge (alice → note) on the note's home — the note's /shares collection now
+        // includes alice's boost. Routing the Announce to the announcer's local followers (the prior
+        // behavior) would have dropped it (alice has no local followers on B) and left /shares / sharedCount
+        // at 0.
+        Assert.True(
+            await _bPersistence.Announces.HasAnnouncedAsync(AliceActorIri, new Iri(noteIri)),
+            "An Announce of a local note delivered to the shared inbox should record the boost edge on the note (S28/S37).");
+    }
+
+    // --- A remote Announce (boost) of a REMOTE object delivered to B's shared inbox is accepted and
+    // --- dropped: the boost is recorded on the object's HOME instance (which the sender delivers it to
+    // --- directly), not on the announcer's followers' instance. B neither stores the edge nor fans the
+    // --- boost out to the announcer's local followers (the prior behavior) — it has no local copy of the
+    // --- object to count the boost against. This is the inverse of the local-note case above.
+
+    [Fact]
+    public async Task AnnounceOfRemoteObject_DeliveredToSharedInbox_AcceptedAndDropped()
+    {
+        // bob follows alice (the announcer). A shared-inbox-preferring sender would previously have
+        // delivered alice's boost of a remote note to B's shared inbox, fanning it out to alice's local
+        // followers (bob). That was a defect: the boost belongs on the remote note's home instance, not
+        // on B. The shared inbox now routes the Announce to the object's owner — unresolvable here (the
+        // object is remote, not stored on B), so B accepts (202) and drops.
         await _bPersistence.Follows.RecordFollowAsync(BobActorIri, AliceActorIri);
 
-        // alice announces (re-posts) a remote note (object on A), addressed to bob — exactly what a
-        // shared-inbox-preferring sender delivers to the instance's shared inbox. The object's author is
-        // alice (remote); the intended recipient (bob) is the follower B routes to.
         var objectIri = $"https://{AHost}/objects/note-{Guid.NewGuid():N}";
         var announceIri = $"https://{AHost}/activities/announce-{Guid.NewGuid():N}";
         var announce = new Announce
@@ -133,17 +191,16 @@ public sealed class SharedInboxIntegrationTests : IDisposable
             To = [new Link { Href = new Uri(BobActorIri.Value) }],
         };
 
-        // Deliver alice's signed Announce to B's shared inbox over the wire (B resolves alice's key from
-        // A's actor doc over the wire).
         using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(BobSharedInboxIri, announce);
         Assert.Equal(202, statusCode.StatusCode);
 
-        // B validated the signature and stored the Announce under its IRI (proving the shared inbox
-        // routed it to a local recipient and processed it, rather than silently dropping the delivery).
-        Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announceIri), out _),
-            "B should have stored the Announce after routing it via the shared inbox");
+        // No boost edge was recorded on B (the remote note's home is A, not B): alice did not boost the
+        // object in B's store. The delivery was dropped (routed to the object's unresolvable owner), not
+        // fanned out to the announcer's local followers.
+        Assert.False(
+            await _bPersistence.Announces.HasAnnouncedAsync(AliceActorIri, new Iri(objectIri)),
+            "An Announce of a remote object delivered to the shared inbox should not record a boost edge on this instance (S28/S37).");
     }
 
     // --- A Follow addressed to a REMOTE actor (not hosted by B) is accepted and dropped ---

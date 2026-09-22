@@ -3994,12 +3994,32 @@ public static class ActivityPubServerExtensions
         Iri? fanOutAuthor = null;
         if (parsed is Activity { Id: not null } typedActivity)
         {
-            if (typedActivity is Create or Announce)
+            if (typedActivity is Create)
             {
                 // Content: fan out to the local followers of the author (the activity's actor).
                 fanOutAuthor = FirstIriFromCollection(typedActivity.Actor) is { } author
                     ? new Iri(author)
                     : null;
+            }
+            else if (typedActivity is Announce
+                     && typedActivity.Object is { } announceObjects
+                     && FirstIriFromCollection(announceObjects) is { } announcedObjectIri)
+            {
+                // An Announce (boost) of an object: the boost must be recorded on the object's home — the
+                // note's <c>shares</c> collection + denormalized <c>sharedCount</c> (decision 056 (d)) live
+                // on the object's owner, not on the announcer. So resolve the announced object's owner and
+                // address the delivery to it (mirroring the Like branch below): the owner's
+                // AnnounceActivityHandler records the announcer → object edge + refreshes sharedCount, then
+                // fans the boost out to the announcer's followers (the follower-feed surface). Routing the
+                // Announce to the announcer's LOCAL followers instead (the prior behavior) drops a cross-
+                // instance boost whenever the announcer has no local followers here — the common case —
+                // leaving the local note's sharedCount / shares at 0 (S28 / S37 boost-count facet). A
+                // Lemmy-style community relay (an Announce whose object is an embedded Create) is NOT a
+                // bare object IRI, so it falls through to the object-addressed branch and is relayed to the
+                // community (138.12). An unresolvable owner degrades to the object IRI, which the per-
+                // recipient actor-existence check below then drops as before (no local recipient).
+                var ownerIri = await ResolveObjectOwnerForDeliveryAsync(persistence, null, new Iri(announcedObjectIri), ct).ConfigureAwait(false);
+                recipients.Add(ownerIri);
             }
             else if (typedActivity is Undo { Object: { } undoObjects } undoActivity)
             {
