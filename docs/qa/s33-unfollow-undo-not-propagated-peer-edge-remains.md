@@ -1,7 +1,7 @@
 # S33 — Unfollow (`Undo` of `Follow`) emitted locally but NOT propagated; peer's `followers` edge remains
 
 - **Class:** bug / federation — **Severity:** S2
-- **Status:** **fixed (2026-09-21, `d6914d6`, change 14823)** — clean-entry re-verify on the rebuilt QA cluster (HEAD `27b1ba6`); bare-IRI `Undo` now routes to the follow's target and the peer edge is removed.
+- **Status:** **FIXED + live-re-verified (dev1 build `774b68ba`, 2026-09-22)** — the Pass-171 cross-instance regression (B→A `Undo` not delivered, build `38ae87c`) does NOT reproduce on a build that includes both the S33 shared-inbox routing fix (`d6914d6`) AND the S39 B→A inbound-delivery fix (`2229b0ab`). Fresh B→A unfollow on the dev1 two-instance stack: B `following` clears + A `followers` edge removed after the delivery queue drains; A-side inbox log shows the `Undo` received → dispatched to `UndoActivityHandler` → resolved to the follow's target → **accepted** (no "unknown recipient" rejection). See "Re-verify on dev1 build `774b68ba`" below.
 - **Found:** Interop suite A10 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S32](s32-delete-not-propagated-peer-stale-copy.md) (same "bare-IRI Undo/Delete → peer can't resolve recipient → not applied" class). Distinct from [S24](s24-cross-instance-follow-state-inconsistent.md) (follow *state*; this is the unfollow *propagation*).
 
@@ -85,3 +85,19 @@ A fresh unfollow (B `ii-b1` unfollowed A `ii-a1`) **reproduced the S33 cross-ins
 **Interpretation:** the **B-side local** unfollow applies (B outbox `following` drops, the `Undo` is emitted) but the **B→A inbound delivery** of that `Undo` **does not land in A's outbox/store**, so A's `followers` edge is never removed. This is the **same directional B→A inbound-delivery gap** documented in [S39](s39-a-side-notifications-missing-b-side-receives-asymmetric-inbound-delivery.md) (B's outbound activities — reply/Like/Follow/**Undo** — do not land in A's store). S33's cross-instance leg and S39 are **two faces of the same B→A delivery root cause**: a dev fix to the shared-inbox / inbound-delivery path is expected to address both. (The earlier Pass 164 "FIXED" observation was the A-side leg in a transient delivery-window state; on the settled `38ae87c` stack the B→A `Undo` leg does not propagate.)
 
 **Status: S33 cross-instance leg REGRESSED / OPEN again on `38ae87c` (B→A `Undo` not delivered) — cross-linked to S39. Local (B) leg holds; A-side `followers` edge remains.**
+
+## Re-verify on dev1 build `774b68ba` (2026-09-22) — cross-instance leg RESOLVED (B→A `Undo` propagates)
+
+The Pass-171 regression was observed on build `38ae87c`, which **predates** the S39 B→A inbound-delivery fix (`2229b0ab`). A build containing **both** the S33 shared-inbox routing fix (`d6914d6`) and the S39 B→A delivery fix (`2229b0ab`) — the dev1 mainline `774b68ba` — was live-verified on the dev1 two-instance stack (Iris A `dev1-iris-a.luit.ink:10081`, Iris B `dev1-iris-b.luit.ink:10082`). Fresh accounts `s33a` (A) + `s33b` (B); the follow/unfollow was driven over the wire with proper ActivityPub RSA-SHA256 signatures (cookie-auth to fetch the actor's `privateKey`, then a signed `POST` to the follower's own outbox).
+
+- **Pre-state (after the B→A follow):** A `GET /ap/v1/u/s33a/followers` `totalItems=1` = `[s33b@B]`; B `GET /ap/v1/u/s33b/following` `totalItems=1` = `[s33a@A]`. Follow IRI `…/s33b/follows/06GCE1APP52TJAE2J3X6ZS60HM`.
+- **Unfollow (B side):** signed `Undo` posted to B `…/s33b/outbox` → **HTTP 202**, minted `…/s33b/undos/06GCE1JW89D2H6T8MWGTSA7934`, `object` = the bare Follow IRI (the exact S33 wire shape).
+- **Local (B):** B `GET /ap/v1/u/s33b/following` → **`totalItems=0`** immediately. ✓ (local applied)
+- **Peer (A):** after the async delivery queue drained (~6 s), A `GET /ap/v1/u/s33a/followers` → **`totalItems=0`, `orderedItems=[]` — `s33b` REMOVED**. ✅ (the fix)
+- **A-side inbox log (decisive — no rejection):**
+  - `Inbox received Undo …/s33b/undos/06GCE1JW89… from …/s33b to …/s33a`
+  - `Handler UndoActivityHandler processed Undo … (actor …/s33b, recipient …/s33a) — ok`
+  - `Inbox accepted: Undo from …/s33b targeting …/s33b/follows/06GCE1APP5…. Recipient: …/s33a, Peer: dev1-iris-b.luit.ink`
+  - **No** `Inbox rejected: unknown recipient …` line (the exact rejection that opened S33). The shared-inbox `Undo` resolved the bare-IRI Follow to its target and removed the edge.
+
+**Verdict:** S33 cross-instance (B→A) unfollow **RESOLVED on `774b68ba`**. The Pass-171 regression was a build-generation artifact: `38ae87c` lacked the S39 B→A inbound-delivery fix (`2229b0ab`), so B's outbound `Undo` never landed in A's store. With both `d6914d6` (shared-inbox bare-IRI `Undo` routing) and `2229b0ab` (B→A delivery) present, the `Undo` is delivered to A, resolved, and applied — the peer `followers` edge is removed. **S33 CLOSED (all legs: local + cross-instance, both directions verified across passes).**
