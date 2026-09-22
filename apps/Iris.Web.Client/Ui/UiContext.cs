@@ -400,13 +400,33 @@ public sealed class UiContext
             return cached.Doc;
         }
 
-        if (_session.Client is null)
-        {
-            return null;
-        }
-
         var fetchTask = _contentInFlight.GetOrAdd(objectIri.Value, async _ =>
         {
+            // SIGNED-OUT (the session's signing client is null): a bare-link Announce target (and any
+            // other content object) is still a PUBLIC document, so resolve it through the same-origin
+            // anonymous seam rather than bailing out (the S41 fix — a signed-out boost card used to
+            // render "Content unavailable" because this path returned null before ever fetching). A
+            // REMOTE (cross-origin) IRI is read through the anonymous proxy (GET /ap/v1/proxy/{target})
+            // — a direct cross-origin GET is CORS-/CSP-blocked in the browser (the same seam
+            // FetchActorAsync uses for signed-out actor reads); a LOCAL IRI is a plain unsigned GET of
+            // its own IRI (same-origin, public). A non-2xx / failure degrades to null (the card's
+            // existing "Content unavailable" fallback) — nothing is cached on failure, so a later call
+            // can retry. The per-circuit cache + in-flight coalescing below still apply.
+            if (_session.Client is null)
+            {
+                try
+                {
+                    var doc = IsRemoteObjectIri(objectIri)
+                        ? await FetchViaAnonymousProxyAsync(objectIri)
+                        : await FetchContentObjectAnonymousAsync(objectIri);
+                    return doc;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
             // 138: a remote (cross-origin) object is read through the home instance's proxy endpoint
             // (POST /ap/v1/proxy/{target}), which is cache-first: it serves the object's cached
             // document when fresh (no live fetch, and the per-object /likes+/shares sync walk is
@@ -653,6 +673,29 @@ public sealed class UiContext
     {
         var http = _httpClientFactory.CreateClient("iris");
         using var response = await http.GetAsync(actorIri.Value);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
+    }
+
+    /// <summary>
+    /// Fetches a content object (a Note, Article, …) via plain HTTP (no ActivityPub signing). Used as
+    /// the signed-out path for a LOCAL (same-origin) content object when the session's signing client is
+    /// null (S41): a local note is public on its own origin, so an unsigned <c>GET</c> of its own IRI
+    /// succeeds — the same shape as <see cref="FetchActorDocumentAnonymousAsync"/> for local actors. A
+    /// REMOTE object when signed out is read through the anonymous proxy seam
+    /// (<see cref="FetchViaAnonymousProxyAsync"/>) instead — a direct cross-origin GET is CORS-/CSP-blocked
+    /// in the browser. Returns null when the fetch fails or the object is not found (the caller's card
+    /// degrades to "Content unavailable"; nothing is cached on failure, so a later call can retry).
+    /// </summary>
+    private async Task<IObject?> FetchContentObjectAnonymousAsync(Iri objectIri)
+    {
+        var http = _httpClientFactory.CreateClient("iris");
+        using var response = await http.GetAsync(objectIri.Value);
         if (!response.IsSuccessStatusCode)
         {
             return null;
