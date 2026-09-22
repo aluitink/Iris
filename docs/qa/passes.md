@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 306 (2026-09-22) — Poll create/vote/delete + attachment upload attempt — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A): (a) Poll create → form appeared with question/options/duration/multi-choice → posted (HTTP 202). (b) Poll display → question + options with 0 votes + end date. (c) Poll vote → clicked Option A → "You voted" + count incremented to 1. (d) Poll delete → confirmation → tombstone. (e) Attachment upload → could not test (Playwright file access limitation). 0 console errors.
+- **Result:** **0 new defects.** Poll create/display/vote/delete all work correctly. Attachment upload untested due to environment limitation. Open count unchanged: **S35 + S43 + S44 (3)**.
+- **Checkpoint:** Poll flow verified. Open: S35 (operator-blocked) + S43 (dev-owned) + S44 (dev-owned, S3). Next: explore Article post type, or test Content Warning flow.
+
 ## Pass 305 (2026-09-22) — Post edit edge cases + delete flow — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A): (a) Edit with special characters (quotes, ampersand, em-dash, accented, CJK) → saved correctly. (b) Edit with empty content → form stayed open (no save, no error message). (c) Edit Cancel → content unchanged. (d) Delete flow: create post → Delete → confirmation dialog → Confirm → redirect to /home → deleted post shows tombstone. 0 console errors.
