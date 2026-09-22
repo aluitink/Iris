@@ -43,8 +43,9 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
 
     private async Task<AuthenticationState> ResolveAsync()
     {
-        // First, fetch the public session (no auth required) to get the public feed IRI.
-        var publicFeedIri = await FetchPublicFeedIriAsync();
+        // First, fetch the public session (no auth required) to get the public feed IRI and the
+        // instance's effective advertised base (the FQDN the server serves its iris: namespace under).
+        var publicSession = await FetchPublicSessionAsync();
 
         try
         {
@@ -53,12 +54,7 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
             {
                 // Signed out: return an unauthenticated state with the public feed IRI claim
                 // so the client can render the public feed for a logged-out visitor.
-                var publicIdentity = new ClaimsIdentity();
-                if (publicFeedIri is not null)
-                {
-                    publicIdentity.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
-                }
-                return new AuthenticationState(new ClaimsPrincipal(publicIdentity));
+                return new AuthenticationState(new ClaimsPrincipal(BuildPublicIdentity(publicSession)));
             }
 
             // The server serializes the claims as camelCase (actorIri, etc.); ReadFromJsonAsync's
@@ -69,12 +65,7 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (json is null)
             {
-                var publicIdentity2 = new ClaimsIdentity();
-                if (publicFeedIri is not null)
-                {
-                    publicIdentity2.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
-                }
-                return new AuthenticationState(new ClaimsPrincipal(publicIdentity2));
+                return new AuthenticationState(new ClaimsPrincipal(BuildPublicIdentity(publicSession)));
             }
 
             var identity = new ClaimsIdentity(
@@ -85,25 +76,52 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
             identity.AddClaim(new Claim(ClaimTypes.Name, json.Username));
             identity.AddClaim(new Claim(ActorClaims.ActorIri, json.ActorIri));
             identity.AddClaim(new Claim(ClaimTypes.Role, json.Role));
-            identity.AddClaim(new Claim(ActorClaims.PublicFeedIri, json.PublicFeedIri ?? publicFeedIri ?? ""));
+            identity.AddClaim(new Claim(ActorClaims.PublicFeedIri, json.PublicFeedIri ?? publicSession?.PublicFeedIri ?? ""));
+            AddServerBaseUriClaim(identity, publicSession?.ServerBaseUri);
 
             return new AuthenticationState(new ClaimsPrincipal(identity));
         }
         catch
         {
-            var publicIdentity3 = new ClaimsIdentity();
-            if (publicFeedIri is not null)
-            {
-                publicIdentity3.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
-            }
-            return new AuthenticationState(new ClaimsPrincipal(publicIdentity3));
+            return new AuthenticationState(new ClaimsPrincipal(BuildPublicIdentity(publicSession)));
         }
     }
 
     /// <summary>
-    /// Fetches the public feed IRI from the no-auth public session endpoint. Returns null on failure.
+    /// Builds a signed-out (public) identity carrying the public feed IRI claim and the server base
+    /// URI claim (so the client can derive the instance's iris: namespace even when logged out).
     /// </summary>
-    private async Task<string?> FetchPublicFeedIriAsync()
+    private static ClaimsIdentity BuildPublicIdentity(PublicSessionResponse? publicSession)
+    {
+        var identity = new ClaimsIdentity();
+        if (publicSession?.PublicFeedIri is not null)
+        {
+            identity.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicSession.PublicFeedIri));
+        }
+        AddServerBaseUriClaim(identity, publicSession?.ServerBaseUri);
+        return identity;
+    }
+
+    /// <summary>
+    /// Adds the <see cref="ActorClaims.ServerBaseUri"/> claim when the server advertised its effective
+    /// base (a non-empty absolute URI). Absent on older servers (no claim) so the client falls back to
+    /// its baked-in AdvertiseBase.
+    /// </summary>
+    private static void AddServerBaseUriClaim(ClaimsIdentity identity, string? serverBaseUri)
+    {
+        if (string.IsNullOrWhiteSpace(serverBaseUri))
+        {
+            return;
+        }
+
+        identity.AddClaim(new Claim(ActorClaims.ServerBaseUri, serverBaseUri.TrimEnd('/')));
+    }
+
+    /// <summary>
+    /// Fetches the no-auth public session (public feed IRI + the instance's effective advertised base).
+    /// Returns null on failure.
+    /// </summary>
+    private async Task<PublicSessionResponse?> FetchPublicSessionAsync()
     {
         try
         {
@@ -113,10 +131,9 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
                 return null;
             }
 
-            var json = System.Text.Json.JsonSerializer.Deserialize<PublicSessionResponse>(
+            return System.Text.Json.JsonSerializer.Deserialize<PublicSessionResponse>(
                 await response.Content.ReadAsStringAsync(),
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return json?.PublicFeedIri;
         }
         catch
         {
@@ -125,5 +142,5 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
     }
 
     private sealed record SessionResponse(string Id, string Username, string ActorIri, string Role, string? PublicFeedIri);
-    private sealed record PublicSessionResponse(string? PublicFeedIri);
+    private sealed record PublicSessionResponse(string? PublicFeedIri, string? ServerBaseUri);
 }

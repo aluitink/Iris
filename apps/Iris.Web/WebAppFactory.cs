@@ -1249,6 +1249,12 @@ public static class WebAppFactory
     {
         var baseUrl = serverOptions.Value.BaseUri?.Value ?? "http://localhost";
         var publicFeedIri = $"{baseUrl.TrimEnd('/')}/ap/v1/public/feed";
+        // The instance's effective advertised base (the public FQDN the server actually serves its
+        // ActivityPub endpoints and iris: extension namespace under). Exposed so the WASM client derives
+        // its iris: namespace from the SERVER's base (matching the namespace the server stamps onto
+        // object documents) instead of its own baked-in appsettings.json AdvertiseBase — which diverges
+        // from the per-deployment FQDN when one WASM build is deployed to multiple instances.
+        var serverBaseUri = baseUrl.TrimEnd('/');
 
         endpoints.MapGet("/local/v1/session", (HttpContext ctx) =>
         {
@@ -1268,7 +1274,7 @@ public static class WebAppFactory
         // client calls this when signed out so it knows which feed to render for a logged-out
         // visitor. The public feed endpoint itself is publicly readable (no auth required).
         endpoints.MapGet("/local/v1/session/public", () =>
-            Results.Json(new { PublicFeedIri = publicFeedIri }));
+            Results.Json(new { PublicFeedIri = publicFeedIri, ServerBaseUri = serverBaseUri }));
     }
 
     /// <summary>
