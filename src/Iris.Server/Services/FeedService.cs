@@ -290,9 +290,11 @@ public sealed class FeedService : IFollowFeedService
             {
                 var followSw = Stopwatch.StartNew();
                 List<IObjectOrLink> items;
+                var isLocal = false;
                 try
                 {
-                    if (await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false))
+                    isLocal = await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false);
+                    if (isLocal)
                     {
                         // A local follow's outbox is read from the local store (no network).
                         items = (await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)).ToList();
@@ -317,7 +319,7 @@ public sealed class FeedService : IFollowFeedService
                     items = [];
                 }
                 followSw.Stop();
-                return (Items: items, ElapsedMs: followSw.ElapsedMilliseconds);
+                return (Items: items, IsLocal: isLocal, ElapsedMs: followSw.ElapsedMilliseconds);
             }));
 
         // Merge in the deterministic IRI order of `eligible` (matches the previous sequential
@@ -332,13 +334,14 @@ public sealed class FeedService : IFollowFeedService
 
         // Phase 146 feed observability: structured log of the build (latency, follow counts,
         // item count by type, slowest follow). Helps diagnose the S36 class of issues (feed
-        // dominated by noise) and track feed performance in production.
+        // dominated by noise) and track feed performance in production. The local/remote split reuses
+        // the per-follow determination captured in the fan-out above (no redundant store lookups).
         var localCount = 0;
         var remoteCount = 0;
         var slowestFollowMs = 0L;
         for (var i = 0; i < eligible.Count; i++)
         {
-            if (await _localActors.IsLocalActorAsync(eligible[i], ct).ConfigureAwait(false))
+            if (perFollowTimed[i].IsLocal)
             {
                 localCount++;
             }
