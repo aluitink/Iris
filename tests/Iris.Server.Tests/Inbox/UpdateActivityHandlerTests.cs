@@ -518,6 +518,48 @@ public sealed class UpdateActivityHandlerTests
         Assert.True(note.Updated! > originalNote.Published!);
     }
 
+    // --- S51: community (Group) update stamps `updated` -------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalCommunityUpdates_Group_StampsUpdated()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+
+        var communityIri = new Iri("https://b.domain.local/ap/v1/c/devs");
+        var community = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = "devs",
+            Name = ["Devs Community"],
+            Summary = ["Original description"],
+            AttributedTo = [new Link { Href = new Uri(LocalPerson.Value) }],
+        };
+        community.Published = DateTime.UtcNow.AddDays(-1);
+        await persistence.Communities.PutCommunityAsync(community);
+
+        var beforeEdit = DateTime.UtcNow;
+        var updatedGroup = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = "devs",
+            Name = ["Devs Community (Renamed)"],
+            Summary = ["Updated description"],
+        };
+        var update = BuildUpdate(communityIri, updatedGroup);
+        var sut = BuildHandler(persistence);
+        await sut.HandleAsync(new InboxDelivery(communityIri, update), update);
+
+        Assert.True(await persistence.Communities.TryGetCommunityAsync(communityIri, out var stored));
+        var group = Assert.IsType<Group>(stored);
+        Assert.Equal(["Devs Community (Renamed)"], group.Name);
+        Assert.Equal(["Updated description"], group.Summary);
+        // S51: the `updated` timestamp is stamped (not null) and is after the `published` time.
+        Assert.NotNull(group.Updated);
+        Assert.True(group.Updated! >= beforeEdit, $"Updated ({group.Updated}) should be >= {beforeEdit}");
+        Assert.True(group.Updated! >= community.Published!, $"Updated ({group.Updated}) should be >= published ({community.Published})");
+    }
+
     /// <summary>
     /// A no-op <see cref="IMediaWarmer"/> for the unit tests (they do not exercise media warming).
     /// </summary>
