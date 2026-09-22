@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 318 (2026-09-22) — S44 re-verify + community creation UI — NEW S49
+- **Build/Live:** No rebuild (same build as Pass 315/316/317, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **S44 re-verify (mute button):** Clicked "More options" → "Mute" on the Pass 315 Followers-visibility note on B. Menu closed, no confirmation, no UI state change (no "Muted" indicator), ii-a1's posts still appear in the feed. Also checked Settings page — no mute/block management UI. **S44 confirmed still open.**
+  2. **Community creation:** Clicked "+ Create a community" → filled Name="QA Pass 318 Community", Handle="qa-pass-318", Description="QA pass 318 community test" → clicked "Create community". Form closed. **The community was NOT created** — "My communities" tab shows "You don't own any communities yet", "All on this instance" shows "No communities on this instance yet", "Following" shows only the pre-existing `ii-a8-community`. **NEW DEFECT S49:** community creation is a silent no-op.
+  3. **Compose page:** No community selector — cannot post to a community.
+- **Result:** **1 new defect (S49).** S44 re-confirmed open. Open count: **S35 + S44 + S45 (partial) + S47 + S48 + S49 (6)**.
+- **Checkpoint:** Next: re-verify S44/S47/S48/S49 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 315 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers) + PLAN.md trim
 - **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's **second** S46 fix `a5d655e2` (merged `d5b50948`, alongside the first fix `2efadfbc`). Both instances healthy. New code confirmed deployed (`grep IsFollowersCollection` in Iris.Core.dll + Iris.Server.dll → 1 match each).
 - **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 315 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCN9MA0MMBS99BP4SVCP678G`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.
