@@ -575,6 +575,216 @@ public sealed class FeedServiceTests
         Assert.Empty(feed);
     }
 
+    // --- Phase 146: per-peer remote-follow circuit breaker (bounds re-probing a dead remote) -----
+
+    [Fact]
+    public async Task Feed_RemoteFollow_CircuitBreakerDeadPeer_StopsReprobingAfterThreshold()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var remote = Actor(RemoteHost, "bob");
+        var deadRemote = new PerPeerFeedCircuitBreaker(failureThreshold: 2, openDuration: TimeSpan.FromMinutes(5));
+        // The dead remote's outbox walk always yields nothing (no healthy outbox IRI is registered).
+        var countingClient = new CountingClient(healthyOutboxIri: null, healthyNoteIri: null);
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: countingClient,
+            circuitBreaker: deadRemote);
+
+        // Rebuild the feed three times (the feed cache is bypassed each time) and count how many times
+        // the dead remote's outbox is actually fetched over the wire.
+        await service.GetFeedAsync(alice, bypassCache: true);
+        await service.GetFeedAsync(alice, bypassCache: true);
+        await service.GetFeedAsync(alice, bypassCache: true);
+
+        // Build 1: 1 fetch (fails, count=1). Build 2: 1 fetch (fails, count=2 → circuit opens).
+        // Build 3: circuit open → the fetch is SKIPPED (no third probe of the dead peer).
+        Assert.Equal(2, countingClient.TotalFetchCount);
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_CircuitBreakerDeadPeer_RecoveredInHalfOpen()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var remote = Actor(RemoteHost, "bob");
+        // OpenDuration of 0: the circuit transitions to half-open immediately after opening, so a
+        // subsequent rebuild fires a single probe.
+        var deadRemote = new PerPeerFeedCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.Zero);
+        // The outbox IRI the feed fetches is the actor IRI + "/outbox" (the advertised outbox link).
+        var countingClient = new CountingClient(
+            healthyOutboxIri: $"https://{RemoteHost}/ap/v1/u/bob/outbox",
+            healthyNoteIri: $"https://{RemoteHost}/notes/r-1");
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: countingClient,
+            circuitBreaker: deadRemote);
+
+        // Build 1: the fetch returns a page (1 item) → the peer is healthy, circuit stays closed, the
+        // remote's content surfaces in the feed. (The feed item is the Create activity, so its IRI is
+        // the activity IRI, not the note IRI.)
+        var feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Single(feed);
+        Assert.Equal($"https://{RemoteHost}/notes/r-1/activity", IdOf(feed[0]));
+        Assert.Equal(1, countingClient.FetchCountFor($"https://{RemoteHost}/ap/v1/u/bob/outbox"));
+
+        // Build 2: still healthy, fetched again (circuit closed), content still surfaces.
+        feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Single(feed);
+        Assert.Equal(2, countingClient.FetchCountFor($"https://{RemoteHost}/ap/v1/u/bob/outbox"));
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_CircuitBreakerDisabledByDefault_FetchesEveryRebuild()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var remote = Actor(RemoteHost, "bob");
+        // The default (no breaker passed) is a no-op: a dead remote is re-probed on every rebuild (the
+        // pre-146 behavior), so the fetch count grows with every rebuild.
+        var countingClient = new CountingClient(healthyOutboxIri: null, healthyNoteIri: null);
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: countingClient,
+            circuitBreaker: null);
+
+        await service.GetFeedAsync(alice, bypassCache: true);
+        await service.GetFeedAsync(alice, bypassCache: true);
+        await service.GetFeedAsync(alice, bypassCache: true);
+
+        // No breaker: every rebuild fetches the dead remote's outbox.
+        Assert.Equal(3, countingClient.TotalFetchCount);
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_CircuitBreaker_IsPerHost_OtherPeersUnaffected()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var deadRemote = Actor(RemoteHost, "bob"); // host b.test
+        var healthyRemote = Actor("c.test", "carol"); // host c.test (a different peer)
+        // Only the healthy remote's outbox (c.test/outbox) yields content (a public Create for h-1); the
+        // dead remote's outbox (b.test/outbox) yields nothing. The dead host (b.test) opens its circuit
+        // after the first failing (empty) fetch; the healthy host (c.test) stays closed and is fetched on
+        // every rebuild. The two hosts have independent circuit state, so the healthy host is unaffected
+        // by the dead host's open circuit.
+        // The outbox IRIs the feed fetches are the actor IRIs + "/outbox".
+        var healthyClient = new CountingClient(
+            healthyOutboxIri: "https://c.test/ap/v1/u/carol/outbox",
+            healthyNoteIri: "https://c.test/notes/h-1");
+        var breaker = new PerPeerFeedCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(5));
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(alice, deadRemote).GetAwaiter().GetResult();
+                persistence.Follows.RecordFollowAsync(alice, healthyRemote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(iri =>
+            {
+                var actor = new Person { Id = iri.Value };
+                actor.Outbox = new Link { Href = new Uri($"{iri.Value}/outbox") };
+                return actor;
+            }),
+            client: healthyClient,
+            circuitBreaker: breaker);
+
+        // Build 1: the dead remote (b.test) fetches → yields nothing → its circuit opens (threshold 1).
+        // The healthy remote (c.test) fetches → yields the h-1 Create (activity IRI .../activity).
+        var feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Single(feed);
+        Assert.Equal("https://c.test/notes/h-1/activity", IdOf(feed[0]));
+        Assert.Equal(1, healthyClient.FetchCountFor("https://b.test/ap/v1/u/bob/outbox")); // dead fetched once
+        Assert.Equal(1, healthyClient.FetchCountFor("https://c.test/ap/v1/u/carol/outbox")); // healthy fetched once
+
+        // Build 2: the dead remote's circuit is open → skipped (no second probe of b.test); the healthy
+        // remote is fetched again (c.test is a different host, so its closed circuit is unaffected).
+        feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Single(feed);
+        Assert.Equal("https://c.test/notes/h-1/activity", IdOf(feed[0]));
+        Assert.Equal(1, healthyClient.FetchCountFor("https://b.test/ap/v1/u/bob/outbox")); // still 1 (skipped)
+        Assert.Equal(2, healthyClient.FetchCountFor("https://c.test/ap/v1/u/carol/outbox")); // healthy fetched again
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_CircuitBreakerDeadPeer_FirstRebuildStillServesDeliveredContent()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var remote = Actor(RemoteHost, "bob");
+        var deadRemote = new PerPeerFeedCircuitBreaker(failureThreshold: 1, openDuration: TimeSpan.FromMinutes(5));
+        var countingClient = new CountingClient(healthyOutboxIri: null, healthyNoteIri: null);
+        // Seed a delivered remote object attributed to the dead remote (the S25 half: content received
+        // via the inbox, stored in the object store). On the FIRST rebuild the circuit is still closed,
+        // so the remote follow is permitted: the live outbox walk yields nothing (the dead peer), but the
+        // local delivered-content read runs and surfaces the already-received note. That same rebuild
+        // records the failure and opens the circuit for subsequent rebuilds.
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                SeedActor(p, alice, "Alice"); // alice is local (the feed owner)
+                p.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+                // Seed a delivered remote object attributed to the dead remote (the S25 half). The
+                // in-memory store keys ListByActorAsync on the object's attributedTo[0], so the note
+                // must name the remote as its author to be listed for the dead follow. It is public
+                // (to: Public) so the feed's visibility filter surfaces it for alice.
+                var deliveredIri = "https://" + RemoteHost + "/notes/delivered-1";
+                p.Objects.PutObjectAsync(new Note
+                {
+                    Id = deliveredIri,
+                    Content = ["delivered"],
+                    AttributedTo = [new Link { Href = new Uri(remote.Value) }],
+                    To = [new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
+                }).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: countingClient,
+            circuitBreaker: deadRemote);
+
+        // Build 1: the circuit is closed, so the remote follow is permitted. The live outbox walk yields
+        // nothing (the dead peer), but the local delivered-content read runs and surfaces the note as a
+        // synthetic Create (activity IRI = the note IRI). This rebuild opens the circuit.
+        var feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Single(feed);
+        Assert.Equal($"https://{RemoteHost}/notes/delivered-1", IdOf(feed[0]));
+        Assert.Equal(1, countingClient.TotalFetchCount);
+
+        // Build 2: the circuit is now open → the remote follow (both the live walk AND the delivered
+        // read) is skipped entirely. The dead peer is not re-probed, and the feed no longer surfaces the
+        // delivered note (it is held in the object store and re-surfaces once the circuit half-opens and
+        // a probe succeeds again). This is the intended trade-off of bounding re-probes: while a peer is
+        // open, its follow contributes nothing rather than being re-fetched on every 30-s rebuild.
+        feed = await service.GetFeedAsync(alice, bypassCache: true);
+        Assert.Empty(feed);
+        Assert.Equal(1, countingClient.TotalFetchCount); // no new probe of the dead peer
+    }
+
     [Fact]
     public async Task Feed_RemoteFollow_DocumentFetchFails_FallsBackToConventionalOutbox()
     {
@@ -2012,13 +2222,16 @@ public sealed class FeedServiceTests
         InMemoryPersistenceProvider persistence,
         IActorDocumentFetcher? actorDocs = null,
         IActivityPubClient? client = null,
-        FeedOptions? options = null)
+        FeedOptions? options = null,
+        IFeedCircuitBreaker? circuitBreaker = null)
     {
         actorDocs ??= new StubActorDocumentFetcher(_ => null);
         client ??= new StubClient(Pages());
         var localActors = new LocalOnlyResolver(persistence);
         return (
-            new FeedService(persistence, localActors, actorDocs, client, Options.Create(options ?? new FeedOptions())),
+            new FeedService(
+                persistence, localActors, actorDocs, client, Options.Create(options ?? new FeedOptions()),
+                circuitBreaker: circuitBreaker),
             persistence);
     }
 
@@ -2140,6 +2353,8 @@ public sealed class FeedServiceTests
     }
 
     private static Link Item(string suffix) => new() { Href = new Uri($"https://{RemoteHost}/notes/{suffix}") };
+
+    private static Link Item(string host, string suffix) => new() { Href = new Uri($"https://{host}/notes/{suffix}") };
 
     // --- Stubs -----------------------------------------------------------------------
 
@@ -2449,6 +2664,146 @@ public sealed class FeedServiceTests
 
         private static async IAsyncEnumerable<T> EmptyAsync<T>(
             [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.CompletedTask.ConfigureAwait(false);
+            yield break;
+        }
+    }
+
+    /// <summary>
+    /// An <see cref="IActivityPubClient"/> that counts how many times <see cref="GetCollectionAsync"/> is
+    /// called and yields a single page of public <c>Create</c> activities for the healthy outbox IRI (and
+    /// nothing for the dead one). Used to verify the Phase 146 feed circuit breaker stops re-probing an
+    /// open peer (the dead peer's fetch count stays flat while its circuit is open, then a single probe
+    /// fires in half-open), while a healthy peer is fetched on every rebuild. The yielded items are public
+    /// <c>Create</c> activities (the shape <c>GetDeliveredContentAsync</c> wraps remote content into), so
+    /// they survive the feed's visibility filter for an anonymous request. All other client methods are
+    /// inert.
+    /// </summary>
+    private sealed class CountingClient : IActivityPubClient
+    {
+        private readonly string? _healthyOutboxIri;
+        private readonly string? _healthyNoteIri;
+        private readonly object _gate = new();
+        private readonly Dictionary<string, int> _fetchesByOutbox = new();
+
+        public CountingClient(string? healthyOutboxIri, string? healthyNoteIri)
+        {
+            _healthyOutboxIri = healthyOutboxIri;
+            _healthyNoteIri = healthyNoteIri;
+        }
+
+        public int TotalFetchCount
+        {
+            get { lock (_gate) { return _fetchesByOutbox.Values.Sum(); } }
+        }
+
+        public int FetchCountFor(string outboxIri)
+        {
+            lock (_gate)
+            {
+                return _fetchesByOutbox.TryGetValue(outboxIri, out var n) ? n : 0;
+            }
+        }
+
+        public async IAsyncEnumerable<CollectionPage> GetCollectionAsync(
+            Iri collectionId,
+            CollectionQuery? query = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            lock (_gate)
+            {
+                _fetchesByOutbox[collectionId.Value] = _fetchesByOutbox.GetValueOrDefault(collectionId.Value) + 1;
+            }
+
+            await Task.CompletedTask.ConfigureAwait(false);
+            // Only the healthy outbox IRI yields content; every other (dead) outbox yields nothing.
+            if (_healthyOutboxIri is { } healthy && collectionId.Value == healthy && _healthyNoteIri is { } noteIri)
+            {
+                var uri = new Uri(collectionId.Value);
+                var authorIri = $"https://{uri.Authority}/ap/v1/u/author";
+                var create = new Create
+                {
+                    Id = $"{noteIri}/activity",
+                    Actor = [new Link { Href = new Uri(authorIri) }],
+                    Object = [new Note
+                    {
+                        Id = noteIri,
+                        Content = ["remote note"],
+                        AttributedTo = [new Link { Href = new Uri(authorIri) }],
+                        To = [new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
+                    }],
+                };
+                var page = new OrderedCollectionPage
+                {
+                    Id = collectionId.Value,
+                    Items = [create],
+                };
+                yield return CollectionPageFactory.FromOrderedCollectionPage(page)!;
+            }
+        }
+
+        public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default) => Task.FromResult<IObject?>(null);
+        public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default) => Task.FromResult<Actor?>(null);
+        public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default) => Task.FromResult<NodeInfo?>(null);
+        public Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> AcceptAsync(Iri actorId, Iri followIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> SetManuallyApprovesMembersAsync(Iri actorIri, bool enabled, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> SetManuallyApprovesFollowersAsync(Iri actorIri, bool enabled, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, string? description = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri iri, CancellationToken ct = default) => Task.FromResult<LemmyPostScore?>(null);
+        public Task<DeliveryResult> DislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UndislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> PostQuestionAsync(Iri actorId, string content, IEnumerable<string> options, DateTime? endsAt = null, bool multiple = false, IEnumerable<Iri>? to = null, IEnumerable<Iri>? cc = null, IEnumerable<Iri>? mentions = null, IEnumerable<string>? hashtags = null, Func<string, string?>? hashtagHrefFactory = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> PostReplyAsync(Iri actorId, Iri parentIri, string content, IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null, IEnumerable<string>? cc = null, Iri? conversationIri = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+            Iri actorId,
+            Iris.Client.Pipeline.ProxyCredentials credentials,
+            CollectionQuery? query = null,
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield break;
+        }
+
+        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent(string.Empty) });
+        public IAsyncEnumerable<IObjectOrLink> GetCollectionItemsAsync(Iri collectionId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetCommunityFeedAsync(Iri communityId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(Iri objectIri, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetLikesAsync(Iri objectIri, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetSharesAsync(Iri objectIri, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> SearchAsync(Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<CollectionPage> SearchPagedAsync(Iri instanceBase, string? query = null, SearchOptions? options = null, CancellationToken ct = default) => EmptyAsync<CollectionPage>(ct);
+        public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(0, false, ""));
+        public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(0, false, ""));
+        public Task<DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(0, false, ""));
+        public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(0, false, ""));
+        public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default) => EmptyAsync<IObjectOrLink>(ct);
+        public void Dispose() { }
+
+        private static async IAsyncEnumerable<T> EmptyAsync<T>([EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.CompletedTask.ConfigureAwait(false);
             yield break;

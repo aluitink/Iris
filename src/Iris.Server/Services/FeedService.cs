@@ -62,6 +62,7 @@ public sealed class FeedService : IFollowFeedService
     private readonly IActivityPubClient _client;
     private readonly FeedOptions _options;
     private readonly IModerationStore? _moderation;
+    private readonly IFeedCircuitBreaker _circuitBreaker;
     private readonly ILogger<FeedService> _logger;
 
     /// <summary>
@@ -77,6 +78,10 @@ public sealed class FeedService : IFollowFeedService
     /// <param name="moderation">The moderation store (F-07): when present, a follow the actor has
     /// <em>blocked</em> or <em>muted</em> is excluded from the feed. Null disables block/mute filtering
     /// (every follow is merged).</param>
+    /// <param name="circuitBreaker">The per-peer circuit breaker (Phase 146): when a remote follow's
+    /// circuit is open, its fetch is skipped (the peer is assumed dead) instead of being re-probed on
+    /// every rebuild. Null disables circuit breaking (every remote follow is fetched on every rebuild —
+    /// the pre-146 behavior).</param>
     /// <param name="logger">The logger for feed observability (per-follow fan-out timing, item count
     /// by type, cache hit/miss). Null falls back to <see cref="NullLogger{T}"/>.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
@@ -87,6 +92,7 @@ public sealed class FeedService : IFollowFeedService
         IActivityPubClient client,
         IOptions<FeedOptions> optionsAccessor,
         IModerationStore? moderation = null,
+        IFeedCircuitBreaker? circuitBreaker = null,
         ILogger<FeedService>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
@@ -100,6 +106,7 @@ public sealed class FeedService : IFollowFeedService
         _client = client;
         _options = optionsAccessor.Value;
         _moderation = moderation;
+        _circuitBreaker = circuitBreaker ?? DisabledFeedCircuitBreaker.Instance;
         _logger = logger ?? NullLogger<FeedService>.Instance;
     }
 
@@ -291,6 +298,8 @@ public sealed class FeedService : IFollowFeedService
                 var followSw = Stopwatch.StartNew();
                 List<IObjectOrLink> items;
                 var isLocal = false;
+                var skippedByCircuit = false;
+                var remoteFetchFailed = false;
                 try
                 {
                     isLocal = await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false);
@@ -301,25 +310,71 @@ public sealed class FeedService : IFollowFeedService
                     }
                     else
                     {
-                        // A remote follow's feed is the union of (a) its outbox walked over the wire and
-                        // (b) the content this instance has already received in its inbox from that author
-                        // (stored in the object store by the CreateActivityHandler's StoreEmbeddedObjectAsync
-                        // when a remote Create was delivered to a local recipient — S25: the delivered post
-                        // must surface in the follower's home feed even when the live outbox walk yields
-                        // nothing, e.g. a broken/unreachable remote outbox or a fresh delivery not yet
-                        // reflected in the walked page). De-duplicated by IRI + content object in
-                        // TruncateDedup, so an item present in both is rendered once.
-                        items = new List<IObjectOrLink>(await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false));
-                        items.AddRange(await GetDeliveredContentAsync(followIri, ct).ConfigureAwait(false));
+                        // Phase 146: consult the per-peer circuit breaker before probing a remote
+                        // follow. When the peer's circuit is open (dead — DNS/connection refused, or a
+                        // half-open probe already in flight) the follow contributes nothing for this
+                        // rebuild — both the live outbox walk AND the local delivered-content read are
+                        // skipped (the delivered read is part of the per-follow work that is gated on the
+                        // circuit, so an open peer's already-received content is held rather than
+                        // re-surfaced until the circuit half-opens and a probe succeeds again). This
+                        // stops re-probing a dead instance on every 30-s feed rebuild; the trade-off is
+                        // that a dead peer's delivered content is paused while its circuit is open.
+                        var permitted = await _circuitBreaker.TryAcquireAsync(followIri, ct).ConfigureAwait(false);
+                        if (!permitted)
+                        {
+                            skippedByCircuit = true;
+                            items = [];
+                        }
+                        else
+                        {
+                            // A remote follow's feed is the union of (a) its outbox walked over the wire and
+                            // (b) the content this instance has already received in its inbox from that author
+                            // (stored in the object store by the CreateActivityHandler's StoreEmbeddedObjectAsync
+                            // when a remote Create was delivered to a local recipient — S25: the delivered post
+                            // must surface in the follower's home feed even when the live outbox walk yields
+                            // nothing, e.g. a broken/unreachable remote outbox or a fresh delivery not yet
+                            // reflected in the walked page). De-duplicated by IRI + content object in
+                            // TruncateDedup, so an item present in both is rendered once.
+                            var outbox = await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
+                            items = new List<IObjectOrLink>(outbox);
+                            items.AddRange(await GetDeliveredContentAsync(followIri, ct).ConfigureAwait(false));
+                            // Phase 146: a remote fetch that returned nothing and did not throw is treated
+                            // as a failure for the circuit breaker (a dead peer's outbox resolves to no
+                            // items), so a dead instance opens its circuit instead of being re-probed on
+                            // every rebuild. A healthy remote that legitimately has an empty outbox is the
+                            // rare case (the breaker is opt-in and thresholded); the open duration bounds
+                            // the cost. A fetch that threw is a hard failure too.
+                            remoteFetchFailed = outbox.Count == 0;
+                        }
                     }
                 }
                 catch
                 {
                     // A single broken follow must not fail the whole feed (147.2).
                     items = [];
+                    if (!isLocal)
+                    {
+                        remoteFetchFailed = true;
+                    }
                 }
                 followSw.Stop();
-                return (Items: items, IsLocal: isLocal, ElapsedMs: followSw.ElapsedMilliseconds);
+
+                // Record the outcome for the remote follow's peer (local follows are never tracked).
+                // The acquire was only called when the follow was remote and permitted, so the
+                // success/failure record is balanced with it.
+                if (!isLocal && !skippedByCircuit)
+                {
+                    if (remoteFetchFailed)
+                    {
+                        await _circuitBreaker.RecordFailureAsync(followIri, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _circuitBreaker.RecordSuccessAsync(followIri, ct).ConfigureAwait(false);
+                    }
+                }
+
+                return (Items: items, IsLocal: isLocal, ElapsedMs: followSw.ElapsedMilliseconds, SkippedByCircuit: skippedByCircuit);
             }));
 
         // Merge in the deterministic IRI order of `eligible` (matches the previous sequential
@@ -338,6 +393,7 @@ public sealed class FeedService : IFollowFeedService
         // the per-follow determination captured in the fan-out above (no redundant store lookups).
         var localCount = 0;
         var remoteCount = 0;
+        var skippedByCircuit = 0;
         var slowestFollowMs = 0L;
         for (var i = 0; i < eligible.Count; i++)
         {
@@ -348,6 +404,11 @@ public sealed class FeedService : IFollowFeedService
             else
             {
                 remoteCount++;
+            }
+
+            if (perFollowTimed[i].SkippedByCircuit)
+            {
+                skippedByCircuit++;
             }
 
             slowestFollowMs = Math.Max(slowestFollowMs, perFollowTimed[i].ElapsedMs);
@@ -362,9 +423,9 @@ public sealed class FeedService : IFollowFeedService
 
         _logger.LogInformation(
             "Feed built for {ActorIri}: {TotalMs} ms, {Follows} follows ({Local} local, {Remote} remote), " +
-            "{Items} items, slowest follow {SlowestMs} ms, types: {Types}",
+            "{Items} items, slowest follow {SlowestMs} ms, {SkippedByCircuit} follows skipped (circuit open), types: {Types}",
             actorIri.Value, sw.ElapsedMilliseconds, eligible.Count, localCount, remoteCount,
-            result.Count, slowestFollowMs, string.Join(", ", typeCounts.Select(kv => $"{kv.Key}={kv.Value}")));
+            result.Count, slowestFollowMs, skippedByCircuit, string.Join(", ", typeCounts.Select(kv => $"{kv.Key}={kv.Value}")));
 
         return result;
     }
@@ -907,4 +968,31 @@ public sealed class FeedService : IFollowFeedService
         // is the one that renders the content (and the server-rendered engagement counters) in place.
         return (objIri, first is IObject);
     }
+}
+
+/// <summary>
+/// A no-op <see cref="IFeedCircuitBreaker"/>: every remote follow's fetch is always permitted and the
+/// record methods are no-ops. This is the default when the feed circuit breaker is not enabled
+/// (<see cref="FeedRemoteFollowCircuitBreakerOptions.FailureThreshold"/> is 0), preserving the pre-146
+/// behavior (every remote follow is fetched on every rebuild).
+/// </summary>
+internal sealed class DisabledFeedCircuitBreaker : IFeedCircuitBreaker
+{
+    internal static readonly DisabledFeedCircuitBreaker Instance = new();
+
+    /// <summary>
+    /// Initializes a new no-op circuit breaker.
+    /// </summary>
+    public DisabledFeedCircuitBreaker()
+    {
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> TryAcquireAsync(Iri followIri, CancellationToken ct) => Task.FromResult(true);
+
+    /// <inheritdoc/>
+    public Task RecordSuccessAsync(Iri followIri, CancellationToken ct) => Task.CompletedTask;
+
+    /// <inheritdoc/>
+    public Task RecordFailureAsync(Iri followIri, CancellationToken ct) => Task.CompletedTask;
 }
