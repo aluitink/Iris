@@ -1423,7 +1423,7 @@
             }
             else if (CommunityIri is { } community)
             {
-                result = await PostToCommunityAsync(client, actorId, community, media, mentionArg, hashtagArg, IsSensitive, SensitiveSummary);
+                result = await PostToCommunityAsync(client, actorId, community, media, mentionArg, hashtagArg, IsSensitive, SensitiveSummary, ContentType, hashtagHref);
             }
             else if (ContentType == "Poll")
             {
@@ -1550,11 +1550,11 @@
     /// addressed to, so it would never observe an activity delivered to the author's own outbox. The
     /// post's <c>attributedTo</c> carries both the author and the community in either case.
     /// </summary>
-    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, bool sensitive = false, string? summary = null)
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, bool sensitive = false, string? summary = null, string contentType = "Note", Func<string, string?>? hashtagHrefFactory = null)
     {
         return IsRemoteCommunity
-            ? await PostToRemoteCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary)
-            : await PostToLocalCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary);
+            ? await PostToRemoteCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary, contentType)
+            : await PostToLocalCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary, contentType, hashtagHrefFactory);
     }
 
     /// <summary>
@@ -1573,7 +1573,7 @@
     /// outbox instead keeps all posts on the same-origin path; the server (not bound by the browser's
     /// CSP) performs the cross-instance cross-post delivery.
     /// </remarks>
-    private async Task<DeliveryResult> PostToRemoteCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
+    private async Task<DeliveryResult> PostToRemoteCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary, string contentType = "Note")
     {
         var content = Content.Trim();
         var html = Markdown.ToHtml(content);
@@ -1648,47 +1648,119 @@
     /// outbox (the standard community-post path; the server's <c>Create</c> handler routes it into the
     /// community's members' outboxes).
     /// </summary>
-    private async Task<DeliveryResult> PostToLocalCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
+    private async Task<DeliveryResult> PostToLocalCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary, string contentType = "Note", Func<string, string?>? hashtagHrefFactory = null)
     {
         var followersIri = communityIri.FollowersOf();
-        var note = new KristofferStrube.ActivityStreams.Note
+        var attributedTo = new List<KristofferStrube.ActivityStreams.IObjectOrLink>
         {
-            AttributedTo =
-            [
-                new Link { Href = new Uri(actorId.Value) },
-                new Link { Href = new Uri(communityIri.Value) }
-            ],
-            To =
-            [
-                new Link { Href = new Uri(followersIri.Value) },
-                new Link { Href = new Uri(AsPublic.Value) }
-            ],
-            Content = [Content.Trim()],
-            Published = DateTime.UtcNow
+            new Link { Href = new Uri(actorId.Value) },
+            new Link { Href = new Uri(communityIri.Value) }
+        };
+        var to = new List<KristofferStrube.ActivityStreams.IObjectOrLink>
+        {
+            new Link { Href = new Uri(followersIri.Value) },
+            new Link { Href = new Uri(AsPublic.Value) }
         };
 
-        if (sensitive)
+        if (contentType == "Poll")
         {
-            note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
-            if (summary is { Length: > 0 } s)
+            var options = GetValidPollOptions();
+            if (options is null)
             {
-                note.Summary = [s];
+                return new DeliveryResult((int)HttpStatusCode.BadRequest, false, string.Empty);
             }
-        }
 
-        if (media.Count > 0)
+            var question = string.IsNullOrWhiteSpace(PollQuestion) ? Content.Trim() : PollQuestion.Trim();
+            var pollMentions = await DetectMentionsAsync(question, actorId);
+            var pollHashtags = DetectHashtags(question);
+            var endsAt = DateTime.UtcNow.AddMinutes(PollDurationMinutes);
+
+            return await client.PostQuestionAsync(
+                actorId,
+                question,
+                options,
+                endsAt: endsAt,
+                multiple: PollMultiple,
+                to: to.Where(l => l is KristofferStrube.ActivityStreams.Link).Select(l => new Iri(((KristofferStrube.ActivityStreams.Link)l).Href?.AbsoluteUri ?? string.Empty)).ToList(),
+                cc: null,
+                mentions: pollMentions.Count > 0 ? pollMentions : null,
+                hashtags: pollHashtags.Count > 0 ? pollHashtags : null,
+                hashtagHrefFactory: hashtagHrefFactory);
+        }
+        else if (contentType == "Article")
         {
-            note.Attachment = BuildCommunityAttachments(media);
-        }
+            var article = new Article
+            {
+                AttributedTo = attributedTo,
+                To = to,
+                Content = [Content.Trim()],
+                Published = DateTime.UtcNow
+            };
 
-        var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
-        if (tags is { Count: > 0 })
+            if (sensitive)
+            {
+                article.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                article.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (summary is { Length: > 0 } s)
+                {
+                    article.Summary = [s];
+                }
+            }
+
+            if (media.Count > 0)
+            {
+                article.Attachment = BuildCommunityAttachments(media);
+            }
+
+            var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
+            if (tags is { Count: > 0 })
+            {
+                article.Tag = tags;
+            }
+
+            var create = new Create
+            {
+                Id = $"{actorId.Value.TrimEnd('/')}/creates/{Guid.NewGuid():N}",
+                Actor = [new Link { Href = new Uri(actorId.Value) }],
+                Object = [article],
+                To = to
+            };
+
+            return await client.DeliverAsync(actorId.OutboxOf(), create);
+        }
+        else
         {
-            note.Tag = tags;
-        }
+            var note = new KristofferStrube.ActivityStreams.Note
+            {
+                AttributedTo = attributedTo,
+                To = to,
+                Content = [Content.Trim()],
+                Published = DateTime.UtcNow
+            };
 
-        return await client.PostNoteAsync(actorId, note);
+            if (sensitive)
+            {
+                note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (summary is { Length: > 0 } s)
+                {
+                    note.Summary = [s];
+                }
+            }
+
+            if (media.Count > 0)
+            {
+                note.Attachment = BuildCommunityAttachments(media);
+            }
+
+            var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
+            if (tags is { Count: > 0 })
+            {
+                note.Tag = tags;
+            }
+
+            return await client.PostNoteAsync(actorId, note);
+        }
     }
 
     /// <summary>
