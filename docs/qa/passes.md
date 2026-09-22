@@ -38,6 +38,14 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 - **Result:** **0 new defects.** Open count unchanged: **S35 + S44 + S45 (partial) + S47 (4)**.
 - **Checkpoint:** Next: re-verify S44 once dev provides a fix, or explore remaining untested areas (e.g., search with visibility-scoped content, boost of Followers-visibility note, community post visibility).
 
+## Pass 317 (2026-09-22) — Boost of Followers-visibility note + search with hyphenated terms — NEW S48
+- **Build/Live:** No rebuild (same build as Pass 315/316, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Boost of Followers-visibility note:** Clicked Boost on the Pass 315 Followers-visibility note on B. Boost button pressed (count 0→1). After federation, the note on A shows Boost count 1 + "1 boost" label. **0 console errors.** Boost delivery works for Followers-visibility notes.
+  2. **Search with visibility-scoped content:** Searched for `QA Pass 315` on B → 0 results. Searched for `II-S36` (a term that appears in 19 stored notes on B) → 0 results. Searched for `fresh B post` (non-hyphenated) → 4 results. **NEW DEFECT S48:** hyphenated terms return 0 results due to the `simple` tsconfig not splitting on hyphens.
+- **Result:** **1 new defect (S48).** Open count: **S35 + S44 + S45 (partial) + S47 + S48 (5)**.
+- **Checkpoint:** Next: re-verify S44 once dev provides a fix. S48 needs a dev fix (search config or query method).
+
 ## Pass 314 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers)
 - **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's S46 fix `2efadfbc` (merged `ef2d24df`). Both instances healthy. New code confirmed deployed (`strings Iris.Server.dll | grep IsVisibleToAsync` → 9 matches).
 - **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 314 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCMZMMD6JJA5KQWZZPWG5YYC`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.
