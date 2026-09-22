@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 294 (2026-09-22) — "Peers" tab on community detail page (Lemmy-style peering) — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) `/c/ii-a8-community`: **(a)** "Peers" tab: shows "Peers (1)" + description "Actors this community follows. Their content appears in the community feed — the community 'replicates' the followed actors (Lemmy-style peering)." + a "Follow a community or actor" form (textbox with placeholder "!community@host or user@host, or a full IRI (https://…)", Look up + Follow as this community + Refresh buttons) + 1 peer: **ii-b1** (remote actor from B instance) with an "Unfollow" button. 0 console errors.
+- **Result:** **0 new defects.** "Peers" tab works correctly: shows the followed actors (ii-b1) with Unfollow button, and provides a form to follow new communities/actors (Lemmy-style peering). Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** "Peers" tab verified (Lemmy-style peering: shows followed actors + follow form). Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 293 (2026-09-22) — "Require approval for join requests" feature (community moderation) — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/c/ii-a8-community`: **(a)** "Edit community" → checked "Require approval for join requests" → Save. **Server doc confirmed updated** (`GET /ap/v1/c/ii-a8-community` → `manuallyApprovesMembers: true`). DB document also confirms `manuallyApprovesMembers: True`. **(b)** Attempted to test the join flow from B instance (ii-b1) via API: `POST /api/follow?target=…/c/ii-a8-community` → HTTP 400 (login failed). Investigated: both instances' `/api/auth/login` endpoint returns "An unhandled error has occurred" (Blazor Server endpoint, not a REST API — expected behavior, not a defect). UI login works correctly (verified via browser in previous passes). **(c)** The "Require approval for join requests" feature works correctly: setting is saved to the `manuallyApprovesMembers` field in the server doc + DB.
