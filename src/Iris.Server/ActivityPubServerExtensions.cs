@@ -11396,6 +11396,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         LocalCollectionPageCache collectionCache,
+        IFollowFeedService followFeed,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -11412,6 +11413,33 @@ public static class ActivityPubServerExtensions
         if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        // S40: the community-creation path (S21, RecordCreateLocalAsync) records an auto-follow edge from
+        // each owner (the Group's AttributedTo) to the community — an EdgeKind.Follow (kind 0) edge in the
+        // Follows store — so the community appears in the owner's Following tab. DeleteCommunityAsync
+        // removes the community's own rows and community-scoped edges (and, in the EF store, the inbound
+        // Follow edges at the SQL level) but the in-memory/file-backed stores do NOT reach the Follows
+        // store, so the inbound Follow edge is orphaned here (pointing at a Group whose actor row is gone):
+        // the deleted community lingers in the owner's /following collection and Following tab (with a
+        // 404 re-fetch). Remove it explicitly in the handler — provider-agnostic — for each owner.
+        // (AttributedTo is guaranteed non-empty here: VerifyCommunityCreatorAsync above returns false —
+        // and the handler 403s — unless at least one AttributedTo resolves to the authenticated creator.)
+        foreach (var attr in community.AttributedTo!)
+        {
+            if (attr.ResolveObjectIri() is not { } ownerIri)
+            {
+                continue;
+            }
+
+            await persistence.Follows.RemoveFollowAsync(ownerIri, communityIri, ct).ConfigureAwait(false);
+
+            // Mirror the creation-path invalidation (RecordCreateLocalAsync): the removed follow changes the
+            // owner's `following` collection and home feed, so drop the owner's cached `following` page-1
+            // and feed cache — otherwise a non-?refresh read serves the stale page (still listing the
+            // deleted community) until the TTL lapses.
+            InvalidateLocalCollectionPage(collectionCache, ownerIri, "following");
+            followFeed.InvalidateActorFeedCache(ownerIri, ct);
         }
 
         await persistence.Communities.DeleteCommunityAsync(communityIri, ct).ConfigureAwait(false);
