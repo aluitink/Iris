@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 313 (2026-09-22) — Cross-instance Direct (DM) delivery + S45 notification facet — NEW S47
+- **Build/Live:** `47ecc674` (no `src/` changes since Pass 312 → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed in as ii-a1@A → composed a **Direct**-visibility note `QA Pass 313 Direct DM test: hello @ii-b1 this is a direct message` → posted (HTTP 202, Create IRI `06GCMW0J275AMV1YXTPZJJCHYR`, Note IRI `06GCMW0J275AMV1YXTPZJJCHYW`). Waited 10 s for federation.
+  - **Delivery:** The DM **was delivered** to ii-b1@B's notifications ("ii-a1 posted", 2m ago). The Create's `cc` correctly names ii-b1@B.
+  - **Feed exclusion (correct):** The DM does NOT appear in ii-b1@B's home feed or ii-a2@A's home feed.
+  - **AP URL broken (NEW S47):** `GET /ap/v1/u/ii-a1/notes/…` → **404** for both the author (ii-a1@A, Basic auth) and the recipient (ii-b1@B, Basic auth on B). The Note IS stored in both A's and B's `Objects` tables (DB confirmed). The WASM UI **does** render the DM on the object-detail page (via the local object store, bypassing the AP endpoint's VisibilityFilter).
+  - **Root cause of S47:** The Note's `to`/`cc` arrays are **incorrect** for a Direct post — they include the **followers collection** (`…/ii-a1/followers`) + the truncated mention IRI (`…/u/ii`), NOT the recipient's IRI (ii-b1@B). The VisibilityFilter denies access because the recipient is not in `to`/`cc`. The Create's audience is correct (`cc: ii-b1@B`), but the Note's audience is wrong — a different code path.
+  - **S45 new facet:** The truncated mention IRI (`…/u/ii`) manifests in the **notification's "To" label** ("To ii" → `/ap/v1/u/ii`) and the **object-detail page's "To" label** ("To ii" → `/ap/v1/u/ii`), not just in the content HTML + `tag` array.
+  - **0 console errors.** Test DM deleted after verification.
+- **Result:** **NEW S47 (S2, data-visibility)** — Direct-visibility post not accessible via AP object URL (404 for author + recipient) due to incorrect `to`/`cc` arrays (followers collection instead of recipient IRI). **S45 broadened** — the truncated mention IRI also manifests in the notification "To" label + object-detail "To" label. Open count: **S35 + S44 + S45 (partial) + S46 + S47 (5)**.
+- **Checkpoint:** S47 documented. Open: S35 (operator-blocked) + S44 (dev-owned, S3) + S45 (partial — compose UI facet, S2) + S46 (dev-owned, S2) + S47 (new, S2). Next: explore remaining untested areas (long-content posts, community cross-instance interactions), or re-verify S44/S46/S47 once dev fix builds land.
+
 ## Pass 312 (2026-09-22) — S45 re-verification (hyphenated @mention) — S45 PARTIALLY FIXED
 - **Build/Live:** `47ecc674` (carrying dev1 S45 fix `03b9c90d`, merged to main). QA stack rebuilt with `--no-cache` (the standard `up -d --build` was using a stale Docker buildkit cache that did not pick up the S45 source changes). Both instances healthy.
 - **Explored:** **(a) Pre-no-cache rebuild:** Composed `@ii-a2 hello` → posted. Object-detail: truncated link `@ii` (→ `/ap/v1/u/ii`) + literal `-a2`. Stored `tag`: `["…/u/ii"]`. Old behavior. **(b) Post-no-cache rebuild (fresh context):** Composed `@ii-a2 hello` → posted. Object-detail: mention renders as **plain text** (no link). Stored content: plain text (no `<a>` tag). Stored `tag`: `["…/u/ii"]` (still truncated). The regex fix is live (confirmed via `strings` on both `Iris.Core.dll` + `Iris.Core.x7aeavznkg.wasm`), but the compose UI's mention resolution (separate project, not in this repo) still truncates the handle → `MentionLinkify.Linkify` cannot match → no link. **0 console errors.** Both test posts deleted.
