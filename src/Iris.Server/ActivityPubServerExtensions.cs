@@ -526,6 +526,17 @@ public static class ActivityPubServerExtensions
         // outbox over the wire) — the same instance the IRemoteCollectionFetcher uses (a real
         // HttpClientHandler transport, signed as the instance actor).
         services.TryAddSingleton<FeedOptions>(_ => new FeedOptions());
+        services.TryAddSingleton<FeedRemoteFollowCircuitBreakerOptions>(_ => new FeedRemoteFollowCircuitBreakerOptions());
+        // Phase 146: the per-peer remote-follow circuit breaker. Enabled (a real PerPeerFeedCircuitBreaker)
+        // only when a host opts in with FailureThreshold > 0; otherwise a no-op (the pre-146 behavior —
+        // every remote follow is fetched on every rebuild).
+        services.TryAddSingleton<IFeedCircuitBreaker>(sp =>
+        {
+            var cb = sp.GetRequiredService<IOptions<FeedRemoteFollowCircuitBreakerOptions>>().Value;
+            return cb.FailureThreshold > 0
+                ? new PerPeerFeedCircuitBreaker(cb.FailureThreshold, cb.OpenDuration)
+                : (IFeedCircuitBreaker)new DisabledFeedCircuitBreaker();
+        });
         services.TryAddSingleton<IFollowFeedService>(sp =>
         {
             var factory = sp.GetRequiredService<IActivityPubClientFactory>();
@@ -564,6 +575,9 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IOptions<FeedOptions>>(),
                 // F-07 (apply the block edge): a follow the actor has blocked is excluded from its feed.
                 sp.GetRequiredService<IPersistenceProvider>().Moderation,
+                // Phase 146: the per-peer remote-follow circuit breaker (bounds re-probing of a dead
+                // remote on the feed's inbound fetch path).
+                sp.GetRequiredService<IFeedCircuitBreaker>(),
                 // Phase 146 feed observability: structured logging for feed build latency, follow counts,
                 // and item count by type.
                 sp.GetRequiredService<ILogger<FeedService>>());
@@ -968,6 +982,10 @@ public static class ActivityPubServerExtensions
         if (feedSection.Exists())
         {
             services.Configure<FeedOptions>(feedSection);
+            // Phase 146: the per-peer remote-follow circuit breaker (bounds re-probing of a dead remote
+            // on the feed's inbound fetch path). Bound from Iris:Feed:RemoteFollowCircuitBreaker when
+            // present; otherwise the default (FailureThreshold 0 = disabled, the pre-146 behavior).
+            services.Configure<FeedRemoteFollowCircuitBreakerOptions>(feedSection.GetSection("RemoteFollowCircuitBreaker"));
         }
 
         var healthSection = configuration.GetSection("Iris:Health");
