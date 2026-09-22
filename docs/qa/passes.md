@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 300 (2026-09-22) — Remote actor profile page (/actor?iri=…) — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1` (remote actor from B instance): **(a)** **Profile header**: profile banner, avatar, handle "ii-b1", Block/Mute/Report buttons + "Unfollow" button (correct — I'm following ii-b1). **(b)** **Posts tab**: shows a list of posts from ii-b1, including boosted posts (from ii-a1), original posts, and replies (with "In reply to" links). Each post has Like/Boost/Reply buttons + "More options". "Load more" button at the bottom. **(c)** **Followers tab**: shows a list of followers (ii-a1, ii-a2) with their stats (posts, following, followers) + Follow/Unfollow buttons. **(d)** **Following tab**: shows a list of actors that ii-b1 is following (ii-a8-community, ii-a1) with their stats + Follow/Unfollow buttons. 0 console errors throughout.
+- **Result:** **0 new defects.** Remote actor profile page works correctly — Posts, Followers, and Following tabs all display the correct data. Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** Remote actor profile page verified (Posts, Followers, Following tabs all work correctly). Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 299 (2026-09-22) — /search edge cases (non-existent post, special characters, long string) — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/search`: **(a)** **Non-existent post**: searched "nonexistent-post-xyz-12345" → "0 result(s)." + "No matches found. Try a different handle or search term." (correct). **(b)** **Special characters**: searched "test@special!@#$%^&*()" → "0 result(s)." + same helpful message (URL-encoded, no errors). **(c)** **Long string**: searched "this is a very long search string that should not break the search functionality or cause any errors or crashes in the system" → "0 result(s)." + same helpful message (URL-encoded, no errors). 0 console errors throughout.
