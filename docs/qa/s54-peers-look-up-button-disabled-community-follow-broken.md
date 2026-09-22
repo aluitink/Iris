@@ -21,6 +21,14 @@
 4. The user must **blur the field** (Tab out or click elsewhere) for the button to enable.
 5. This makes the community creation UX confusing — the form appears broken.
 
+**Facet 3 — Community edit form (confirmed Pass 328):**
+1. On a community page, click "Edit community".
+2. Change the name in the "Name" textbox.
+3. Click "Save".
+4. The UI still shows the **old name** — the edit silently fails.
+5. The DB is **not updated** (verified via psql).
+6. Root cause: the edit form's `@bind="EditName"` (line 89) uses `onchange` (blur), so the C# property isn't updated while typing. When "Save" is clicked, the stale `EditName` value is submitted.
+
 ## Root cause
 
 Multiple Blazor text inputs use plain `@bind="Property"`, which defaults to `@bind:event="onchange"` — the C# property is only updated when the input **loses focus**, not on every keystroke. Buttons that check `string.IsNullOrWhiteSpace(Property)` in their `disabled` expression never enable while the user is typing.
@@ -30,6 +38,8 @@ Multiple Blazor text inputs use plain `@bind="Property"`, which defaults to `@bi
 | File | Line | Input | Controls |
 |---|---|---|---|
 | `CommunityDetail.razor` | 249 | `#peer-iri` (`@bind="PeerIriInput"`) | "Look up" + "Follow as this community" buttons |
+| `CommunityDetail.razor` | 89 | `#edit-community-name` (`@bind="EditName"`) | Community edit save (submits stale value) |
+| `CommunityDetail.razor` | 94 | `#edit-community-summary` (`@bind="EditSummary"`) | Community edit save (submits stale value) |
 | `Communities.razor` | 31 | `#community-name` (`@bind="NewName"`) | "Create community" button |
 | `Communities.razor` | 35 | `#community-handle` (`@bind="NewHandle"`) | "Create community" button |
 | `Compose.razor` | 133 | `#compose-poll-question` (`@bind="PollQuestion"`) | Poll submission (sibling option inputs at lines 140-141 **do** have `@bind:event="oninput"`) |
@@ -40,6 +50,8 @@ Multiple Blazor text inputs use plain `@bind="Property"`, which defaults to `@bi
 
 Add `@bind:event="oninput"` to all affected text inputs:
 - `CommunityDetail.razor:249` — `#peer-iri`
+- `CommunityDetail.razor:89` — `#edit-community-name`
+- `CommunityDetail.razor:94` — `#edit-community-summary`
 - `Communities.razor:31` — `#community-name`
 - `Communities.razor:35` — `#community-handle`
 - `Compose.razor:133` — `#compose-poll-question`
