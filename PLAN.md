@@ -146,7 +146,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 **Investigate Home feed** - Home feed seems to be missing a lot of content that shows in notifications, we should see content from people we follow as well as our own posts in the feed. → **S36** (CRITICAL: feed empty even for own posts; investigating feed query path).
 
-**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs. → **Fix `401c08b5` deployed** (remote actors with a preferredUsername are now kept in the "All known" scope; S5 stale-local-row drop preserved). Awaiting QA re-verify.
+**Investigate Directory** - The directory is no longer listing all accounts, we are only seeing local on both tabs. → **CLOSED (fix `401c08b5`, QA re-verified Pass 274 on the QA stack).** Remote actors with a preferredUsername are kept in the "All known" scope (`ii-b1`, `probep`, `gnomon` present) and the S5 stale-`localhost:8088` alice orphan is dropped (only canonical `alice`; wire clean) — 0 console errors. See [s05](docs/qa/s05-search-localhost-orphan-actor.md).
 
 **Re-verify debt (committed fixes QA must confirm on a current build):**
 
