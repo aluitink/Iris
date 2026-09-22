@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 274 (2026-09-22) — Directory "All known" re-verify (Inbox item, fix `401c08b5`) — PASS
+- **Build/Live:** QA stack carries `401c08b5` (rebuilt to main `1b2e6b62` in Pass 273; no `src/` change since → no redeploy).
+- **Explored:** Directory → People → **"All known"** scope (signed `ii-a1`@A, clean entry, cache/cookies cleared) + signed wire `GET /ap/v1/search?q=&type=Actor&local=false&limit=100`.
+- **Result:** **0 new defects; Directory "All known" fix CONFIRMED.** Remote actors with a preferredUsername are **kept** in "All known" (`ii-b1`@qa-iris-b, `probep`@qa-iris-b, `gnomon`@mastodon.social present) while the **S5 stale `localhost:8088` alice orphan is dropped** (only canonical `alice` `…/qa-iris-a.luit.ink/ap/v1/u/alice`; wire returns no localhost IRI). 0 console errors. This re-verifies the Inbox "Investigate Directory" item (fix `401c08b5`). **S35 unchanged** (operator-blocked). See [s05](s05-search-localhost-orphan-actor.md).
+- **Checkpoint:** Directory item cleared. Next: S35 remains operator-blocked (`GET qa-mastodon.luit.ink/ap/users/…` 404) — re-check after operator re-provision; otherwise idle.
+
 ## Pass 273 (2026-09-22) — S28 cross-instance Boost-button UI facet — RE-VERIFIED CLOSED on QA stack (main `1b2e6b62`)
 - **Build/Live:** QA cluster was stale (deployed `a915d9c4`); synced qa worktree to main `1b2e6b62` (fast-forward, carries dev1 `3836bebd`/`18e803ba` + dev2 `c9aeb423`) and **rebuilt both `qa-iris-a`+`qa-iris-b`**. New wasm `Iris.Web.Client.lb3bmci5nd.wasm` carries the `ServerBaseUri` claim logic; `GET /local/v1/session/public` now advertises `serverBaseUri=https://qa-iris-a.luit.ink`.
 - **Explored:** Fresh **cross-instance** Boost re-verify: `ii-a1`@A posted a note (canonical IRI `…/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0`); `ii-b1`@B signed in on B, opened it, pressed **Boost** (B log: `Inbox accepted: Announce … targeting …/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0`, `AnnounceActivityHandler processed … ok`); viewed the A object-detail page as owner `ii-a1` (fresh context, reload).
