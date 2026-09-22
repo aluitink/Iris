@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 303 (2026-09-22) — "Report" action from the "More options" menu — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1` (remote actor from B instance): clicked "More options" button on a post → clicked "Report" → no visible feedback (menu closed). Navigated to `/settings` → Account tab → Moderation section → "Reported" subsection shows "ii-b1" with a "Remove" button (correct — the report was created). Clicked "Remove" → "Reported" section now shows "You have not reported anyone." (correct — the report was removed). 0 console errors throughout.
+- **Result:** **0 new defects.** "Report" action works correctly — it creates a report that is visible in the Settings → Moderation → Reported section, and the report can be removed. Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** "Report" action verified (creates a report visible in Settings → Moderation → Reported; report can be removed). Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 302 (2026-09-22) — "More options" menu on a post — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1` (remote actor from B instance): clicked "More options" button on a post → menu opened with 3 buttons: Block, Mute, Report (same actions available in the profile header). Closed the menu with Escape. 0 console errors throughout.
