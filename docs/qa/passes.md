@@ -17,13 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 328 (2026-09-22) — Peers "Look up" disabled — NEW S54
+## Pass 328 (2026-09-22) — Peers "Look up" disabled + community creation form — NEW S54 (broadened)
 - **Build/Live:** No rebuild (same build as Pass 315–327, `d5b50948`). Both instances healthy.
 - **Explored:**
   1. **Peers tab (Follow as this community):** On `qa-pass-319-feed` Peers tab, typed `ii-a1@qa-iris-a.luit.ink` in the "Follow a community or actor" textbox. The **"Look up" button remains disabled** even with valid input. "Follow as this community" also disabled. 0 console errors. **The community Peers follow feature is completely unusable.**
   2. **Requests tab:** "No pending join requests." (correct empty state).
-- **Result:** **1 new defect (S54).** Open count: **11** (added S54).
-- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51/S52/S53/S54 once dev provides fixes.
+  3. **Community creation form:** On `/communities` → "+ Create a community", typed "QA Pass 328 Test Community" in the Name field. The **"Create community" button remains disabled** until the field is blurred. Same bug class as Peers.
+  4. **Code review:** Confirmed root cause — `@bind` without `@bind:event="oninput"` in `CommunityDetail.razor:249`, `Communities.razor:31,35`, `Compose.razor:133`. Sibling inputs (feed search, poll options) correctly use `oninput`.
+- **Result:** **1 new defect (S54, broadened to 3 facets).** S47 + S49 marked CLOSED (dev1 fixes merged). Open count: **9**.
+- **Checkpoint:** Next: re-verify S48/S50/S51/S52/S53/S54 once dev provides fixes.
 
 ## Pass 326 (2026-09-22) — S21 regression re-confirmed on instance A
 - **Build/Live:** No rebuild (same build as Pass 315–325, `d5b50948`). Both instances healthy.
