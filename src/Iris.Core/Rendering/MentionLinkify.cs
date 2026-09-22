@@ -163,8 +163,15 @@ public static partial class MentionLinkify
                 // Match the declared mention by the actor handle (the IRI path's last segment),
                 // case-insensitively. The first declared mention that matches wins (the composing
                 // surface / remote author de-duplicates mentions, so at most one should match).
-                var resolved = mentionIris!.FirstOrDefault(
-                    m => string.Equals(HandleOfIri(m), handle, StringComparison.OrdinalIgnoreCase));
+                Iri? resolved = null;
+                foreach (var m in mentionIris!)
+                {
+                    if (string.Equals(HandleOfIri(m), handle, StringComparison.OrdinalIgnoreCase))
+                    {
+                        resolved = m;
+                        break;
+                    }
+                }
                 if (resolved is { } iri)
                 {
                     linkifyMentions.Add(new Mention(display, iri));
@@ -243,7 +250,7 @@ public static partial class MentionLinkify
     /// followed by the local handle, optionally followed by <c>@domain</c>), at the start of the text or
     /// after a non-word character, with a trailing word boundary.
     /// </summary>
-    [GeneratedRegex(@"(?<![\w/""'])@([A-Za-z0-9_]+)(?:@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+))?")]
+    [GeneratedRegex(@"(?<![\w/""'])@([A-Za-z0-9_-]+)(?:@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+))?")]
     private static partial Regex MentionToken();
 
     /// <summary>
@@ -270,10 +277,13 @@ public static partial class MentionLinkify
         }
 
         // Escape the display text for use in a regex (handles the '@'/'#' and any '.' in a domain).
+        // The trailing boundary excludes a following word char, hyphen, or '#' so a shorter token is
+        // not linked as the prefix of a longer hyphenated handle or a hashtag run (e.g. a declared
+        // '@ii' must not be linked when the body actually contains '@ii-a2').
         var pattern =
             "(?<![\\w/\"'])" +
             Regex.Escape(display) +
-            "(?![\\w])";
+            "(?![\\w-#])";
         var replacement =
             "<a class=\"" + className + "\" href=\"" + href + "\">" + display + "</a>";
         return new Regex(pattern).Replace(html, replacement, count: 1);

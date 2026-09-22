@@ -33,7 +33,7 @@ public sealed partial class InboundTagNormalizer(
     /// <summary>
     /// A bare <c>@handle</c> token (no <c>@domain</c>) — a same-instance mention.
     /// </summary>
-    [GeneratedRegex(@"(?<![\w/""'])@([A-Za-z0-9_]+)(?![\w@])")]
+    [GeneratedRegex(@"(?<![\w/""'])@([A-Za-z0-9_-]+)(?![\w@])")]
     private static partial Regex BareMentionToken();
 
     /// <summary>
