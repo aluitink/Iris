@@ -1,7 +1,7 @@
 # S25 — Remote post delivered to the follower's inbox but NOT surfaced in the follower's home feed
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open
+- **Status:** FIXED (dev2, live-verified 2026-09-22) — `GetDeliveredContentAsync` in `FeedService` includes delivered remote content in the follower's feed. Live-verified on dev2 stack: B follows A (cross-instance), A's post appears in B's home feed.
 - **Found:** Interop suite A4 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S18](s18-local-follow-timeline-empty.md) (local follow → empty timeline — same "followed post not in home feed" family, cross-instance here), [S24](s24-cross-instance-follow-state-inconsistent.md) (same A2 follow setup), [S4](s04-communities-following-remote.md)
 
