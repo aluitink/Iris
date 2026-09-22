@@ -98,8 +98,13 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
             community.ExtensionData is { Count: > 0 } && community.ExtensionData.ContainsKey("publicKey"),
             "the created community's Group document must carry a publicKey extension (19.5.1 key minting)");
 
-        // The community has no members yet (it was just created).
-        Assert.Empty(await _persistence.Communities.GetFollowersAsync(communityIri));
+        // S49: the creator is added to the community's followers collection on creation, so the
+        // community's feed (which merges the followers' outboxes) is not empty when the creator posts
+        // to it. The community's followers collection contains exactly the creator (no other members
+        // yet).
+        var followers = await _persistence.Communities.GetFollowersAsync(communityIri);
+        var singleFollower = Assert.Single(followers);
+        Assert.Equal(_aliceIri, singleFollower);
     }
 
     // --- S21: the creator is auto-followed on community creation ------------------------------

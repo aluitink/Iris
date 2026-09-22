@@ -100,6 +100,34 @@ public sealed class CommunityDeleteIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateCommunity_AddsCreatorToFollowerCollection()
+    {
+        // S49: the community-creation path must add the creator to the community's OWN followers
+        // collection (the follower→community edge in the community store). The community feed
+        // (CommunityFeedService.GetFeedAsync) merges the community's FOLLOWERS' outboxes; without this
+        // edge the freshly-created community has zero followers, so its feed is empty even when the
+        // creator posts to it. Before the fix only the person follow store edge was recorded
+        // (RecordFollowAsync creator→community), not the community store edge
+        // (AddFollowerAsync community←creator), leaving GET /c/{name}/followers empty.
+        var communityIri = await CreateCommunityAsync();
+
+        var followers = await _persistence.Communities.GetFollowersAsync(communityIri);
+        Assert.True(
+            followers.Contains(_aliceIri),
+            "S49: the creator must be in the community's followers collection after creation");
+
+        // The followers collection endpoint must list the creator (totalItems=1).
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"https://{AHost}/ap/v1/c/devs/followers");
+        using var response = await _http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
     public async Task DeleteCommunity_RemovesFollowers()
     {
         var communityIri = await CreateCommunityAsync();

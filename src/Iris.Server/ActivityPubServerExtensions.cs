@@ -6155,6 +6155,17 @@ public static class ActivityPubServerExtensions
                 await StoreCreatedCommunityAsync(persistence, group, communityIri, ct).ConfigureAwait(false);
                 await persistence.Follows.RecordFollowAsync(authorIri, communityIri, ct).ConfigureAwait(false);
 
+                // S49: the creator is also added to the community's OWN followers collection (the
+                // follower→community edge in the community store, distinct from the person follow store
+                // edge above). The community feed (CommunityFeedService.GetFeedAsync) merges the
+                // community's FOLLOWERS' outboxes (members = followers, change 221); without this edge
+                // the freshly-created community has zero followers, so its feed is empty even when the
+                // creator posts to it (the note's attributedTo carries the community IRI, but the feed
+                // has no members to merge). This mirrors what FollowActivityHandler records when an
+                // actor follows a community (AddFollowerAsync closes F-24); the creation path simply
+                // never called it.
+                await persistence.Communities.AddFollowerAsync(communityIri, authorIri, ct).ConfigureAwait(false);
+
                 // S21 residual: the auto-follow edge above changes the creator's `following` collection
                 // and home feed, but the community-creation path (unlike the explicit Follow branch at
                 // the OutboxPublishHandler's switch) did not drop the affected cached pages. The
@@ -6165,6 +6176,7 @@ public static class ActivityPubServerExtensions
                 // Mirror the explicit-Follow invalidation: drop the creator's `following` page-1 entry
                 // and the per-actor feed cache so both reflect the new follow immediately.
                 InvalidateLocalCollectionPage(collectionCache, authorIri, "following");
+                InvalidateLocalCollectionPage(collectionCache, communityIri, "followers");
                 followFeed.InvalidateActorFeedCache(authorIri, ct);
             }
         }
