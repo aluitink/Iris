@@ -138,6 +138,42 @@ public sealed class LikeCountIntegrationTests : IDisposable
         Assert.Equal(1, await CountSharesAsync(note, bypassCache: true));
     }
 
+    // S28 — the EngagementBar Boost button for a cross-instance Boost. The bar's fast path reads the
+    // server-rendered iris:sharedCount off the object document it was given, INDEPENDENTLY of the
+    // object's host (an earlier version gated the fast path on !isRemote, so a note the OWNER viewed —
+    // whose IRI is on the remote host but whose document the owner's instance rendered with the
+    // authoritative counter — fell through to the note's embedded shares.totalItems (0) and rendered 0
+    // while the Shares tab on the same page showed 1). This pins the invariant: the document's
+    // iris:sharedCount is the authoritative Boost count the button must show.
+    [Fact]
+    public async Task ObjectDocument_SharedCount_IsAuthoritativeBoostCount_RegardlessOfHost()
+    {
+        var alice = BuildSignedClient(_actorIri, _actorKey);
+        var note = await PostNoteAsync(alice, "cross-instance boost");
+
+        var carol = await SeedActorAsync("carol");
+        var carolClient = BuildSignedClient(carol.Iri, carol.Key);
+        Assert.True((await carolClient.AnnounceAsync(carol.Iri, note)).IsSuccess, "Boost should succeed");
+
+        // Fetch the object document over the same wire path the object-detail page / EngagementBar use,
+        // and read the iris:sharedCount extension off it (the exact read the bar's fast path performs).
+        // The instance serves the counters under its own iris: namespace (the advertise base + "/ns#"),
+        // which the WASM session's IrisNamespaceBase resolves to the same value — so read with that ns.
+        var document = await _reader.GetObjectAsync(note, CancellationToken.None);
+        Assert.NotNull(document);
+
+        var ns = $"{Base}/ns#";
+        // The document carries the authoritative counter (1 booster). This is the value the button must
+        // render — independent of the note's host (the S28 regression keyed the fast path on the host).
+        Assert.Equal(1, document!.GetSharedCount(ns));
+        Assert.Equal(0, document.GetLikedCount(ns));
+
+        // The note's embedded shares.totalItems is 0 (the server does not populate it on the object
+        // document) — the stale value the pre-fix bar fell back to. Asserting the two diverge is what
+        // documents WHY the host must not gate the fast path.
+        Assert.Equal(0, document.GetSharesTotalItems());
+    }
+
     [Fact]
     public async Task LikeCount_FreshRead_CountsEachLikerOnce()
     {

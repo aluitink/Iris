@@ -85,6 +85,7 @@ apps/Iris.Web/wwwroot/**/*.gz
  .tmp-test/
  .tmp-insp/
  .tmp-publish/
+.tmp-diag/
  .loop/
 probe_*.txt
 .ui-review/

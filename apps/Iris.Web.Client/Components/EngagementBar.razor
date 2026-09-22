@@ -186,12 +186,16 @@
 
         var me = Session.ActorId;
         var ns = Session.IrisNamespaceBase?.Value;
-        // For remote objects, the iris: extensions reflect LOCAL like/boost counts (which are 0 for
-        // remote objects). Skip the fast path and fall through to read the source instance's
-        // likes/shares collection totals (likes.totalItems / shares.totalItems) instead.
-        var isRemote = Ui.IsRemoteObjectIri(iri);
-        if (!isRemote
-            && ns is not null
+        // The object document this bar was given carries the server-rendered iris:likedCount /
+        // iris:sharedCount (and the per-requester isLiked / isShared) whenever the serving instance
+        // enriched it — whether the object is local or a cross-instance note whose OWNER is on this
+        // instance (the owner's instance renders the authoritative counters onto the note it serves,
+        // e.g. a cross-instance Boost the owner views). When both counters are present they are
+        // authoritative, so take them regardless of the object's host. (S28: an earlier version gated
+        // this on !isRemote, so a cross-instance-boosted note the owner viewed skipped the fast path and
+        // fell back to the note's embedded shares.totalItems — which is 0 — rendering the Boost button
+        // 0 while the Shares tab on the same page correctly showed 1.)
+        if (ns is not null
             && Object is { } obj
             && obj.GetLikedCount(ns) is { } likedCount
             && obj.GetSharedCount(ns) is { } sharedCount)
