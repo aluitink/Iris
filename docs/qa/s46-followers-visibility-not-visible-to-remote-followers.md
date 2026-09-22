@@ -2,7 +2,7 @@
 
 - **Found:** Pass 310 (2026-09-22), build `345286cc`.
 - **Severity:** S2 (data-visibility) — Followers-visibility content is not delivered to followers on other instances, breaking a core ActivityPub visibility guarantee.
-- **Status:** Open (dev-owned).
+- **Status:** Open (dev-owned). Dev fix `2efadfbc` committed but **NOT effective** (re-verified Pass 314).
 
 ## Repro
 
@@ -41,3 +41,19 @@ A Followers-visibility note from ii-a1 should appear in the home feed of every a
 ## Fix direction
 
 `VisibilityFilter.IsVisibleTo` must resolve the followers collection when the audience is a collection IRI: if `to`/`cc` contains a followers-collection IRI (e.g. ends in `/followers` or is a known collection), check whether the requester is a member of that collection (via `IFollowStore.GetFollowersAsync` or a membership lookup) rather than string-matching the collection IRI. The object-document endpoint's 404 also needs investigation (whether it applies the same VisibilityFilter or a different gate).
+
+## Re-verification (Pass 314, 2026-09-22)
+
+Dev1 committed fix `2efadfbc` (merged `ef2d24df`) adding async overloads `IsVisibleToAsync`/`IsFeedItemVisibleToAsync` that accept a follower-membership predicate and resolve `…/followers` audience entries to their owner actor. QA stack rebuilt with `--no-cache` to carry the fix.
+
+**Result: Fix is NOT effective.**
+
+- Composed a Followers-visibility note as ii-a1@A (HTTP 202, Note IRI `06GCMZMMD6JJA5KQWZZPWG5YYC`, `to`/`cc` = `…/ii-a1/followers`).
+- Create delivered to B, processed, and the Note IS stored in B's `Objects` table (not tombstoned).
+- **BUT** the note does NOT appear in ii-b1@B's home feed (verified via UI refresh).
+- `GET /ap/v1/u/ii-a1/notes/06GCMZMMD6JJA5KQWZZPWG5YYC` on B returns **404** (with Basic auth as ii-b1).
+- The new code IS deployed: `strings /app/Iris.Server.dll | grep IsVisibleToAsync` returns 9 matches.
+- The follow edge exists: `Edges` table has `(ii-b1, ii-a1, Kind=0)` on B.
+- The Create activity's `object` field contains the full Note document with correct `to`/`cc` = followers collection.
+
+**Hypothesis:** The `isFollowerOfAsync` predicate may not be invoked (e.g., `FollowersCollectionOwners` returns empty, or the predicate is passed as null), OR the feed service is using a cached/compiled version of the filter that doesn't include the new async path. Further investigation needed (e.g., temporary logging in `IsFeedItemVisibleToAsync` to trace whether `isFollowerOfAsync` is called and what it returns).

@@ -1,9 +1,9 @@
 # S47 — Direct-visibility post not accessible via AP object URL (404 for author + recipient)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (found Pass 313, 2026-09-22)
+- **Status:** open (found Pass 313, 2026-09-22). Re-verified Pass 314: S46 fix does NOT resolve S47 (AP URL still 404).
 - **Found:** Pass 313 (2026-09-22)
-- **Related:** S46 (Followers-visibility notes not visible to remote followers — same VisibilityFilter root-cause family); S45 (compose-time mention resolution truncates hyphenated handles — the DM's `tag` array carries the truncated mention IRI).
+- **Related:** S46 (Followers-visibility notes not visible to remote followers — same VisibilityFilter root-cause family, but S46 fix `2efadfbc` does NOT resolve S47); S45 (compose-time mention resolution truncates hyphenated handles — the DM's `tag` array carries the truncated mention IRI).
 
 ## Symptom
 

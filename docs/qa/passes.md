@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 314 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers)
+- **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's S46 fix `2efadfbc` (merged `ef2d24df`). Both instances healthy. New code confirmed deployed (`strings Iris.Server.dll | grep IsVisibleToAsync` → 9 matches).
+- **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 314 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCMZMMD6JJA5KQWZZPWG5YYC`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.
+  - **Delivery:** Create delivered to B, processed, Note stored in B's `Objects` table (not tombstoned).
+  - **Feed:** The note does NOT appear in ii-b1@B's home feed (verified via UI refresh).
+  - **AP URL:** `GET /ap/v1/u/ii-a1/notes/06GCMZMMD6JJA5KQWZZPWG5YYC` on B → **404** (with Basic auth as ii-b1).
+  - **Follow edge:** Exists (ii-b1 → ii-a1, Kind=0).
+  - **Conclusion:** The S46 fix (`2efadfbc`) is **NOT effective**. The note is still not visible to the remote follower.
+- **Also checked S47:** The S47 Direct-visibility note's AP URL still 404s (the S46 fix does NOT resolve S47).
+- **Result:** **S46 re-verified OPEN** (dev fix deployed but NOT effective). **S47 re-confirmed OPEN** (S46 fix does not resolve it). Open count: **S35 + S44 + S45 (partial) + S46 + S47 (5)**.
+- **Checkpoint:** S46 fix needs further investigation (why the async `IsFeedItemVisibleToAsync` is not working despite being deployed). Next: re-verify S44/S46/S47 once dev provides a working fix, or explore remaining untested areas.
+
 ## Pass 313 (2026-09-22) — Cross-instance Direct (DM) delivery + S45 notification facet — NEW S47
 - **Build/Live:** `47ecc674` (no `src/` changes since Pass 312 → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed in as ii-a1@A → composed a **Direct**-visibility note `QA Pass 313 Direct DM test: hello @ii-b1 this is a direct message` → posted (HTTP 202, Create IRI `06GCMW0J275AMV1YXTPZJJCHYR`, Note IRI `06GCMW0J275AMV1YXTPZJJCHYW`). Waited 10 s for federation.
