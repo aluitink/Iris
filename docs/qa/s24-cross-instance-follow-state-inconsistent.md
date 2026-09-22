@@ -1,7 +1,7 @@
 # S24 — Cross-instance follow: profile "Following" tab omits remote actors, spurious self-follow in outbox, remote-actor direct GET 404s
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** **PARTIAL (QA re-verified 2026-09-22, build `7620faa1`).** **D1 (Following-tab omits remote actor) FIXED** (Pass 116). **D3 (remote-actor direct GET) FIXED** (the S24-D3 actor-doc fallback). **D4 (remote-actor direct COLLECTION routes 404) FIXED `2804fb55`, QA re-verified** — `CollectionEndpointHandler` proxies a cached remote actor's `outbox`/`followers`/`following` to the remote instance; re-verified on the QA stack: `GET qa-iris-a /ap/v1/u/ii-b1/{outbox,followers,following}` all **200** (were 404). **D2 (foreign activities in the local actor's outbox) — the *outbox-integrity* facet is STILL OPEN** (QA re-verify 2026-09-22). The read-side fixes are confirmed working: the **home feed** no longer surfaces foreign content (S36 closed — `FeedService` own-outbox branch `61c328fa` keeps only owner-authored content) and the public outbox read path filters foreign `Follow` (`98399b73`/`0d05342e`). **However** `ii-a1`'s **raw local outbox** (`GET /ap/v1/u/ii-a1/outbox`, pages 1–5, 100 items) still contains **17 foreign `ii-b1` items** (9 `Like` + 8 `Create` — B's likes on A's posts + B's own posts recorded in A's outbox) — i.e. foreign activity is still **physically stored** in the followed actor's local outbox. This is the outbox-integrity facet dev2 is working (distinct from the closed feed-surface facet). D2 stays open until the write path stops recording foreign Create/Like into the local outbox (or the read path filters them).
+- **Status:** **CLOSED (all facets) — QA re-verified 2026-09-22, build `7620faa1`.** **D1 (Following-tab omits remote actor) FIXED** (Pass 116). **D3 (remote-actor direct GET) FIXED** (the S24-D3 actor-doc fallback). **D4 (remote-actor direct COLLECTION routes 404) FIXED `2804fb55`, QA re-verified** — `CollectionEndpointHandler` proxies a cached remote actor's `outbox`/`followers`/`following` to the remote instance; re-verified on the QA stack: `GET qa-iris-a /ap/v1/u/ii-b1/{outbox,followers,following}` all **200** (were 404). **D2 (foreign activities in the local actor's outbox) — the *outbox-integrity* facet is REFUTED / not a defect (QA re-verify + live signed-wire probe 2026-09-22).** The earlier "17 foreign items incl. **9 foreign Likes**" was a **misread**. A direct DB audit of `ii-a1`'s raw local outbox (`BoxItems` `Direction=0`, `ActorId=ii-a1`) shows **zero foreign Likes** (the only 4 `Like` rows are ii-a1's own) and **22 foreign (ii-b1) items = 12 `Create` + 7 `Follow` + 3 `Announce`**. All 12 foreign `Create`s are **B's own notes** (`attributedTo` = ii-b1) recorded in ii-a1's outbox by the **F-15 community fan-out** (ii-a1 and ii-b1 both follow the shared local community `ii-a8-community`) — by-design community-feed content, not a write-path defect. A **live signed-wire probe** (dev2) delivered a cryptographically-validated remote `Like` (`probep`@B → an ii-a1 note@A, RSA-SHA256 draft-cavage, `shared-inbox` → HTTP **202**, `LikeActivityHandler` "ok") and confirmed the Like was stored **only in ii-a1's inbox** (`Direction=1`; the inbox now lists `probep`) and **not in ii-a1's outbox** (`Direction=0`). This matches `LikeActivityHandler`: a remote `Like` on a personal note records a like-edge (inbox), never an outbox row. The read-side `GetOutboxAsync` Follow-only filter (`0d05342e`) is intentionally scoped (it drops only foreign `Follow`s; `Like`/`Create`/`Announce` always pass), and the home feed already excludes non-owner content (S36 closed, `61c328fa`). **No code change is warranted.** S24 is closed in full.
 - **Found:** Interop suite A2 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S4](s04-communities-following-remote.md) (Communities "Following" tab drops REMOTE communities — same "Following-tab under-reports remote items" family), [S14](s14-signed-out-actor-detail-csp.md) (remote actor detail), [S18](s18-local-follow-timeline-empty.md) (local follow state), [S22](s22-follow-notification-not-created.md) (follow notifications)
 
@@ -155,3 +155,34 @@ Performed a **fresh Follow** (not relying on the prior cycle's state): as `ii-a1
   - **Root-cause (suspected):** the remote-actor cache stores the **actor document** under its IRI (so `GET /ap/v1/u/<remote>` 200s — the D3 fix) but does **not** register/serve the actor's **sub-collection routes** (`/outbox`, `/followers`, `/following`), and the request handler does not proxy those sub-paths to the remote host. Only the dedicated `/proxy/{iri}` route forwards arbitrary remote IRIs. Fix = when the resolved actor is remote, proxy the trailing collection path (`/outbox`, `/followers`, `/following`, …) to the remote instance instead of returning 404.
 
 **Verdict (build `38ae87c`): S24 PARTIALLY FIXED — D1 + D3 (actor doc) fixed; D2 (foreign activities in local outbox) still OPEN and accumulating; **NEW D4 (remote-actor direct collection routes 404 while the actor doc 200s + /proxy 200s) OPEN (S3, both directions, client-visible 404 on a remote actor's outbox/followers/following).
+
+## Re-test (dev2 signed-wire probe, 2026-09-22, build `7620faa1`) — D2 REFUTED / not a defect
+
+The earlier "foreign items in the local outbox" facet (D2) was re-examined with (a) a **direct DB audit** of `ii-a1`'s raw local outbox and (b) a **live cryptographically-validated remote-Like delivery**. Both overturn the "foreign Likes in the local outbox" premise.
+
+**1. DB audit of `ii-a1`'s raw local outbox** (`BoxItems` where `ActorId=ii-a1`, `Direction=0`, joined to `Activities`):
+
+| ActivityType | actor | count |
+|---|---|---|
+| Create | ii-a1@A | 34 |
+| Update | ii-a1@A | 13 |
+| Create | **ii-b1@B** | **12** |
+| Follow | **ii-b1@B** | **7** |
+| Delete | ii-a1@A | 5 |
+| Like | ii-a1@A | 4 |
+| Add / Remove / Follow(self) / Undo | ii-a1@A | 3 / 3 / 2 / 1 |
+| Announce | **ii-b1@B** | **3** |
+
+- **Foreign (ii-b1) total = 22 = 12 Create + 7 Follow + 3 Announce. Foreign `Like` = 0.** The only 4 `Like` rows in the outbox are **ii-a1's own** outgoing Likes. The earlier "9 foreign Likes" figure was a misread.
+- **All 12 foreign `Create`s are B's own notes** (`Objects.AttributedTo` = `ii-b1@B`) recorded in ii-a1's outbox. This is the **F-15 community fan-out**: ii-a1 and ii-b1 both follow the shared local community `ii-a8-community` (confirmed in both outboxes' Follow targets), so a member's content is recorded into each local member's outbox for the community feed. This is by-design, not a write-path defect.
+
+**2. Live signed-wire remote-Like probe (the decisive test for the "foreign Like" premise):**
+- A fresh probe account `probep` was registered on B (actor doc `GET /ap/v1/u/probep` = 200, key `…/u/probep#key-1` RSA).
+- A cryptographically-validated `Like` was signed with probep's RSA key (draft-cavage `ServerToServer` profile: `(request-target) host date digest content-type`, RSA-SHA256) and POSTed to A's `shared-inbox`, targeting an ii-a1 note.
+- **Result:** HTTP **202**; A logs: `Inbox received Like … from https://qa-iris-b.luit.ink/ap/v1/u/probep to …/ii-a1`, `LikeActivityHandler processed … — ok`, `Inbox accepted: Like …`.
+- **Storage location of the delivered Like** (`BoxItems` where `ItemIri` = the Like id): **exactly one row — ii-a1, `Direction=1` (INBOX)**. ii-a1's **outbox** (`Direction=0`) gained **no** Like row; the 4 outbox Likes are unchanged and all ii-a1's own.
+- ii-a1's **inbox** (`Direction=1`) `Like` population by actor: ii-a1 (1), ii-a2 (5), **ii-b1 (6)**, **probep (1)** — i.e. remote Likes are recorded in the **inbox** (like-edge), consistent with `LikeActivityHandler` (a remote `Like` on a personal note records a like-edge only; it writes to an outbox *only* for the community-fan-out case, which a Like on a personal note is not).
+
+**Conclusion (D2):** a remote actor's `Like` is **never** written to the note author's local outbox — it lands in the inbox. The foreign items that *do* appear in the local outbox are community-fan-out `Create`/`Announce`/`Follow` content (by-design, F-15), and the home feed already excludes non-owner content (S36). There is **no outbox-integrity defect** to fix. **D2 is REFUTED (not a defect).**
+
+**Verdict (build `7620faa1`, 2026-09-22): S24 CLOSED — D1 (Following-tab remote rendering) + D3 (remote-actor GET) + D4 (remote-actor collections) fixed; D2 (outbox-integrity) refuted as not a defect (foreign Likes = 0, remote Likes go to the inbox; foreign outbox items = by-design F-15 community fan-out).**

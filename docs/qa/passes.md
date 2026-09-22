@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 260 (2026-09-22) — build `7620faa1` / S24-D2 outbox-integrity REFUTED (not a defect): DB audit shows 0 foreign Likes; live signed-wire remote Like lands in the inbox, never the outbox
+- **Build/Live:** `7620faa1` (no rebuild — diagnostic pass on the existing QA stack).
+- **Explored:** S24-D2 *outbox-integrity* facet — direct DB audit of `ii-a1`'s raw local outbox (`BoxItems` `Direction=0`) + a live cryptographically-validated remote-Like delivery (dev2 signed-wire probe, `probep`@B → ii-a1 note@A).
+- **Result:** **S24-D2 REFUTED / not a defect.** (a) DB audit: ii-a1 outbox has **zero foreign Likes** (the only 4 `Like` rows are ii-a1's own) and **22 foreign (ii-b1) items = 12 Create + 7 Follow + 3 Announce** — all by-design **F-15 community fan-out** (ii-a1 + ii-b1 both follow the shared local community `ii-a8-community`; the 12 foreign Creates are B's own notes). The earlier "9 foreign Likes" was a misread. (b) Live probe: a signed remote `Like` (RSA-SHA256 draft-cavage, `shared-inbox` → **202**, `LikeActivityHandler` "ok") was stored **only in ii-a1's inbox** (`Direction=1`; inbox now lists probep) and **not in the outbox** — matching `LikeActivityHandler` (a remote Like on a personal note records a like-edge, never an outbox row). **S24 CLOSED (all facets D1/D2/D3/D4).** No code change warranted.
+- **Checkpoint:** S24 fully closed. Remaining open: S3, S21 (not re-exercised — prior fixes stand), S35 (Mastodon-side, not Iris), S6 (fix-committed-not-live).
+
 ## Pass 259 (2026-09-22) — build `7620faa1` / QA re-verify pass on fresh QA cluster (rebuilt from main): re-verified the fixed-in-code items; S24-D2 outbox-integrity facet still open
 - **Build/Live:** fresh QA build from `main` `7620faa1` (QA stack `qa-iris-a`/`qa-iris-b` rebuilt + healthy; FQDNs `qa-iris-a.luit.ink`/`qa-iris-b.luit.ink`).
 - **Explored:** Re-verified S2, S14, S4, S17, S19, S20, S24-D2, S24-D4, S33, S36, S38 across the two-instance QA stack (API + Playwright).
