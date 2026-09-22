@@ -208,12 +208,9 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
 
     // --- Edge cases -----------------------------------------------------------------
 
-    [Fact]
-    public async Task Feed_UnknownCommunity_Returns404()
-    {
-        var response = await _http.GetAsync($"{_base}/ap/v1/c/nobody/feed");
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-    }
+    // NOTE: Feed_UnknownCommunity_Returns404 is covered by CommunityFeedCorrectnessIntegrationTests
+    // (identical assertion: GET /ap/v1/c/nobody/feed → 404). Removed here to de-duplicate; the
+    // community-feed 404 path is still asserted in that class.
 
     [Fact]
     public async Task Feed_CommunityWithNoMembers_ReturnsEmptyCollection()
