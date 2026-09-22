@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 286 (2026-09-22) — Search edge cases (remote actor, community, no results) — 0 new defects
+- **Build/Live:** `6680704e` (== HEAD? y — the only `src/` change since is the opt-in circuit breaker `f2a98aa6`, default disabled → no QA redeploy needed). Both instances healthy. Dev1 is actively investigating S42 (community delete orphans Objects row).
+- **Explored:** Signed-in (ii-a1@A) `/search`: **(a)** `q=ii-b1` → 3 results (remote actor ii-b1@B + 1 matching note + duplicate actor link), 0 console errors. **(b)** `q=ii-a8-community` → 1 result (the community "II-A8 Test Community" with description), 0 console errors. **(c)** `q=zzz-no-such-actor` → "0 result(s)" + "No matches found. Try a different handle or search term." (graceful), 0 console errors.
+- **Result:** **0 new defects.** Search works correctly for all cases: remote actor lookup (federated search), community search (local), and no-results (graceful empty state). Open count unchanged: **S35 + S42 + S43 (3)**.
+- **Checkpoint:** Search edge cases verified (remote actor, community, no results — all clean). Open: S35 (operator-blocked, Mastodon-side) + S42 (dev1 investigating) + S43 (dev-owned, S3, data-visibility). Next: re-verify S42/S43 once dev fix builds land, or deeper interop testing once operator re-provisions.
+
 ## Pass 285 (2026-09-22) — Cross-instance post interactions (like/boost/reply from A on a B post) — 1 new defect (S43)
 - **Build/Live:** `6680704e` (== HEAD? y — the only `src/` change since is the dev1 circuit breaker `f2a98aa6`, which is **opt-in** (default `FailureThreshold` 0 = pre-146 behavior), so no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) opened a **cross-instance post** (`/object?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1/notes/06GCAVHY2NJCS32M66CV64J0V4`): post rendered correctly (ii-b1@B's note, 19h ago, 0 console errors). **Liked** the post → button "pressed", count 0→1, ii-a1 appears in the **Likes tab** (cross-instance like registered locally). **Boosted** the post → button "pressed", count 0→1 (cross-instance boost registered locally). **Replied** to the post → HTTP 202, create IRI on A. **Cleaned up:** unboosted + unliked → both buttons back to unpressed (0).
