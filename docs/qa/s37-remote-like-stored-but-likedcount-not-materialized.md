@@ -1,7 +1,7 @@
 # S37 — Remote Like is stored + rendered, but the note's `likedCount` / inline Like-count is not materialized
 
 - **Severity:** S3 (low)
-- **Status:** **FIXED on the wire (live-re-verified 2026-09-22, dev1, commits `e1e1aa88` + `5355e968`)** — the **wire-level `likedCount` (Like/unlike) is FIXED** (`e1e1aa88`: `ObjectInteractionCountRefreshService.RefreshObjectCountsAsync` called from `LikeActivityHandler`/`UndoActivityHandler`) **AND the Boost `sharedCount` path is now FIXED** (`5355e968`: routes the shared-inbox `Announce` to the note's owner, so `AnnounceActivityHandler` records the edge + calls `RefreshObjectCountsAsync` **immediately** — the Boost is no longer dropped and `sharedCount` materializes on the next read). Verified live: a fresh A note Liked + Boosted by B now carries `…/ns#likedCount: 1` + `…/ns#sharedCount: 1` + `…/ns#score: 1` on the very next read (no 30 s wait). **Single residual facet (S3, client/UI):** the object-detail **Like/Boost button UI still renders "0"** (the client's button count reads the embedded `likes.totalItems`/`shares.totalItems` — which the doc serializer keeps at 0 — not the denormalized `likedCount`/`sharedCount`). **Status: wire counts (likedCount + sharedCount) FIXED; Like/Boost-button UI facet open (S3).**
+- **Status:** **FIXED on the wire (live-re-verified 2026-09-22, dev1, commits `e1e1aa88` + `5355e968`)** — the **wire-level `likedCount` (Like/unlike) is FIXED** (`e1e1aa88`: `ObjectInteractionCountRefreshService.RefreshObjectCountsAsync` called from `LikeActivityHandler`/`UndoActivityHandler`) **AND the Boost `sharedCount` path is now FIXED** (`5355e968`: routes the shared-inbox `Announce` to the note's owner, so `AnnounceActivityHandler` records the edge + calls `RefreshObjectCountsAsync` **immediately** — the Boost is no longer dropped and `sharedCount` materializes on the next read). Verified live: a fresh A note Liked + Boosted by B now carries `…/ns#likedCount: 1` + `…/ns#sharedCount: 1` + `…/ns#score: 1` on the very next read (no 30 s wait). **UI facet CLOSED (live-re-verified 2026-09-22 on dev1):** the object-detail **Like/Boost buttons now render the denormalized `likedCount`/`sharedCount`** and update live on a like/boost (the `EngagementBar` fast path reads the denormalized counters off the object doc, not the embedded `likes.totalItems`/`shares.totalItems`); the earlier "renders 0" was observed on the older `7620faa1` build **before** the count-refresh fix. **Status: FIXED — wire counts (likedCount + sharedCount) + object-detail Like/Boost-button UI all verified.**
 - **Test:** A2 (remote Like) — count-materialization facet
 - **Component:** Server (like-count materialization on the Note object) — dev-owned; QA documents only.
 
@@ -123,4 +123,16 @@ GET <note>       -> likedCount: None, likes.totalItems: 0
 | `GET A <note>` `…/ns#likedCount` / `…/ns#score` | **`1`** / **`1`** ✓ |
 | `GET A <note>/shares` | `totalItems: 1` (the boost, `actor`=s37b, `object`=Note IRI) ✓ |
 
-**Verdict (commit `5355e968`): S37 + S28 wire counts FIXED — `likedCount` (Like) and `sharedCount` (Boost) both materialize immediately under the iris: namespace + the `/likes` + `/shares` collections are correct.** **Single residual facet: the object-detail Like/Boost button UI still renders "0"** (the client button reads the embedded `likes.totalItems`/`shares.totalItems`, which the doc serializer keeps at 0, not the denormalized `likedCount`/`sharedCount`) — a client/UI facet (S3, low). **Status: wire counts FIXED; Like/Boost-button UI facet open (S3).**
+**Verdict (commit `5355e968`): S37 + S28 wire counts FIXED — `likedCount` (Like) and `sharedCount` (Boost) both materialize immediately under the iris: namespace + the `/likes` + `/shares` collections are correct.**
+
+## Live UI re-verification (2026-09-22, dev1 stack, Playwright, build includes `5355e968`)
+
+The "Like/Boost button renders 0" facet is **resolved** on the current dev1 build. The object-detail page's `EngagementBar` fast path reads the denormalized `iris:likedCount`/`iris:sharedCount` off the fetched object doc (the server's `ObjectDocumentHandler` serves both the per-object counters and the per-requester `isLiked`/`isShared`/minted-activity-id state), so the button reflects the real counts and updates live:
+
+| Action | Button | Wire |
+|---|---|---|
+| Open object-detail (`/object?iri=<Note IRI>`) for a fresh local note | Like **0** + Boost **0** (correct, none yet) | `ns#likedCount: 0` / `ns#sharedCount: 0` |
+| Press **Like** | Like **1** `[pressed]` | `ns#likedCount: 1` + `ns#score: 1` (immediate) |
+| Press **Boost** | Boost **1** `[pressed]` | `ns#sharedCount: 1`; `/shares` `totalItems: 1`; `/likes` `totalItems: 1` |
+
+**0 console errors** on the object-detail page. The earlier "renders 0" was observed on the older `7620faa1` build **before** the count-refresh fix; the embedded `likes.totalItems`/`shares.totalItems` in the doc stay 0 but the button no longer reads them (the denormalized counters are authoritative on the fast path). **Status: S37 fully FIXED — wire counts + object-detail Like/Boost-button UI both verified live.**
