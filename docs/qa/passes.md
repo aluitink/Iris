@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 319 (2026-09-22) — S49 re-verify + community feed investigation — S49 scope updated
+- **Build/Live:** No rebuild (same build as Pass 315–318, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **S49 re-verify (community creation):** Navigated to `/communities` with a fresh browser context. The `qa-pass-318` community **IS now visible** in all three tabs ("My communities" shows "You are the only owner", "All on this instance" shows it, "Following" shows it). The original "silent no-op" was a **stale WASM cache issue**, not a server-side bug.
+  2. **Community post:** Clicked "＋ Post to this community" → compose page correctly shows "Posting to QA Pass 318 Community" → posted "QA Pass 319: Community post test..." → **HTTP 202**, note ID `06GCNKS5FN696JZA1E0MDA219C`.
+  3. **Community feed check:** `GET /ap/v1/c/qa-pass-318/feed` returns 200 with `orderedItems: []`. The note is NOT in the community feed. UI shows "No posts in this community yet." even after Refresh.
+  4. **Root cause investigation:** The note's AP doc has `attributedTo: [ii-b1, qa-pass-318]` + `to: [qa-pass-318/followers, #Public]`. But `GET /ap/v1/c/qa-pass-318/followers` returns `totalItems: 0` — **the owner (ii-b1) is NOT in the followers collection**. No Edges row links the note to the community. The note IS visible in ii-b1's home feed and profile (85 posts). Contrast: `ii-a8-community` (remote, on A) has `totalItems: 1` (ii-b1) and its feed works.
+- **Result:** **0 new defects.** S49 scope updated: the "silent no-op" was stale WASM cache; the **new facet** is that the community feed is empty because the owner is not auto-added to the followers collection. Open count: **6** (S35, S44, S45, S47, S48, S49).
+- **Checkpoint:** Next: re-verify S47/S48/S49 (community feed facet) once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 318 (2026-09-22) — S44 re-verify + community creation UI — NEW S49
 - **Build/Live:** No rebuild (same build as Pass 315/316/317, `d5b50948`). Both instances healthy.
 - **Explored:**
