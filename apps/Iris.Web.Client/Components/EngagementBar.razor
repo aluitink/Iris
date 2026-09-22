@@ -52,7 +52,7 @@
         else
         {
             <a class="engagement-btn"
-               href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
+               href="/compose?replyTo=@Uri.EscapeDataString(ReplyIri?.Value ?? iri.Value)"
                title="Reply"
                aria-label="Reply">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -99,6 +99,25 @@
     /// </summary>
     [Parameter]
     public Iri? ObjectIri { get; set; }
+
+    /// <summary>
+    /// The IRI to use for the reply link. When <see cref="Object"/> is a content object (Note/Article)
+    /// with its own IRI, that IRI is used (the note IRI, not the create IRI) so the reply's
+    /// <c>inReplyTo</c> points to the stored object — the server serves <c>/replies</c> only for the
+    /// stored object, not the activity (S43). Falls back to <see cref="ObjectIri"/> when the object
+    /// has no IRI.
+    /// </summary>
+    private Iri? ReplyIri
+    {
+        get
+        {
+            if (Object is KristofferStrube.ActivityStreams.Object o && o.Id is { Length: > 0 } && Iri.TryParse(o.Id, out var noteIri))
+            {
+                return noteIri;
+            }
+            return ObjectIri;
+        }
+    }
 
     /// <summary>
     /// The IRI of the post's author (the moderation target). When null or equal to the

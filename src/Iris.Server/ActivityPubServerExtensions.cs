@@ -3950,6 +3950,7 @@ public static class ActivityPubServerExtensions
         ILocalActorResolver localActors,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         Observability.IDegradedModeGate degraded,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         // Degraded (read-only) mode (Phase 83.4): a shared-inbox write is refused with 503 (not 4xx) when
@@ -4012,12 +4013,42 @@ public static class ActivityPubServerExtensions
         Iri? fanOutAuthor = null;
         if (parsed is Activity { Id: not null } typedActivity)
         {
-            if (typedActivity is Create)
+            if (typedActivity is Create createActivity)
             {
                 // Content: fan out to the local followers of the author (the activity's actor).
                 fanOutAuthor = FirstIriFromCollection(typedActivity.Actor) is { } author
                     ? new Iri(author)
                     : null;
+
+                // S43 (cross-instance reply routing): when the Create is a reply (the embedded Note's
+                // inReplyTo is set), the parent note's author is the primary recipient — the replier's
+                // followers do not include the parent's author (the parent's author is on another
+                // instance, not a follower of the replier). If the parent's author is a LOCAL actor on
+                // this instance, add them to the recipients so the reply lands in their inbox and is
+                // stored under the parent note's /replies. The parent author is resolved from the
+                // embedded Note's attributedTo (when the Note is embedded in the Create — the common
+                // Iris shape) or by fetching the parent note over the wire (when the Create carries a
+                // bare IRI reference). Best-effort: an unresolvable parent author simply does not add a
+                // recipient (the follower fan-out above still applies).
+                if (createActivity.Object is { } createObjects)
+                {
+                    Iri? parentAuthor = null;
+                    foreach (var item in createObjects)
+                    {
+                        if (item is IObject embeddedNote
+                            && embeddedNote.InReplyTo is { } replyTo
+                            && FirstIriFromCollection(replyTo) is { } parentIri)
+                        {
+                            parentAuthor = await ResolveObjectAuthorForDeliveryAsync(
+                                persistence, objectFetch, new Iri(parentIri), ct).ConfigureAwait(false);
+                            break;
+                        }
+                    }
+                    if (parentAuthor is { } pa && await localActors.IsLocalActorAsync(pa, ct).ConfigureAwait(false))
+                    {
+                        recipients.Add(pa);
+                    }
+                }
             }
             else if (typedActivity is Announce
                      && typedActivity.Object is { } announceObjects
@@ -4329,11 +4360,21 @@ public static class ActivityPubServerExtensions
             createActivity.Object = rewrittenItems;
         }
 
+        // S43: resolve the reply's parent author ONCE before the audience rewrite and the 136.7
+        // delivery, so both share the same result (the remote fetch is non-deterministic — an
+        // independent fetch in each site can fail in one and succeed in the other).
+        Iri? s43ResolvedParentAuthor = null;
+        if (activity is Create s43Create
+            && s43Create.ExtractEmbeddedObject()?.GetParentIri() is { } s43ParentIri)
+        {
+            s43ResolvedParentAuthor = await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, s43ParentIri, ct).ConfigureAwait(false);
+        }
+
         // 19.6.5 audience metadata: rewrite the on-the-wire audience (to/cc) of an outbound Create/Announce
         // to enumerate the actual distribution list (the remote, non-blocked follower set — and, for a
         // reply, the reply target). This runs BEFORE the outbox/activity-store record so the stored form and
         // the federated (on-the-wire) form are the same canonical activity; no-op for other activity types.
-        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, objectFetch, ct).ConfigureAwait(false);
+        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, objectFetch, ct, s43ResolvedParentAuthor).ConfigureAwait(false);
 
         try
         {
@@ -4374,8 +4415,7 @@ public static class ActivityPubServerExtensions
                 // a local reply produces no notification for the parent author — the reply is in the
                 // replier's outbox, not the parent's inbox). A remote parent is delivered over the wire.
                 // Best-effort: an unresolvable parent (a fetch failure) simply skips the extra delivery.
-                if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
+                if (s43ResolvedParentAuthor is { } parentAuthor)
                 {
                     if (await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
                     {
@@ -6588,13 +6628,16 @@ public static class ActivityPubServerExtensions
     /// (Phase 136.7 — a cross-instance reply's parent is not stored locally, so its author is fetched over
     /// the wire); <see langword="null"/> restricts parent-author resolution to local parents.</param>
     /// <param name="ct">A cancellation token.</param>
+    /// <param name="parentAuthorOverride">A pre-resolved parent author (from the caller's own fetch);
+    /// when non-null, used for the Create's reply-target audience instead of re-fetching.</param>
     private static async Task RewriteOutboundAudienceAsync(
         Activity activity,
         Iri authorIri,
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         IActivityPubClient? objectFetch,
-        CancellationToken ct)
+        CancellationToken ct,
+        Iri? parentAuthorOverride = null)
     {
         var followers = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct)
             .ConfigureAwait(false);
@@ -6631,10 +6674,15 @@ public static class ActivityPubServerExtensions
                 // store) or REMOTE (on another instance, not stored locally); ResolveObjectAuthorForDeliveryAsync
                 // resolves the author in either case (a remote parent's author is fetched over the wire),
                 // so a cross-instance reply names its parent's author in the `to` audience.
-                if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
+                Iri? parentAuthor = parentAuthorOverride;
+                if (parentAuthor is null
+                    && create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri)
                 {
-                    create.To = MergeAudience(create.To, [parentAuthor]);
+                    parentAuthor = await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false);
+                }
+                if (parentAuthor is { } resolvedParent)
+                {
+                    create.To = MergeAudience(create.To, [resolvedParent]);
                 }
                 break;
 
