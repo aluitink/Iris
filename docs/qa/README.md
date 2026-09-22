@@ -37,7 +37,7 @@ Clean-entry steps that prove the fix (no evidence, no `fixed`).
 | ID | Title | Class | Sev | Status | Doc |
 |---|---|---|---|---|---|
 | S2 | Signed-out remote reads bypass the proxy (CORS/blank avatars) | bug | S2 | **closed (QA re-verified 2026-09-22, `7620faa1` — signed-out `GET /ap/v1/u/ii-b1` = 200 proxied)** | [s02](s02-signed-out-proxy-bypass.md) |
-| S3 | Object-detail 404s a local post's collections (Create-activity IRI) | bug | S3 | open | [s03](s03-object-detail-create-iri-404.md) |
+ | S3 | Object-detail 404s a local post's collections (Create-activity IRI) | bug | S3 | **closed (live-verified 2026-09-22, dev1 stack HEAD `0ddfe5b5` — Create IRI serves the Create doc (200), object-detail renders the Note, Replies/Likes/Shares tabs load from the Note IRI, 0 console errors; Create activities now persisted in the `Activities` store + client collection walks derive from the resolved Note IRI)** | [s03](s03-object-detail-create-iri-404.md) |
 | S4 | Communities "Following" tab drops followed REMOTE communities | UX / bug | S2 | **closed (QA re-verified 2026-09-22, `7620faa1` — remote `ii-a8-community` renders in Communities→Following + Profile→Communities after B joined)** | [s04](s04-communities-following-remote.md) |
 | S5 | Search lists a stale orphaned local actor (localhost IRI) | bug / data-integrity | S2 | fixed (2026-09-20, `456b0d9`) | [s05](s05-search-localhost-orphan-actor.md) |
 | S6 | Join on a remote community is a silent no-op (CSP-blocked browser POST) | bug | S2 | fix committed (`68ae703`), not yet live | [s06](s06-remote-join-csp-blocked.md) |
