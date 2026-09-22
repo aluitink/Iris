@@ -5010,6 +5010,12 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        // S51: stamp `updated` on the community Group when its name/summary/icon changes, so remote
+        // clients (and the local UI) can detect the edit. Mirrors the S31 fix for content objects.
+        var now = DateTime.UtcNow;
+        var published = stored.Published;
+        stored.Updated = published is { } pub && now < pub ? pub : now;
+
         await persistence.Communities.PutCommunityAsync(stored, ct).ConfigureAwait(false);
     }
 
