@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 287 (2026-09-22) — Notifications page (filters, mark-all-read, cross-instance notifications) — 0 new defects
+- **Build/Live:** `6680704e` (== HEAD? y — the only `src/` change since is the opt-in circuit breaker `f2a98aa6`, default disabled → no QA redeploy needed). Both instances healthy. Dev1 is actively investigating S42.
+- **Explored:** Signed-in (ii-a1@A) `/notifications`: **(a)** Initial load: 9 unread (badge "9"), 14 notifications visible with "Load more" pagination, mix of types (likes, boosts, replies, follow requests, posts), cross-instance (ii-b1@B, probep@B) + local (ii-a1, ii-a2), "New" badges on recent items, filter tabs (All/Follows/Likes/Boosts/Replies/Mentions), "Mark all as read" button, follow-request items with Accept/Decline buttons. 0 console errors. **(b)** Likes filter tab: shows only "liked a post" notifications (14 like notifications), 0 console errors. **(c)** "Mark all as read": after clicking, the nav "Notifications" link no longer shows the "9" unread badge (was "Notifications 9", now just "Notifications"), and all "New" badges are gone from notification items. 0 console errors.
+- **Result:** **0 new defects.** Notifications page works correctly: filter tabs scope correctly, mark-all-read clears the unread badge + New badges, cross-instance notifications render with correct actor links. Open count unchanged: **S35 + S42 + S43 (3)**.
+- **Checkpoint:** Notifications area verified (filters, mark-all-read, cross-instance notifications). Open: S35 (operator-blocked, Mastodon-side) + S42 (dev1 investigating) + S43 (dev-owned, S3, data-visibility). Next: re-verify S42/S43 once dev fix builds land, or deeper interop testing once operator re-provisions.
+
 ## Pass 286 (2026-09-22) — Search edge cases (remote actor, community, no results) — 0 new defects
 - **Build/Live:** `6680704e` (== HEAD? y — the only `src/` change since is the opt-in circuit breaker `f2a98aa6`, default disabled → no QA redeploy needed). Both instances healthy. Dev1 is actively investigating S42 (community delete orphans Objects row).
 - **Explored:** Signed-in (ii-a1@A) `/search`: **(a)** `q=ii-b1` → 3 results (remote actor ii-b1@B + 1 matching note + duplicate actor link), 0 console errors. **(b)** `q=ii-a8-community` → 1 result (the community "II-A8 Test Community" with description), 0 console errors. **(c)** `q=zzz-no-such-actor` → "0 result(s)" + "No matches found. Try a different handle or search term." (graceful), 0 console errors.
