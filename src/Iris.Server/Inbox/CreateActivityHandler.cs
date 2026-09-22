@@ -196,6 +196,42 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     .ConfigureAwait(false);
             }
 
+            // S47: deliver the post to the named recipients (the actors in the embedded object's `to`
+            // array) when the post is a Direct message. A Direct post's audience names the recipients
+            // (not the author's followers), so the server must deliver it to each named recipient's
+            // inbox (cross-instance, signed as the author) so the recipient can fetch it by IRI. A
+            // local recipient sees the post via the author's outbox; skip (no cross-instance delivery
+            // needed). A recipient who has blocked the author does not want the author's content — skip
+            // the delivery (the recipient's own block edge, recorded when its Block arrived in the
+            // author's inbox, is read here).
+            var embedded = activity.ExtractEmbeddedObject();
+            if (embedded is KristofferStrube.ActivityStreams.IObject contentObj && contentObj.To is { } toEntries)
+            {
+                foreach (var entry in toEntries)
+                {
+                    if (entry.ResolveObjectIri() is not { } targetIri || targetIri.IsPublicAudience())
+                    {
+                        continue;
+                    }
+
+                    if (await _localActors.IsLocalActorAsync(targetIri, ct).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    if (await _persistence.Moderation
+                            .IsBlockedAsync(targetIri, recipient, ct)
+                            .ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    await _delivery
+                        .DeliverToActorAsync(targetIri, activity, recipient, ct)
+                        .ConfigureAwait(false);
+                }
+            }
+
             // F-06 (relay fan-out): deliver the post to each relay the author has subscribed to (a
             // `star`-subscribed fan-out server, AP §5.1.3), signed as the author. A relay is a remote
             // fan-out server — always cross-instance — so no local-actor / block check is needed: the
