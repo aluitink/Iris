@@ -61,6 +61,7 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
     private readonly IPersistenceProvider _persistence;
     private readonly IDeliveryService _delivery;
     private readonly ILocalActorResolver _localActors;
+    private readonly Stores.ObjectInteractionCountRefreshService? _countRefresh;
 
     /// <summary>
     /// Initializes a new <see cref="AnnounceActivityHandler"/>.
@@ -72,12 +73,19 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
     /// <param name="localActors">Resolves whether the recipient (and each candidate follower) is a
     /// local actor.</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
+    /// <param name="countRefresh">
+    /// The interaction-count refresher (S37/S28): when present, the announced object's denormalized
+    /// <c>sharedCount</c> is refreshed immediately after the announce edge is recorded, so the object
+    /// document is correct on the next read without waiting for the periodic refresh pass. May be null
+    /// (a host that does not register it) — in that case the count converges on the next interval pass.
+    /// </param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public AnnounceActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
         ILocalActorResolver localActors,
-        ILogger<AnnounceActivityHandler>? logger = null)
+        ILogger<AnnounceActivityHandler>? logger = null,
+        Stores.ObjectInteractionCountRefreshService? countRefresh = null)
         : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
@@ -86,6 +94,7 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
         _persistence = persistence;
         _delivery = delivery;
         _localActors = localActors;
+        _countRefresh = countRefresh;
     }
 
     /// <inheritdoc/>
@@ -152,6 +161,17 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
         await _persistence.Announces
             .RecordAnnounceAsync(announcerIri.Value, objectIri.Value, ct)
             .ConfigureAwait(false);
+
+        // S28/S37: refresh the object's denormalized sharedCount immediately so the object document
+        // is correct on the next read, rather than waiting for the periodic refresh pass (which only
+        // runs every 30 s and would otherwise serve the stale pre-computed 0). Only when the
+        // announced object is stored locally (a remote object's counters are maintained on its home
+        // instance).
+        if (_countRefresh is { } refresh
+            && await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out _, ct).ConfigureAwait(false))
+        {
+            await refresh.RefreshObjectCountsAsync(objectIri.Value, ct).ConfigureAwait(false);
+        }
 
         // Propagate the announce to the recipient's followers (mirroring CreateActivityHandler's fan-out):
         // a local follower sees the boost via the follower's outbox on this instance (recorded directly —
