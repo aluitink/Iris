@@ -1,7 +1,7 @@
 # S34 — Gated (manually-approved) follow request is added to the public `followers` collection BEFORE acceptance
 
 - **Class:** bug / data-integrity (privacy/authorization) — **Severity:** S2
-- **Status:** open
+- **Status:** FIXED (re-confirmed Pass 172, 2026-09-21, build `38ae87c`) — gated follower correctly withheld from public followers collection until owner accepts.
 - **Found:** Interop suite A3 (Iris↔Iris, same-instance gate path), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`)
 - **Related:** A3 (follow-request gating). The gate *queues* the request (pending notification + requests endpoint correct), but the **public** followers collection does not withhold the pending edge.
 

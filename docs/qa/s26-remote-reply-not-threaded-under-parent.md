@@ -1,7 +1,7 @@
 # S26 — Remote reply delivered and stored, but NOT threaded under the parent Note's `replies`
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open
+- **Status:** FIXED (re-confirmed Pass 154, 2026-09-21, build `38ae87c`) — cross-instance reply threading works; parent's `/replies` includes the remote reply.
 - **Found:** Interop suite A5 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`, Iris B `qa-iris-b.luit.ink`)
 - **Related:** [S25](s25-remote-post-not-in-followers-home-feed.md) (same "remote object delivered+stored but not surfaced" family), [S4](s04-communities-following-remote.md)
 

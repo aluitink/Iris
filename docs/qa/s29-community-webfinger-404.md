@@ -1,7 +1,7 @@
 # S29 — Community (Group) not resolvable via WebFinger (`acct:!name@host` → 404) even though the Group document exists
 
 - **Class:** bug / discovery — **Severity:** S2
-- **Status:** open
+- **Status:** FIXED (not reproduced 2026-09-21, fresh QA cluster) — community WebFinger `acct:!handle@host` now resolves to the Group document.
 - **Found:** Interop suite A8 (Iris↔Iris), 2026-09-20, QA federation stack (Iris A `qa-iris-a.luit.ink`)
 - **Related:** A8.1 (community bootstrap). Distinct from the person-actor WebFinger (which works).
 
