@@ -74,15 +74,17 @@ public sealed class FollowActivityHandlerTests
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 
-    // --- The inbound follow is surfaced in the followed actor's outbox (the UI lists it) ---
+    // --- The inbound follow is surfaced on the dedicated follow-request queue (not the outbox) ---
 
     [Fact]
     public async Task HandleAsync_LocalPerson_InboundFollowLandsInFollowedActorsOutbox()
     {
-        // Regardless of auto-approve vs. manual-approve, an inbound follow of a local person is recorded
-        // in the FOLLOWED actor's own outbox, so a UI (the sample's "Inbound follows" list) can enumerate
-        // it from the outbox and offer the operator an Accept/Reject. The activity store alone is not
-        // enumerable by the client, so the outbox is the surface.
+        // S24-D2: an inbound follow is surfaced on the DEDICATED follow-request queue
+        // (IFollowStore.GetFollowRequestsAsync, served by /local/v1/u/{handle}/requests), NOT in the
+        // followed actor's outbox. The old behavior recorded the foreign Follow in the outbox so a UI
+        // could enumerate it, but that polluted the public outbox with foreign (non-self-authored)
+        // activities (S24-D2) — the queue surface supersedes the outbox surface, so the outbox now
+        // stays clean (only the actor's own authored activities).
         var persistence = new InMemoryPersistenceProvider();
         await SeedManuallyApprovingPersonAsync(persistence, LocalManuallyApproving);
         var (handler, _) = BuildHandler(persistence);
@@ -90,18 +92,18 @@ public sealed class FollowActivityHandlerTests
 
         await handler.HandleAsync(new InboxDelivery(LocalManuallyApproving, follow), follow);
 
-        // The follow is in the followed actor's (carol's) outbox under its own IRI.
-        var outbox = await persistence.Activities.GetOutboxAsync(LocalManuallyApproving);
-        Assert.Contains(outbox, a => a.Id == follow.Id);
+        // The follow is on the dedicated request queue (the /local/v1/u/{handle}/requests surface).
+        Assert.Contains(RemoteFollower, await persistence.Follows.GetFollowRequestsAsync(LocalManuallyApproving));
+        // ... and is NOT in the followed actor's outbox (the outbox is the actor's own authored content).
+        Assert.DoesNotContain(await persistence.Activities.GetOutboxAsync(LocalManuallyApproving), a => a.Id == follow.Id);
 
-        // (Same for the auto-approve path — the follow is surfaced there too.)
+        // (Same for the auto-approve path — the request queue is the surface, the outbox stays clean.)
         var persistence2 = new InMemoryPersistenceProvider();
         await SeedPersonAsync(persistence2, LocalPerson);
         var (handler2, _) = BuildHandler(persistence2);
         var follow2 = BuildFollow(RemoteFollower, LocalPerson);
         await handler2.HandleAsync(new InboxDelivery(LocalPerson, follow2), follow2);
-        var outbox2 = await persistence2.Activities.GetOutboxAsync(LocalPerson);
-        Assert.Contains(outbox2, a => a.Id == follow2.Id);
+        Assert.DoesNotContain(await persistence2.Activities.GetOutboxAsync(LocalPerson), a => a.Id == follow2.Id);
     }
 
     [Fact]
@@ -202,14 +204,17 @@ public sealed class FollowActivityHandlerTests
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 
-    // --- The inbound follow of a community is surfaced in the community's outbox (19.5.3) --
+    // --- The inbound follow of a community is surfaced on the join-request queue (not the outbox) --
 
     [Fact]
     public async Task HandleAsync_LocalCommunity_InboundFollowLandsInCommunityOutbox()
     {
-        // Regardless of auto-approve vs. manual-approve, an inbound follow of a local community is recorded
-        // in the community's OWN outbox, so a UI can enumerate it from the outbox and offer the operator an
-        // Accept/Reject (the community analogue of the person's "Inbound follows" surface; change 152).
+        // S24-D2: an inbound follow of a local community is surfaced on the DEDICATED join-request queue
+        // (ICommunityStore.GetJoinRequestsAsync, served by /local/v1/c/{name}/requests when the gate is
+        // on), NOT in the community's outbox. The old behavior recorded the foreign Follow in the
+        // community's outbox so a UI could enumerate it, but that polluted the public outbox with a
+        // foreign (non-self-authored) activity (S24-D2) — the join-request queue supersedes the outbox
+        // surface, so the outbox now stays clean.
         var persistence = new InMemoryPersistenceProvider();
         await SeedCommunityWithFlagAsync(persistence, Community, JsonDocument.Parse("true").RootElement.Clone());
         var (handler, _) = BuildHandler(persistence);
@@ -217,17 +222,21 @@ public sealed class FollowActivityHandlerTests
 
         await handler.HandleAsync(new InboxDelivery(Community, follow), follow);
 
-        var outbox = await persistence.Activities.GetOutboxAsync(Community);
-        Assert.Contains(outbox, a => a.Id == follow.Id);
+        // The follow is on the dedicated join-request queue (the /local/v1/c/{name}/requests surface) ...
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetJoinRequestsAsync(Community));
+        // ... and is NOT in the community's outbox (the outbox is the actor's own authored content).
+        Assert.DoesNotContain(await persistence.Activities.GetOutboxAsync(Community), a => a.Id == follow.Id);
 
-        // (Same for the auto-approve path — the follow is surfaced there too.)
+        // (Same for the auto-approve path — the follow edge is recorded, the outbox stays clean.)
         var persistence2 = new InMemoryPersistenceProvider();
         await persistence2.Communities.PutCommunityAsync(new Group { Id = Community.Value, Name = ["Iris"] });
         var (handler2, _) = BuildHandler(persistence2);
         var follow2 = BuildFollow(RemoteFollower, Community);
         await handler2.HandleAsync(new InboxDelivery(Community, follow2), follow2);
-        var outbox2 = await persistence2.Activities.GetOutboxAsync(Community);
-        Assert.Contains(outbox2, a => a.Id == follow2.Id);
+        // Auto-approve: the follow edge is recorded (the community follows the follower) ...
+        Assert.Contains(RemoteFollower, await persistence2.Communities.GetFollowsAsync(Community));
+        // ... and the outbox stays clean (no foreign Follow recorded).
+        Assert.DoesNotContain(await persistence2.Activities.GetOutboxAsync(Community), a => a.Id == follow2.Id);
     }
 
     // --- Guards ---------------------------------------------------------------------------

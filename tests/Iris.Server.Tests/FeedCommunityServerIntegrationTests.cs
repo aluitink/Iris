@@ -149,12 +149,13 @@ public sealed class FeedCommunityServerIntegrationTests
     }
 
     [Fact]
-    public async Task Follow_OfFeedCommunity_InboundFollowLandsInCommunityOutbox()
+    public async Task Follow_OfFeedCommunity_InboundFollowRecognizedAndOutboxStaysClean()
     {
-        // An inbound follow of a Feed community is surfaced in the community's own outbox, so a UI can
-        // enumerate it and offer the operator an Accept/Reject (the community's "Inbound follows"
-        // surface). This exercises the same `TryGetCommunityAsync` recognition as the edge-recording test
-        // but asserts the outbox side effect.
+        // An inbound follow of a Feed community is recognized as a community (TryGetCommunityAsync) and
+        // records the community's "following" edge (community → follower, which drives the federated
+        // feed). S24-D2: the foreign Follow is NOT recorded in the community's outbox — the outbox stays
+        // clean (only the community's own authored content); a gated community surfaces the request on
+        // the dedicated join-request queue instead.
         var persistence = new InMemoryPersistenceProvider();
         await SeedFeedCommunityAsync(persistence);
         var (handler, _) = BuildFollowHandler(persistence);
@@ -162,8 +163,11 @@ public sealed class FeedCommunityServerIntegrationTests
 
         await handler.HandleAsync(new InboxDelivery(FeedCommunity, follow), follow);
 
-        var outbox = await persistence.Activities.GetOutboxAsync(FeedCommunity);
-        Assert.Contains(outbox, a => a.Id == follow.Id);
+        // The Feed community is recognized as a community: the follow edge (community → follower) is
+        // recorded (the recognition proof this test exists for).
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowsAsync(FeedCommunity));
+        // The foreign Follow is NOT in the community's outbox (S24-D2: the outbox is clean).
+        Assert.DoesNotContain(await persistence.Activities.GetOutboxAsync(FeedCommunity), a => a.Id == follow.Id);
     }
 
     // --- 4. Update flow: an inbound Update of a Feed community profile is merged ---------

@@ -131,12 +131,18 @@ public sealed class EfActivityStore : IActivityStore
         var items = await GetBoxAsync(Outbox, actorIri, ct).ConfigureAwait(false);
         var actorValue = actorIri.Value;
 
-        // S24-D2: an outbox is the actor's OWN authored activities. Inbound handlers (Follow, Announce,
-        // CommunityContentRecorder, …) have historically recorded a foreign (remote-actor-authored)
-        // activity in the recipient's outbox for UI visibility; those items must not leak into the
-        // wire outbox. Filter to items the actor actually authored.
+        // S24-D2: the outbox pollution source is FOREIGN Follow activities — a remote actor's
+        // follow-request landing in the followed actor's outbox, plus the spurious self-Follow an
+        // actor records on itself. Filter those out (keep only Follows the actor authored itself).
+        // Content activities (Create/Announce/Like/…) are NOT filtered here: inbound handlers
+        // deliberately record a remote actor's post in a local community member's outbox (F-15
+        // community fan-out), and that is by-design — the home-feed surface filters it separately.
         return items.Where(item =>
         {
+            if (item is not Follow)
+            {
+                return true;
+            }
             var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
             return itemActor is null || itemActor == actorValue;
         }).ToList();
