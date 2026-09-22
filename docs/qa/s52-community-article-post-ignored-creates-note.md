@@ -1,7 +1,7 @@
 # S52 — Community post ignores post type: Article → Note, Poll → empty Note
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open
+- **Status:** **CLOSED (dev1 `3f79b106`→main `702964c6`, live-verified 2026-09-22 on dev1 stack).** `PostToLocalCommunityAsync` now dispatches on `contentType`: Poll → `Question`, Article → `Article`, Note → `Note`; remote path remains `Page`. Live-verified: Article post → AP doc `type:"Article"` with `articles/` IRI; Poll post → AP doc `type:["Question","Object"]` with `poll.options`.
 - **Found:** Pass 323 (2026-09-22), broadened Pass 324
 - **Related:** S10 (Article "(long-form)" mislabeled — fixed), S11 (Poll broken — fixed)
 
