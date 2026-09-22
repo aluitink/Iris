@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 282 (2026-09-22) — Directory area exploration (last unexplored facet) — 0 new defects
+- **Build/Live:** `6680704e` (== HEAD? y — no `src/` change → no redeploy; QA stack current from Pass 280). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) full sweep of the **Directory** page (`/directory`): **(a) People tab** — 7 local actors (ab, alice, ii-a1, ii-a2, im-user, iris-bot, probea) with Follow buttons + post/following/follower counts. **(b) Communities tab** — 2 communities (ii-a8-community, qa-pass261-test) both with "Leave" (ii-a1 is a member). **(c) Scope toggle** — "This instance" → "All known" widens to 10 People (adds ii-b1@B, gnomen, probep — remote actors) + same 2 Communities (no remote communities). **(d) External lookup box** — `imuser@qa-mastodon.luit.ink` → graceful "Found the account but could not load their profile." (S35, Mastodon-side 404, operator-blocked); `ii-b1@qa-iris-b.luit.ink` → success (link to remote profile, no error).
+- **Result:** **0 new defects.** All Directory facets render + function. The only console errors (2×) are the known S35 Mastodon 404s (operator-blocked). Open count unchanged: **S35 + S42**.
+- **Checkpoint:** Directory area fully explored + clean. All major UI facets now covered (Home, Compose, Search, Communities, Settings, Directory, Profile, Notifications, Object-detail). Open: S35 (operator-blocked, Mastodon-side) + S42 (dev-owned, S3, data-integrity). Next: re-verify S42 once a dev fix build lands, or deeper interop testing (Mastodon/Lemmy) once operator re-provisions.
+
 ## Pass 281 (2026-09-22) — Settings area exploration (under-explored facet) — 0 new defects
 - **Build/Live:** `6680704e` (== HEAD? y — no `src/` change → no redeploy; QA stack current from Pass 280). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) full sweep of the **Settings** page (`/settings`), all 3 tabs: **(a) Account** — Profile (avatar + "Edit your profile" link), **Security** (read-only federation key: Signing algorithm `Rsa`, Key IRI `…/ii-a1#key-1`, JWK thumbprint RFC 7638 + "read-only" note), **Change password** (3 fields + button), **Moderation** (Blocked/Muted/Reported, all empty). **(b) Content** — Notifications (4 type checkboxes, all checked), **Muted actors** (IRI input + Mute), Communities ("not a member yet" + Browse link), Relays (description + Subscribe box). **(c) Danger** — Account deletion (permanent warning + "Delete my account" — **not clicked**, destructive).
