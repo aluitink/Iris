@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 265 (2026-09-22) — build `d22a5872` (== main HEAD; live QA cluster rebuilt at Pass 261) / fast-suite green gate re-run — ALL GREEN (2265 passed, 0 failed), identical to Pass 262 (no `src/` change); QA idle
+- **Build/Live:** `d22a5872` (== main HEAD). QA worktree synced down (0 behind). No `src/` change since Pass 264 (dev1's S21 residual cache-invalidation fix is still **uncommitted in dev1's worktree**, not on main) → no redeploy needed.
+- **Explored:** QA idle (only open finding S35 is operator-blocked; the dev backlog is otherwise empty), so per the loop re-ran the **fast** test-suite green gate (`dotnet test --filter "Category!=Slow"` across all projects) to confirm the build is still green between live passes.
+- **Result:** **ALL GREEN — 0 failures.** Core 467, Client 194, Web 113, WebCrypto 3, Client.Extensions 29, **Server 1438** (8 skipped = Slow-gated), Server.Data 21 → **2265 passed**. Release build green (0/0). Identical to Pass 262 (no `src/` change). No new defects.
+- **Checkpoint:** QA idle — open count **1 (S35 only**, operator-blocked). Next: re-verify **dev1's S21 residual cache-invalidation fix** when it lands on `main` (Following-tab stale-cache after community create); S35 needs operator re-provision of the Mastodon `imuser` account; re-run when `src/` changes.
+
 ## Pass 264 (2026-09-22) — fresh build (rebuilt at Pass 261) / S6 re-verified CLOSED live: remote Join/Leave on a genuine cross-instance community drives a server-side Follow/Undo, no CSP-blocked browser POST, 0 console errors
 - **Build/Live:** fresh build rebuilt from `main` HEAD (Pass 261); both instances healthy. B now has a **remote-join target** — A's `qa-pass261-test` community is cached on B under A's IRI, which was the surface missing in Pass 261 (B had no local/remote community to join then).
 - **Explored:** S6 remote-Join/Leave re-verify (the one S6 facet that had NOT been live-exercised on the fresh build) on a clean circuit (logout → login as `ii-b1`@B), which did not follow the target community.
