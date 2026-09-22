@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 262 (2026-09-22) — build `276d2cc5` (== main HEAD; live QA cluster rebuilt at Pass 261) / full fast test-suite regression sweep — ALL GREEN (2265 passed, 0 failed); QA idle (only S35 remains, operator-blocked)
+- **Build/Live:** `276d2cc5` (== main HEAD). Live QA cluster was rebuilt + redeployed at Pass 261 (both instances healthy); this pass is an **automated test sweep** (QA is idle — the only open finding, S35, is a Mastodon-cluster provisioning issue blocked on the operator, so no live-app surface to exercise). No `src/` change since the Pass-261 rebuild → no redeploy needed.
+- **Explored:** The full fast test suite (`dotnet test --filter "Category!=Slow"`) across all test projects — the loop's "is it green?" gate (per TESTING.md).
+- **Result:** **ALL GREEN — 0 failures.** Core 467, Client 194, Web 113, WebCrypto 3, Client.Extensions 29, **Server 1438** (8 skipped = Slow-gated), Server.Data 21 → **2265 passed**. Release build green (0/0). The recent S28/S37 (`5355e968`) + S24-D2 (`0d05342e`) + S38 (`69f0ff14`) + S36 (`61c328fa`) fixes all hold under the full suite. No new defects.
+- **Checkpoint:** QA idle — open count **1 (S35 only**, Mastodon-side, operator-blocked). Next: re-verify S6 remote-Join when a remote community becomes available on the stack; S35 needs the operator to re-provision the Mastodon `imuser` account. Otherwise re-run the sweep if `src/` changes.
+
 ## Pass 261 (2026-09-22) — fresh QA build (rebuilt from `main` HEAD) / S3 + S21 re-verified FIXED on the live cluster; S6 fix present (not re-exercised — no remote-join target); S35 still Mastodon-side
 - **Build/Live:** QA worktree synced to `main` (fast-forward, 0 behind) + **rebuilt + redeployed** (`docker compose … -p qa up -d --build` from `.worktrees/qa`; 18 files changed incl. S28/S37 + S24-D2). Both `qa-iris-a`/`qa-iris-b` healthy, HTTP 200 on first try. (Mastodon containers NOT rebuilt — `qa-mastodon-web` Up 7h.)
 - **Explored:** Clean-entry re-verify of the previously-open Iris items: S3 (Create-IRI deep link), S21 (new-community auto-follow + `/c/{handle}` + Communities tabs), S6 (remote join), S35 (Mastodon actor discovery), S36 (home feed, re-confirmed).
