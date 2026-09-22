@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 299 (2026-09-22) — /search edge cases (non-existent post, special characters, long string) — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) `/search`: **(a)** **Non-existent post**: searched "nonexistent-post-xyz-12345" → "0 result(s)." + "No matches found. Try a different handle or search term." (correct). **(b)** **Special characters**: searched "test@special!@#$%^&*()" → "0 result(s)." + same helpful message (URL-encoded, no errors). **(c)** **Long string**: searched "this is a very long search string that should not break the search functionality or cause any errors or crashes in the system" → "0 result(s)." + same helpful message (URL-encoded, no errors). 0 console errors throughout.
+- **Result:** **0 new defects.** All search edge cases work correctly — non-existent posts, special characters, and long strings all return "0 result(s)." with a helpful message. Special characters and long strings are properly URL-encoded. Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** /search edge cases verified (non-existent post, special characters, long string — all work correctly). Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 298 (2026-09-22) — Authless (signed-out) experience (/compose, /notifications, /object, /home) — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed out (ii-a1@A): **(a)** `/compose` → redirects to `/login` (correct — you need to be signed in to compose). **(b)** `/notifications` → redirects to `/login` (correct — you need to be signed in to view notifications). **(c)** `/object?iri=…/ii-b1/notes/06GCAVHY2NJCS32M66CV64J0V4` (a remote post from B instance) → redirects to `/login` (correct — you need to be signed in to view object details). **(d)** `/home` → redirects to `/login` (correct — you need to be signed in to view the home feed). All 4 pages consistently redirect to /login when signed out. 0 console errors throughout.
