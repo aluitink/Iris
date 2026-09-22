@@ -153,7 +153,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 **QA fixes (by severity — one doc each in [docs/qa/](docs/qa/README.md)):**
 
 - **S2-sev:** **S36** [home-feed omits posts](docs/qa/s36-home-feed-omits-posts-and-is-polluted-with-actor-document-activity.md) — **FIXED `14eb0db1`, awaiting QA re-verify** (IsFollowReply cc=[followers] fix). **S17** [profile tabs overfetch outbox](docs/qa/s17-profile-tabs-overfetch-outbox.md) — **FIXED `645b3660`, awaiting QA re-verify** (Likes tab scoped to `/liked`; Your posts/Replies bounded to 4 pages). **S4** [communities following drops remote](docs/qa/s04-communities-following-remote.md) — **FIXED `83eb22aa`+`cca01fa7`, awaiting QA re-verify** (client fetch-by-IRI fallback + server Accept/Reject recipient re-resolution). **S24-D2** [foreign activities in local outbox](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — linked to S36. **S24-D4** [remote-actor collection routes 404](docs/qa/s24-cross-instance-follow-state-inconsistent.md) — **FIXED `2804fb55`, live-verified** (collection proxy to the remote instance). **S2, S3, S14, S19, S20, S21, S35** — open.
-- **S3-sev:** **S38** — open.
+- **S3-sev:** **S38** [webfinger does not proxy remote accounts](docs/qa/s38-webfinger-does-not-proxy-remote-accounts.md) — **FIXED (dev2, 2026-09-22)** — WebFingerHandler now proxies remote `@host` via `IWebFingerResolver`; verified live on dev2 stack (iris-a → iris-b webfinger 200 + JRD).
 
 
 
@@ -165,7 +165,7 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned - see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **Open:** S2, S3, S14, S17, S19, S20, S21, S24-D2, S35 (S1), **S36 (S2, OPEN — 66th consecutive pass; home feed is the ONLY broken surface of 8; awaiting dev fix)**, S38 (S3), **S4 (S2, FIXED `83eb22aa`+`cca01fa7`, awaiting QA re-verify)**. Count in [docs/qa/README.md](docs/qa/README.md).
+- **Open:** S2, S3, S14, S17, S19, S20, S21, S24-D2, S35 (S1), **S36 (S2, OPEN — 66th consecutive pass; home feed is the ONLY broken surface of 8; awaiting dev fix)**, **S4 (S2, FIXED `83eb22aa`+`cca01fa7`, awaiting QA re-verify)**. **S38 (S3, FIXED dev2 2026-09-22, awaiting QA re-verify)**. Count in [docs/qa/README.md](docs/qa/README.md).
 - **CLOSED:** S26, S27, S28, S29, S30, S31, S32, S33, S34, S37, S39.
 - **BLOCKERS (operator action):** (1) Mastodon M2-M12 - registrations: false + imuser password unknown + actor docs 404 (S35). (2) Lemmy L2-L12 - iluser pending approval.
 

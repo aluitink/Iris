@@ -8810,6 +8810,7 @@ public static class ActivityPubServerExtensions
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        IWebFingerResolver webFinger,
         CancellationToken ct)
     {
         var resource = context.Request.Query["resource"].ToString();
@@ -8832,12 +8833,25 @@ public static class ActivityPubServerExtensions
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var instanceHost = new Uri(baseUrl).Host;
 
-        // RFC 7033: a WebFinger query for an account whose host is not this instance is answered
-        // with a 404, because the account does not exist on this instance. This is the response a
-        // mis-routed (forwarded-to-the-wrong-instance) query gets, and it is what tells a retrying
-        // client (WebFingerClient) that this instance is not the account's home.
+        // S38: when the account host is not this instance, proxy the WebFinger request to the
+        // remote instance so that cross-instance handle-based discovery works. The remote
+        // instance answers the WebFinger query for its own account; we relay the JRD response.
         if (!string.Equals(accountHost, instanceHost, StringComparison.OrdinalIgnoreCase))
         {
+            try
+            {
+                var remoteAccount = $"acct:{handle}@{accountHost}";
+                Iri? remoteIri = await webFinger.ResolveActorAsync(remoteAccount, ct: ct).ConfigureAwait(false);
+                if (remoteIri is Iri resolvedRemoteIri)
+                {
+                    return WebFingerResult(resolvedRemoteIri, handle, accountHost);
+                }
+            }
+            catch
+            {
+                // Remote instance unreachable or returned an error — fall through to 404.
+            }
+
             return Results.NotFound();
         }
 
