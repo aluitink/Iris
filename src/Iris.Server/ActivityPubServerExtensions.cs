@@ -1179,8 +1179,15 @@ public static class ActivityPubServerExtensions
                 "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks|flags|mutes|relays)}",
                 (string handle, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
-                    LocalCollectionPageCache collectionCache, CancellationToken ct)
-                    => CollectionEndpointHandler(handle, collection, context, persistence, optionsAccessor, collectionCache, ct))
+                    LocalCollectionPageCache collectionCache, IActorCredentialValidator credentialValidator,
+                    IProxyTargetPolicy proxyPolicy, IActivityPubClientFactory clientFactory,
+                    Func<HttpMessageHandler> transportFactory, ProxyGoneCache goneCache,
+                    RemoteActorPersister? remoteActorPersister, RemoteCommunityPersister? remoteCommunityPersister,
+                    CancellationToken ct)
+                    => CollectionEndpointHandler(
+                        handle, collection, context, persistence, optionsAccessor, collectionCache,
+                        credentialValidator, proxyPolicy, clientFactory, transportFactory, goneCache,
+                        remoteActorPersister, remoteCommunityPersister, ct))
             .WithName("collection-endpoint");
 
         // Followed feed: GET /ap/v1/u/{handle}/feed — the actor's home timeline (F-14): the union of the
@@ -9702,6 +9709,13 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         LocalCollectionPageCache collectionCache,
+        IActorCredentialValidator credentialValidator,
+        IProxyTargetPolicy proxyPolicy,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        ProxyGoneCache goneCache,
+        RemoteActorPersister? remoteActorPersister,
+        RemoteCommunityPersister? remoteCommunityPersister,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -9712,6 +9726,29 @@ public static class ActivityPubServerExtensions
         if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
             || actor is null)
         {
+            // S24-D4: the local IRI ({base}/ap/v1/u/{handle}) never matches a CACHED REMOTE actor
+            // (stored under its remote IRI by the RemoteActorPersister), so the direct collection route
+            // 404s even though the actor doc 200s (the D3 fix) and the /proxy route 200s. Fall back to
+            // a stored remote actor whose preferredUsername matches the requested handle and PROXY the
+            // collection request to the remote instance (the same relay the /proxy route uses), instead
+            // of returning 404. Mirrors ActorDocumentHandler's S24-D3 remote-actor fallback and the
+            // /proxy relay path. Only fires for a genuine cross-instance miss (a local actor already
+            // resolved above).
+            var remoteMatches = await persistence.Actors.SearchActorsAsync(handle, limit: 10, offset: 0, ct, localOnly: false).ConfigureAwait(false);
+            var baseUri = new Uri(baseUrl);
+            var baseOrigin = $"{baseUri.Scheme}://{baseUri.Authority}";
+            var remoteCanonical = remoteMatches.FirstOrDefault(a =>
+                string.Equals(a.PreferredUsername, handle, StringComparison.OrdinalIgnoreCase)
+                && a.Id is { Length: > 0 } rid
+                && !rid.StartsWith(baseOrigin, StringComparison.OrdinalIgnoreCase));
+            if (remoteCanonical?.Id is { Length: > 0 } remoteIriStr)
+            {
+                return await ProxyRemoteActorCollectionAsync(
+                    remoteCanonical, remoteIriStr, collectionName, context, options,
+                    credentialValidator, proxyPolicy, clientFactory, transportFactory,
+                    goneCache, remoteActorPersister, remoteCommunityPersister, ct).ConfigureAwait(false);
+            }
+
             return Results.NotFound();
         }
 
@@ -9770,6 +9807,166 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(document, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// Proxies a cached REMOTE actor's collection read (<c>GET /ap/v1/u/{handle}/{collection}</c>) to the
+    /// remote instance (S24-D4). The local route's IRI (<c>{base}/ap/v1/u/{handle}</c>) never matches a
+    /// remote actor stored under its remote IRI, so without this the collection route 404s even though
+    /// the actor doc 200s (the S24-D3 fix) and the <c>/proxy</c> route 200s. Resolves the requested
+    /// collection's IRI from the cached actor document (preferring the document's own advertised
+    /// <c>outbox</c>/<c>followers</c>/<c>following</c> link when present, falling back to appending the
+    /// collection segment to the actor's remote IRI), then relays the GET to the remote instance through
+    /// the same signed-fetch path the <c>/proxy</c> route uses, passing the request's <c>?page</c>/<c>?limit</c>
+    /// query through so pagination works. The remote response (status + body + content type) is relayed
+    /// back verbatim; a 410 Gone is recorded in the <c>ProxyGoneCache</c>.
+    /// </summary>
+    private static async Task<IResult> ProxyRemoteActorCollectionAsync(
+        Actor remoteActor,
+        string remoteActorIriValue,
+        string collectionName,
+        HttpContext context,
+        ActivityPubServerOptions options,
+        IActorCredentialValidator credentialValidator,
+        IProxyTargetPolicy proxyPolicy,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        ProxyGoneCache goneCache,
+        RemoteActorPersister? remoteActorPersister,
+        RemoteCommunityPersister? remoteCommunityPersister,
+        CancellationToken ct)
+    {
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var remoteActorIri = new Iri(remoteActorIriValue);
+
+        // Resolve the collection IRI from the cached document's advertised link when present, else
+        // append the collection segment to the actor's remote IRI (the standard ActivityPub layout).
+        ICollectionOrLink? collectionRef = collectionName switch
+        {
+            "outbox" => remoteActor.Outbox,
+            "followers" => remoteActor.Followers,
+            "following" => remoteActor.Following,
+            _ => null,
+        };
+        var targetIri = collectionRef?.ResolveCollectionIri()
+            ?? (collectionName switch
+            {
+                "outbox" => remoteActorIri.OutboxOf(),
+                "followers" => remoteActorIri.FollowersOf(),
+                "following" => remoteActorIri.FollowingOf(),
+                "liked" => remoteActorIri.LikedOf(),
+                "blocks" => remoteActorIri.BlocksOf(),
+                "flags" => remoteActorIri.FlagsOf(),
+                "mutes" => remoteActorIri.MutesOf(),
+                "relays" => remoteActorIri.RelaysOf(),
+                _ => remoteActorIri,
+            });
+
+        // Append the request's query string (page/limit) so a paginated read relays the correct page.
+        var fullTarget = context.Request.QueryString.HasValue
+            ? targetIri.Value + context.Request.QueryString.Value
+            : targetIri.Value;
+
+        if (!Iri.TryParse(fullTarget, out var target))
+        {
+            return Results.NotFound();
+        }
+
+        // Identify the requesting actor (Basic auth or cookie) to sign the proxied read — the same
+        // auth resolution the /proxy route uses. An unauthenticated read signs as the instance actor
+        // (the anonymous seam), so the remote verifies the signature against the instance's public doc.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(BuildActorIri(baseUrl, "proxy"), authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            var actorPrefix = $"{baseUrl.TrimEnd('/')}{ActivityPubServerConstants.RoutePrefix}/u/";
+            if (cookieActorIri is not null && cookieActorIri.StartsWith(actorPrefix, StringComparison.Ordinal))
+            {
+                var h = cookieActorIri[actorPrefix.Length..];
+                if (h.Length > 0 && !h.Contains('/', StringComparison.Ordinal))
+                {
+                    authenticatedHandle = h;
+                }
+            }
+        }
+        Iri? signingActorIri = authenticatedHandle is not null
+            ? BuildActorIri(baseUrl, authenticatedHandle)
+            : options.InstanceActorId;
+
+        // Check the target against the proxy policy (allowlist + rate limit).
+        if (!await proxyPolicy.TryAuthorizeAsync(
+                signingActorIri ?? default, target, out var reason, ct).ConfigureAwait(false))
+        {
+            var status = reason is not null && reason.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+                ? (HttpStatusCode)429
+                : HttpStatusCode.Forbidden;
+            return Results.Json(new { error = reason }, statusCode: (int)status);
+        }
+
+        // Short-circuit a recently-gone target.
+        if (goneCache.IsGone(target.Value))
+        {
+            return Results.NoContent();
+        }
+
+        // Build + sign + forward the GET.
+        using var request = new HttpRequestMessage(HttpMethod.Get, target.Value);
+        if (context.Request.Headers.Accept is { Count: > 0 } accept)
+        {
+            foreach (var value in accept)
+            {
+                request.Headers.TryAddWithoutValidation("Accept", value);
+            }
+        }
+
+        if (signingActorIri is not null)
+        {
+            var signingActorValue = signingActorIri.ToString();
+            request.Headers.TryAddWithoutValidation("X-Iris-Actor", signingActorValue);
+        }
+
+        using var client = clientFactory.Create(
+            new ActivityPubClientOptions
+            {
+                ActorId = signingActorIri,
+                EnableRetry = false,
+            },
+            transportFactory());
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.BadGateway;
+            context.Response.ContentType = ActivityJson.ActivityJsonContentType;
+            return Results.Json(new { error = $"Upstream request failed: {ex.Message}" });
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        var statusCode = (int)response.StatusCode;
+        if (statusCode == (int)HttpStatusCode.Gone)
+        {
+            goneCache.RecordGone(target.Value);
+        }
+
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = response.Content.Headers.ContentType?.MediaType
+            ?? ActivityJson.ActivityJsonContentType;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        await context.Response.WriteAsync(body, ct).ConfigureAwait(false);
+        return Results.Empty;
     }
 
     /// <summary>
