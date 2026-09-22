@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 325 (2026-09-22) — Community-scoped search always 0 — NEW S53
+- **Build/Live:** No rebuild (same build as Pass 315–324, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Community search:** On `qa-pass-319-feed` community page, searched "QA Pass" → "No posts in this community match your search." Also tried "QA" and "testing" — all 0 results.
+  2. **AP endpoint check:** `GET /ap/v1/c/qa-pass-319-feed/search?q=QA+Pass` → `totalItems: 0`.
+  3. **Control (global search):** `GET /ap/v1/search?q=QA+Pass` → `totalItems: 23` (includes the 3 notes from this community).
+  4. **DB check:** 3 notes have `qa-pass-319-feed` in their `Document.attributedTo`. Note `06GCNP4CNZ…` has `SearchVector` containing `'qa'` and `'pass'`.
+- **Result:** **1 new defect (S53).** The community-scoped search endpoint is completely non-functional. Open count: **10** (added S53).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51/S52/S53 once dev provides fixes.
+
 ## Pass 324 (2026-09-22) — Poll in community: empty Note — S52 broadened
 - **Build/Live:** No rebuild (same build as Pass 315–323, `d5b50948`). Both instances healthy.
 - **Explored:**
