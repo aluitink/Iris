@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 273 (2026-09-22) — S28 cross-instance Boost-button UI facet — RE-VERIFIED CLOSED on QA stack (main `1b2e6b62`)
+- **Build/Live:** QA cluster was stale (deployed `a915d9c4`); synced qa worktree to main `1b2e6b62` (fast-forward, carries dev1 `3836bebd`/`18e803ba` + dev2 `c9aeb423`) and **rebuilt both `qa-iris-a`+`qa-iris-b`**. New wasm `Iris.Web.Client.lb3bmci5nd.wasm` carries the `ServerBaseUri` claim logic; `GET /local/v1/session/public` now advertises `serverBaseUri=https://qa-iris-a.luit.ink`.
+- **Explored:** Fresh **cross-instance** Boost re-verify: `ii-a1`@A posted a note (canonical IRI `…/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0`); `ii-b1`@B signed in on B, opened it, pressed **Boost** (B log: `Inbox accepted: Announce … targeting …/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0`, `AnnounceActivityHandler processed … ok`); viewed the A object-detail page as owner `ii-a1` (fresh context, reload).
+- **Result:** **0 new defects; S28 RE-VERIFIED CLOSED.** Wire: `GET A <note>` → `…/ns#sharedCount: 1` + `/shares totalItems: 1`. UI (owner `ii-a1`@A, on the `notes/` IRI, 0 console errors, holds after reload): **Boost button "1" == header "1 boost" == Shares tab "(1)"** — the Pass-272 "Boost button = 0" defect is GONE. Note: viewing via the compose `creates/` IRI shows "0"/no Shares count (that resource is the Create activity wrapper, not the Note) — not a defect; the owner's real view (the Note) is correct. **Open items unchanged: S35 only (operator-blocked, Mastodon-side).**
+- **Checkpoint:** S28 fully closed (wire + UI). Next pass: S35 remains operator-blocked (`GET qa-mastodon.luit.ink/ap/users/…` 404) — re-check after operator re-provision; otherwise idle.
+
 ## Pass 272 (2026-09-22) — build carries `5355e968`+`e1e1aa88` (QA stack `06:39`) / S28 cross-instance Boost re-verify — WIRE FIXED, Boost-button UI FACET REOPENED (low)
 - **Build/Live:** QA stack `06:39` build (carries `5355e968` + `e1e1aa88`); `/app/Iris.Server.dll` timestamp confirmed 06:39 (current). No `src/` change → no redeploy.
 - **Explored:** Re-verified S28's residual UI facet on the **QA stack** with a fresh **cross-instance** Boost: `ii-a1`@A posted a note (`…/ii-a1/notes/06GCG0FRQGDTVK2TZQGH4P821G`); `ii-b1`@B opened it + pressed **Boost**; viewed the A object-detail page as the owner `ii-a1` (fresh reload).
