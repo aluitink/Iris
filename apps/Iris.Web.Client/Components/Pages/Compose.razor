@@ -472,7 +472,7 @@
         // Matches @handle (same-instance) and @user@domain (cross-instance). The domain part is
         // optional: @user@domain has the domain after the second @; @handle has no second @.
         // The domain is alphanumerics + hyphens + dots (a valid host, possibly with a port).
-        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.\-]+(?::\d+)?))?");
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_-]+)(?:@([a-zA-Z0-9.\-]+(?::\d+)?))?");
         if (matches.Count == 0)
         {
             return mentions;
@@ -1525,7 +1525,7 @@
     /// Maps the chosen <see cref="Visibility"/> (73.3) to its <see cref="PostAudience"/>. Public:
     /// <c>to</c> = public, <c>cc</c> = the author's followers. Followers: <c>to</c> = the author's
     /// followers, <c>cc</c> = the author's followers (the public is NOT cc'd, so the post is not public).
-    /// Direct: <c>to</c> = the author's followers + the mentioned actors, <c>cc</c> = the author's
+    /// Direct: <c>to</c> = the mentioned actors (the named recipients), <c>cc</c> = the author's
     /// followers. A blank/unknown visibility falls back to public (the historical behavior).
     /// </summary>
     private PostAudience BuildAudience(Iri actorId, List<Iri>? mentions)
@@ -1535,10 +1535,7 @@
         {
             "followers" => new PostAudience([followers], [followers]),
             "direct" => new PostAudience(
-                new List<Iri> { followers }
-                    .Concat(mentions is null ? [] : mentions)
-                    .Distinct()
-                    .ToList(),
+                mentions is { Count: > 0 } ? mentions : [],
                 [followers]),
             _ => new PostAudience([AsPublic], [followers]),
         };
