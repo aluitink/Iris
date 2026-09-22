@@ -177,10 +177,10 @@ Details + the honest payoff note: [docs/reference/TESTING.md §Running the suite
 
 *(QA-owned - see [QA_LOOP.md](docs/reference/QA_LOOP.md). Findings live in [docs/qa/](docs/qa/README.md); this is a count + pointer only.)*
 
-- **5 open defects:** S35 (operator-blocked, Mastodon), S44 (S3, mute button no-op), S45 (S2, hyphenated mention truncated — PARTIALLY FIXED, remaining facet in compose UI), S46 (S2, Followers-visibility not visible to remote followers — dev fix `2efadfbc` deployed but NOT effective), S47 (S2, Direct-visibility post AP object URL 404).
+- **4 open defects:** S35 (operator-blocked, Mastodon), S44 (S3, mute button no-op), S45 (S2, hyphenated mention truncated — PARTIALLY FIXED, remaining facet in compose UI), S47 (S2, Direct/Followers-visibility post AP object URL 404 — feed fixed, object-doc endpoint still 404s).
 - **Count in [docs/qa/README.md](docs/qa/README.md).**
 - **Pass log:** [docs/qa/passes.md](docs/qa/passes.md) (append-only, all passes).
-- **CLOSED:** S2, S3, S4, S6, S14, S17, S19, S20, S21, S24 (all facets), S26, S27, S28, S29, S30, S31, S32, S33, S34, S36, S37, S38, S39, S40, S41, S42, S43.
+- **CLOSED:** S2, S3, S4, S6, S14, S17, S19, S20, S21, S24 (all facets), S26, S27, S28, S29, S30, S31, S32, S33, S34, S36, S37, S38, S39, S40, S41, S42, S43, S45 (regex fix; compose UI facet remains), S46 (dev1 `a5d655e2`, main `d5b50948`, QA re-verified Pass 315).
 - **BLOCKERS (operator action):** (1) Mastodon M2-M12 — imuser actor docs 404 (S35). (2) Lemmy L2-L12 — iluser pending approval.
 
 ## Paused Questions

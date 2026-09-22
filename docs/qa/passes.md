@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 315 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers) + PLAN.md trim
+- **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's **second** S46 fix `a5d655e2` (merged `d5b50948`, alongside the first fix `2efadfbc`). Both instances healthy. New code confirmed deployed (`grep IsFollowersCollection` in Iris.Core.dll + Iris.Server.dll → 1 match each).
+- **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 315 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCN9MA0MMBS99BP4SVCP678G`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.
+  - **Delivery:** Create delivered to B, processed, Note stored in B's `Objects` table.
+  - **Feed:** **The note APPEARS in ii-b1@B's home feed** (verified via UI: "QA Pass 315 S46 re-verify: Followers-visibility note for remote followers" visible, 1m ago, 0 console errors).
+  - **AP URL:** `GET /ap/v1/u/ii-a1/notes/…` on A (as author) and B (as follower) → **404**. The Note IS stored in both A's and B's `Objects` tables (not tombstoned). The object-doc endpoint's visibility gate still does not resolve the followers-collection audience.
+  - **Conclusion:** **S46 is FIXED** (feed delivery works). Root cause was `FeedService.IsFollowReply` treating a followers-collection `to` as a directed reply — the fix `a5d655e2` adds `IriExtensions.IsFollowersCollection()` + skips followers-collection `to` entries in the fallback.
+  - **Residual:** The AP object URL 404 persists for both Followers and Direct visibility — the object-doc endpoint needs the same audience-resolution fix. Tracked as a residual facet of **S47**.
+- **Also:** Trimmed PLAN.md QA Queue section to a concise count + pointer (pass details belong in `docs/qa/passes.md`).
+- **Result:** **S46 CLOSED** (QA re-verified). **S47 still OPEN** (AP object URL 404 persists, now confirmed for both Followers and Direct visibility). Open count: **S35 + S44 + S45 (partial) + S47 (4)**.
+- **Checkpoint:** Next: re-verify S44 once dev provides a fix, or explore remaining untested areas. S47 object-doc endpoint fix needed.
+
 ## Pass 314 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers)
 - **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's S46 fix `2efadfbc` (merged `ef2d24df`). Both instances healthy. New code confirmed deployed (`strings Iris.Server.dll | grep IsVisibleToAsync` → 9 matches).
 - **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 314 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCMZMMD6JJA5KQWZZPWG5YYC`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.

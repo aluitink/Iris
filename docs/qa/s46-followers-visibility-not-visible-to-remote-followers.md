@@ -2,7 +2,7 @@
 
 - **Found:** Pass 310 (2026-09-22), build `345286cc`.
 - **Severity:** S2 (data-visibility) — Followers-visibility content is not delivered to followers on other instances, breaking a core ActivityPub visibility guarantee.
-- **Status:** Open (dev-owned). Dev fix `2efadfbc` committed but **NOT effective** (re-verified Pass 314).
+- **Status:** **CLOSED** (dev1 `2efadfbc`+`a5d655e2`, merged to main `d5b50948`, QA re-verified Pass 315).
 
 ## Repro
 
@@ -57,3 +57,15 @@ Dev1 committed fix `2efadfbc` (merged `ef2d24df`) adding async overloads `IsVisi
 - The Create activity's `object` field contains the full Note document with correct `to`/`cc` = followers collection.
 
 **Hypothesis:** The `isFollowerOfAsync` predicate may not be invoked (e.g., `FollowersCollectionOwners` returns empty, or the predicate is passed as null), OR the feed service is using a cached/compiled version of the filter that doesn't include the new async path. Further investigation needed (e.g., temporary logging in `IsFeedItemVisibleToAsync` to trace whether `isFollowerOfAsync` is called and what it returns).
+
+## Re-verification (Pass 315, 2026-09-22) — FIXED
+
+Dev1 committed a **second** fix `a5d655e2` (merged `d5b50948`) that addresses the **root cause** differently: `FeedService.IsFollowReply` was treating a `to` audience that is a followers collection (`…/followers`) as a directed reply (because `IsPublicAudience()` returns false for it), so the note was **filtered out of the feed as a "reply"** before the visibility filter ever ran. The fix adds `IriExtensions.IsFollowersCollection()` and updates the `IsFollowReply` fallback to skip followers-collection `to` entries (same as public sentinel).
+
+**Result: S46 is FIXED.**
+
+- QA stack rebuilt (`--no-cache`) to carry both fixes (`2efadfbc` + `a5d655e2`).
+- Composed a Followers-visibility note as ii-a1@A (HTTP 202, Note IRI `06GCN9MA0MMBS99BP4SVCP678G`, `to`/`cc` = `…/ii-a1/followers`).
+- Create delivered to B, processed, Note stored in B's `Objects` table.
+- **The note APPEARS in ii-b1@B's home feed** (verified via UI: "QA Pass 315 S46 re-verify: Followers-visibility note for remote followers" visible, 1m ago, 0 console errors).
+- **Residual:** `GET /ap/v1/u/ii-a1/notes/…` on A (as author ii-a1) and B (as follower ii-b1) still returns **404**. The Note IS stored (not tombstoned) in both A's and B's `Objects` tables. The object-document endpoint's visibility gate still does not resolve the followers-collection audience. This is the same class of issue as **S47** (Direct-visibility AP object URL 404) — the object-doc endpoint needs the same `IsFollowersCollection` / membership-resolution fix that the feed path now has. Tracked as a residual facet of S47.
