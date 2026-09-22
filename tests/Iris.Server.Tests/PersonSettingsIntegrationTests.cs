@@ -167,19 +167,20 @@ public sealed class PersonSettingsIntegrationTests : IDisposable
         var followResponse = await _http.SendAsync(followRequest);
         Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
 
-        // The gated inbound follow is surfaced in alice's own outbox (the "Inbound follows" surface) so
-        // she can Accept/Reject it.
-        var outbox = await _persistence.Activities.GetOutboxAsync(_aliceIri);
-        var followInOutbox = outbox.OfType<Activity>()
-            .FirstOrDefault(a => a is Follow f && f.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _bobIri.Value);
-        Assert.NotNull(followInOutbox); // the gated inbound Follow should be surfaced in alice's outbox
+        // S24-D2: the gated inbound follow is surfaced on the DEDICATED follow-request queue
+        // (IFollowStore.GetFollowRequestsAsync, served by /local/v1/u/{handle}/requests) — NOT in
+        // alice's outbox, which stays clean (only her own authored activities).
+        Assert.True(await _persistence.Follows.HasFollowRequestAsync(_bobIri, _aliceIri));
+        Assert.Contains(_bobIri, await _persistence.Follows.GetFollowRequestsAsync(_aliceIri));
 
         // And — the point of the gate — NO auto-Accept was recorded for it (only an explicit operator
         // Accept would create an Accept activity referencing the follow).
+        var outbox = await _persistence.Activities.GetOutboxAsync(_aliceIri);
         var autoAccept = outbox.OfType<Activity>()
             .FirstOrDefault(a => a is Accept accept
                 && accept.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _aliceIri.Value
-                && accept.Object?.FirstOrDefault().ResolveObjectIri()?.Value == followInOutbox!.Id);
+                && accept.Object?.FirstOrDefault() is { } objLink
+                && objLink.ResolveObjectIri()?.Value != null);
         Assert.Null(autoAccept); // a manuallyApprovesFollowers person must NOT auto-accept an inbound Follow
     }
 

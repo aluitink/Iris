@@ -126,13 +126,21 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
                         continue;
                     }
 
-                    // S24-D2: an outbox is the actor's OWN authored activities. Filter to items the
-                    // actor actually authored (inbound handlers may have recorded foreign activities).
-                    var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
-                    if (itemActor is null || itemActor == actorValue)
+                    // S24-D2: the outbox pollution source is FOREIGN Follow activities — a remote
+                    // actor's follow-request landing in the followed actor's outbox, plus the
+                    // spurious self-Follow an actor records on itself. Filter those out (keep only
+                    // Follows the actor authored itself). Content activities (Create/Announce/Like/…)
+                    // are NOT filtered here (F-15 community fan-out is by-design; the home-feed
+                    // surface filters it separately).
+                    if (item is Follow)
                     {
-                        result.Add(item);
+                        var itemActor = item is Activity act ? act.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
+                        if (itemActor is not null && itemActor != actorValue)
+                        {
+                            continue;
+                        }
                     }
+                    result.Add(item);
                 }
             }
 

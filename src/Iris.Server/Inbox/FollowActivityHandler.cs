@@ -119,8 +119,10 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
             // community's "following" edge (community → follower) which drives the federated feed, and
             // — unless the community manually approves members — the inverse "followers" edge
             // (follower → community) which is the membership. Surface the inbound follow in the
-            // community's own outbox (the activity store alone is not enumerable) so a community
-            // operator can list it (change 152).
+            // community's own outbox for AP-native Accept/Reject (which reference the stored Follow IRI);
+            // S24-D2 the outbox read path filters foreign Follows, so the operator's request queue reads
+            // the dedicated join-request surface (ICommunityStore.GetJoinRequestsAsync,
+            // /local/v1/c/{name}/requests) instead. (change 152.)
             await _persistence.Communities
                 .AddFollowAsync(delivery.RecipientIri, followerIri.Value, ct)
                 .ConfigureAwait(false);
@@ -150,10 +152,11 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         else
         {
             // Surface the inbound follow in the followed actor's own outbox (the activity store alone is
-            // not enumerable by the UI). The sample's "Inbound follows" list reads the followed actor's
-            // outbox for Follow activities so the operator can see — and Accept/Reject — the request.
-            // (An auto-accepted follow also lands here; the operator's Accept of an already-accepted
-            // follow is idempotent.)
+            // not enumerable by the UI). S24-D2: the outbox read path (GetOutboxAsync) now filters out
+            // foreign (non-self-authored) Follows, so this write is retained for AP-native Accept/Reject
+            // (which reference the stored Follow IRI) but is NOT surfaced in the public outbox — the
+            // operator's request queue reads the dedicated surface (IFollowStore.GetFollowRequestsAsync,
+            // /local/v1/u/{handle}/requests), and the Web UI surfaces it via notifications.
             await _persistence.Activities
                 .AddToOutboxAsync(delivery.RecipientIri, follow, ct)
                 .ConfigureAwait(false);

@@ -136,7 +136,9 @@ public sealed class MembershipActivityHandler : IActivityHandler
             // community analogue of the person's "Inbound follows" surface; change 152, extended to
             // join requests in change 215). Storing the Join activity in the outbox makes its IRI
             // available for an AP-native Accept(joinIri)/Reject(joinIri) that references the original
-            // activity — the same pattern as inbound follows (FollowActivityHandler).
+            // activity — the same pattern as inbound follows (FollowActivityHandler). The operator's
+            // request queue reads the dedicated join-request surface (GetJoinRequestsAsync,
+            // /local/v1/c/{name}/requests).
             await _persistence.Activities
                 .AddToOutboxAsync(delivery.RecipientIri, activity, ct)
                 .ConfigureAwait(false);
