@@ -17,6 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 321 (2026-09-22) — Cross-instance community post — NEW S50
+- **Build/Live:** No rebuild (same build as Pass 315–320, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Cross-instance community post:** From B, posted a note to the remote community `ii-a8-community`@A via "＋ Post to this community" → **HTTP 202**.
+  2. **IRI anomaly:** The Create activity's object uses a `documents/` IRI (`…/u/ii-b1/documents/06GCNQ0EH…`) with type **"Page"** — NOT the expected `notes/` IRI with type "Note". Contrast: local community posts (Pass 319/320) correctly use `notes/` + "Note".
+  3. **404 on remote:** `GET /ap/v1/u/ii-b1/documents/…` on A → **404** (even after 10s wait). The note IS cached on A's DB (`Objects` row, `ObjectType = Page`), but the AP endpoint returns 404.
+  4. **Not in community feed:** The note does NOT appear in `GET /ap/v1/c/ii-a8-community/feed` on A.
+- **Result:** **1 new defect (S50).** Open count: **7** (S35, S44, S45, S47, S48, S49, S50).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 320 (2026-09-22) — S49 community feed facet re-confirmed + S21 cache invalidation regression
 - **Build/Live:** No rebuild (same build as Pass 315–319, `d5b50948`). Both instances healthy.
 - **Explored:**
