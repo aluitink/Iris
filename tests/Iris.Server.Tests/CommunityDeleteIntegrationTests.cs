@@ -173,6 +173,57 @@ public sealed class CommunityDeleteIntegrationTests : IDisposable
         Assert.False(await _persistence.Communities.TryGetCommunityAsync(communityIri, out _));
     }
 
+    [Fact]
+    public async Task DeleteCommunity_RemovesCreatorsAutoFollowEdgeAndInvalidatesFollowingCache()
+    {
+        // S40: creating a community records the creator's auto-follow Follow (EdgeKind.Follow = 0) edge
+        // (creator → community, the S21 fix) so the community appears in the creator's Following tab.
+        // Deleting the community must remove that edge — otherwise the deleted community is orphaned: it
+        // lingers in the creator's /following (and the Communities Following tab) and a re-resolution
+        // 404s. Also assert the creator's `following` page-1 cache is invalidated (a NON-?refresh read
+        // immediately reflects the removal), mirroring the S21 creation-path invalidation.
+        var communityIri = await CreateCommunityAsync();
+
+        // Preconditions: the creator (alice) auto-follows the community, and the `following` cache is
+        // warm (page 1 lists the community, totalItems=1).
+        Assert.True(
+            await _persistence.Follows.IsFollowingAsync(_aliceIri, communityIri),
+            "S21: the creator must be auto-followed on community creation (follow edge creator → community)");
+
+        using (var warmRequest = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/u/{Alice}/following"))
+        using (var warmResponse = await _http.SendAsync(warmRequest))
+        {
+            Assert.Equal(HttpStatusCode.OK, warmResponse.StatusCode);
+            var warmBody = await warmResponse.Content.ReadAsStringAsync();
+            using var warmDoc = System.Text.Json.JsonDocument.Parse(warmBody);
+            Assert.Equal(1, warmDoc.RootElement.GetProperty("totalItems").GetInt32());
+            Assert.Contains(communityIri.Value, warmBody, StringComparison.Ordinal);
+        }
+
+        // Delete the community (as the creator).
+        var response = await _http.SendAsync(DeleteRequest(communityIri));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.False(await _persistence.Communities.TryGetCommunityAsync(communityIri, out _));
+
+        // S40: the creator's auto-follow Follow edge to the deleted community is removed.
+        Assert.False(
+            await _persistence.Follows.IsFollowingAsync(_aliceIri, communityIri),
+            "S40: deleting a community must remove the creator's auto-follow Follow edge (creator → community)");
+
+        // S40: the creator's `following` no longer lists the deleted community, and a plain (NON-?refresh)
+        // read reflects it immediately (the creation-path warm cache above must have been invalidated).
+        var following = await _persistence.Follows.GetFollowingAsync(_aliceIri);
+        Assert.DoesNotContain(communityIri, following);
+
+        using var readRequest = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/u/{Alice}/following");
+        using var readResponse = await _http.SendAsync(readRequest);
+        Assert.Equal(HttpStatusCode.OK, readResponse.StatusCode);
+        var readBody = await readResponse.Content.ReadAsStringAsync();
+        using var readDoc = System.Text.Json.JsonDocument.Parse(readBody);
+        Assert.Equal(0, readDoc.RootElement.GetProperty("totalItems").GetInt32());
+        Assert.DoesNotContain(communityIri.Value, readBody, StringComparison.Ordinal);
+    }
+
     private async Task<Iri> CreateCommunityAsync()
     {
         var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");

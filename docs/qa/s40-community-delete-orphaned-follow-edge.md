@@ -1,7 +1,7 @@
 # S40 — Deleting a community leaves the creator's auto-follow `Follow` edge; the deleted community lingers in the Following tab (with a 404 re-fetch)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** fixed (dev2, 2026-09-22) — awaiting QA live re-verify
+- **Status:** FIXED + live-verified (dev2 `296e3cdd` on main; dev1 `59afe497` live-verified on the EF/Postgres path) — regression tests + full suite + live check all green
 - **Found:** Pass 268 (2026-09-22, `ii-a1`@A, no-cache build carrying `1f941cfb`)
 - **Fix:** dev2 (2026-09-22) — `DeleteCommunityAsync` now also removes inbound `Follow`(0) edges (`Target=communityIri`); `CommunityDeleteHandler` (provider-agnostic) removes the inbound `Follow` edge per owner + invalidates the owner's `following` page + feed cache. Regression tests: `CommunityDeletionFollowEdgeTests` (EF) + `CommunityDeleteIntegrationTests.DeleteCommunity_RemovesCreatorAutoFollowEdge_GoneFromFollowing` (in-memory e2e).
 - **Related:** [S21](s21-new-community-missing-following-tab.md) (the auto-follow edge this leaks), [S24](s24-cross-instance-follow-state-inconsistent.md) (Following-tab state consistency), [S4](s04-communities-following-remote.md) (Following-tab resolution)
@@ -34,6 +34,29 @@ In `DeleteCommunityAsync` (or the `CommunityDeleteHandler` `src/Iris.Server/Acti
 
 Regression test: create a community (auto-follow edge exists), delete it, assert no `Follow` edge remains targeting the community IRI and the creator's `/following` no longer lists it.
 
+## Fix (merged on main; live-verified dev1 `59afe497`)
+
+Both the handler and the EF store clean up the inbound `Follow` edge (dev2's `296e3cdd` is on main;
+dev1's `59afe497` is the independently-verified equivalent):
+
+- **`CommunityDeleteHandler`** (`src/Iris.Server/ActivityPubServerExtensions.cs`): iterates the community's
+  `attributedTo` (owners) and, for each resolvable owner, calls `persistence.Follows.RemoveFollowAsync(owner,
+  community)` and invalidates the owner's `following` page-1 + feed caches
+  (`InvalidateLocalCollectionPage(owner, "following")` + `IFollowFeedService.InvalidateActorFeedCache(owner)`),
+  mirroring the creation path. Provider-agnostic — covers the **InMemory** provider (the integration-test
+  path) and any store whose `DeleteCommunityAsync` does not drop the user→community `Follow` edge.
+- **`EfCommunityStore.DeleteCommunityAsync`** (`src/Iris.Server.Data/Stores/EfCommunityStore.cs`): the
+  `asTarget` cleanup now matches `EdgeKind.CommunityFollower || EdgeKind.Follow` — i.e. it also removes the
+  inbound `Follow` (`EdgeKind.Follow = 0`) edges **targeting** the community, the inverse of the
+  `CommunityFollower` (kind 10) cleanup, so the live EF path is self-contained.
+
+Regression tests (all on main): `CommunityDeletionFollowEdgeTests` (EF, `tests/Iris.Server.Data.Tests`) +
+`CommunityDeleteIntegrationTests.DeleteCommunity_RemovesCreatorAutoFollowEdge_GoneFromFollowing` (in-memory
+e2e) from dev2, plus `CommunityDeleteIntegrationTests.DeleteCommunity_RemovesCreatorsAutoFollowEdgeAndInvalidatesFollowingCache`
+from dev1 (create → warm `following` cache → delete → no `Follow` edge + a plain non-`?refresh` `/following`
+read returns `totalItems=0` immediately). The dev1 test was verified to **fail** without the handler fix and
+**pass** with it.
+
 ## Re-verify
 
 Clean entry, logged in as the creator:
@@ -43,3 +66,21 @@ Clean entry, logged in as the creator:
 4. The signed `GET /ap/v1/u/{creator}/following` does not list the deleted community.
 5. DB: no `Follow` (Kind=0) edge targeting the deleted community IRI.
 6. 0 console errors on the delete + reload.
+
+## Live verification (dev1 stack, commit `59afe497`, EF/Postgres path)
+
+Verified end-to-end on the `dev1` stack (a `--no-cache` rebuild carrying the fix) with a fresh registered
+account `s40ui` (key-signed community create + cookie-authenticated owner delete, the exact S40 UI repro):
+
+- `CreateCommunityAsync` (signed Create → outbox) → **202**; the creator auto-follows the community.
+- `GET /ap/v1/u/s40ui/following` (public, pre-delete) → **200, totalItems=1**, lists the community.
+- `DELETE /local/v1/c/s40live` (cookie-authenticated) → **204**.
+- `GET /ap/v1/u/s40ui/following` (public, **no** `?refresh`, post-delete) → **200, totalItems=0**, does **not**
+  list the community (the warm creation-path cache was invalidated by the fix — no 60s stale window).
+- `GET /ap/v1/c/s40live` (post-delete) → **404**.
+- DB (`iris_a`): `SELECT count(*) FROM "Edges" e WHERE e."Kind"=0 AND NOT EXISTS (SELECT 1 FROM "Actors" a WHERE a."Id"=e."Target")` → **0** (no orphaned Follow edges), and no `Actors` row for the deleted community.
+
+(The WASM UI path itself was not usable for the re-verify in this environment: the browser reached the
+app on `127.0.0.1:10081` while the client's ActivityPub fetches target the FQDN origin, which the
+document CSP (`connect-src 'self'`) blocks — a test-harness networking gap, not an Iris defect. The raw
+API exercises the identical handler + store code the UI drives.)
