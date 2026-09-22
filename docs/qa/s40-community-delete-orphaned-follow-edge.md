@@ -1,7 +1,7 @@
 # S40 — Deleting a community leaves the creator's auto-follow `Follow` edge; the deleted community lingers in the Following tab (with a 404 re-fetch)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** fixed (dev2, 2026-09-22) — awaiting QA live re-verify
+- **Status:** fixed (dev2 `296e3cdd`, 2026-09-22; QA re-verified Pass 269)
 - **Found:** Pass 268 (2026-09-22, `ii-a1`@A, no-cache build carrying `1f941cfb`)
 - **Fix:** dev2 (2026-09-22) — `DeleteCommunityAsync` now also removes inbound `Follow`(0) edges (`Target=communityIri`); `CommunityDeleteHandler` (provider-agnostic) removes the inbound `Follow` edge per owner + invalidates the owner's `following` page + feed cache. Regression tests: `CommunityDeletionFollowEdgeTests` (EF) + `CommunityDeleteIntegrationTests.DeleteCommunity_RemovesCreatorAutoFollowEdge_GoneFromFollowing` (in-memory e2e).
 - **Related:** [S21](s21-new-community-missing-following-tab.md) (the auto-follow edge this leaks), [S24](s24-cross-instance-follow-state-inconsistent.md) (Following-tab state consistency), [S4](s04-communities-following-remote.md) (Following-tab resolution)
@@ -43,3 +43,15 @@ Clean entry, logged in as the creator:
 4. The signed `GET /ap/v1/u/{creator}/following` does not list the deleted community.
 5. DB: no `Follow` (Kind=0) edge targeting the deleted community IRI.
 6. 0 console errors on the delete + reload.
+
+## QA re-verify — PASS 269 (2026-09-22, qa stack rebuilt to `296e3cdd`)
+
+Re-verified live on the rebuilt **qa** stack (`qa-iris-a` fresh build, `/app/Iris.Server.dll` 06:39, login `ii-a1` 200) from a clean entry:
+
+1. **Create:** new community `qa-pass269-s40` (handle) via `/communities` → "+ Create a community". It landed correctly in `Actors` (Type=Group) + `Objects` (Group, not tombstoned), and the **S21 auto-follow edge** `ii-a1 → qa-pass269-s40` (Kind=0) was recorded (1 row). It rendered in the Following tab after a hard reload.
+2. **Delete:** Delete → Confirm (HTTP 204).
+3. **DB (the crux):** after delete, the `Actors` row is **gone** and — critically — the `Follow`(Kind=0) edge `ii-a1 → qa-pass269-s40` is **gone** (0 rows); **no edge of any kind** targets the community IRI. *Before the fix this edge survived* (the 4 `qa-pass268*` orphans below prove it).
+4. **Following tab:** after a fresh reload, `qa-pass269-s40` no longer appears (only `ii-a8-community` + `qa-pass261-test` remain) — no stale render.
+5. **Console:** on a clean post-delete reload, **no `qa-pass269-s40` 404**. (One transient 404 appeared on the first post-delete paint — the page fetched the IRI once before the delete landed — but it is gone on the clean reload.) The only remaining 404s are the **pre-fix `qa-pass268{b,c,d,e}` orphans** (created during Pass 268 on the old build, never cleaned — they are the residual evidence of this very bug and are **not** removed by the fix; they will clear once those orphaned edges are swept).
+
+**Result:** S40 **FIXED + re-verified.** The fix removes the inbound `Follow`(0) edge on delete (EF store at the SQL level; the delete handler for the in-memory/file-backed providers) and invalidates the owner's `following`/feed cache. **Note for follow-up:** the 4 pre-fix `qa-pass268*` orphan edges (and their `Objects` rows) remain in the DB as residual test data — a one-off cleanup, not a code defect.
