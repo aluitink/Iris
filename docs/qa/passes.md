@@ -17,14 +17,16 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
-## Pass 331 (2026-09-22) — S53 root cause confirmed (in-memory feed match; 404 remote + empty feed)
-- **Build/Live:** `0d7307e5` (no new `src/` changes). Both instances healthy.
-- **Explored:**
-  1. **S53 root cause (code + DB):** `CommunitySearchHandler` (`ActivityPubServerExtensions.cs:11833`) → `CommunityFeedService.SearchCommunityAsync` (`CommunityFeedService.cs:401`) is an **in-memory substring match over the community feed** (not a DB tsquery join). Two confirmed failure modes: **(1) 404 cross-instance** — `GET A /c/qa-pass-319-feed/search?q=QA` → **404** (B-hosted community not in A's local community store; `TryGetCommunityAsync` fails; no remote-community proxy seam). **(2) empty feed own-instance** — `GET B /c/qa-pass-319-feed/search?q=QA` → 200 `totalItems:0` (community has **zero members** — no `CommunityFollower` `Kind=10` edge, only the creator `Follow`(0) — and the 3 notes are `attributedTo` person ii-b1, not the community, so the 40.3 community-tagged feed filter admits nothing). Global search works (no community scope).
-  2. **S50 re-verify:** A `GET /ap/v1/u/ii-b1/documents/06GCP5C6…` (the 21:46 Page community post) → **404** on A, **200** on B (canonical host). Cross-instance community post still uses `documents/` IRI. **Still open.**
-  3. **S52 re-verify:** recent ii-b1 community post (`06GCNWHT`, 21:07) is type **Note** (not Article). **Still open.**
-- **Result:** S53 root cause confirmed + documented (2 modes). S50 + S52 re-confirmed open. No new defects. Open count: **8**.
-- **Checkpoint:** Next: re-verify S48/S52/S54 once dev lands fixes; explore remaining untested areas (e.g., notifications, media upload, edit/delete, visibility).
+## Pass 331 (2026-09-22) — S54 fix FAILED (buttons still disabled while typing on build `44e7318a`)
+- **Build/Live:** `44e7318a` (no-cache rebuild; was `b7f6cd4f`). Both instances healthy.
+- **S54 fix verification (FAILED):** dev1 fix `02442768` (merged to main `90a219ed`) adds `@bind:event="oninput"` to all 6 affected inputs. Live re-verify:
+  1. **Facet 2 (Create community):** type Name + Handle (char-by-char, no blur) → "Create community" button **STILL disabled** (input DOM values set, `btn.disabled===true`). Blur (click Description) → button **enables**. Old `onchange` behavior persists.
+  2. **Facet 1 (Peers tab):** type IRI (char-by-char, no blur) → "Look up" + "Follow" buttons **STILL disabled**.
+  - **Conclusion:** the `@bind:event="oninput"` fix does NOT resolve S54. Root cause is deeper (input event not reaching Blazor circuit, or `disabled` expression not re-evaluating). Finding doc updated.
+- **S53 root cause CONFIRMED:** community search is in-memory feed substring match; 404 for remote communities + empty feed own-instance.
+- **S50 + S52 re-confirmed open.**
+- **Result:** No new defects. S54 fix failure documented. Open count: **8** (unchanged).
+- **Checkpoint:** S54 needs a deeper investigation — the `@bind:event` fix approach is insufficient. S53 root cause confirmed for dev.
 
 ## Pass 330 (2026-09-22) — S44 CLOSED (mute button works end-to-end)
 - **Build/Live:** `0d7307e5` (same as Pass 329; no new `src/` changes). Both instances healthy.

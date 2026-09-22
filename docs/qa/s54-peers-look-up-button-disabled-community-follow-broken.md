@@ -1,8 +1,9 @@
 # S54 — Blazor `@bind` without `@bind:event="oninput"`: button disabled states don't update while typing
 
 - **Class:** bug / UX — **Severity:** S2
-- **Status:** open
+- **Status:** open — **FIX FAILED (Pass 331):** dev1 fix `02442768` adds `@bind:event="oninput"` to all 6 affected inputs, but the buttons STILL do not enable while typing on build `44e7318a`. Verified live: typing into Create-community Name+Handle fields → button stays disabled; blur (click Description) → button enables. The fix does not resolve the bug. Root cause may be deeper than the `@bind:event` directive (e.g., the input event is not reaching the Blazor circuit, or the `disabled` expression is not re-evaluating).
 - **Found:** Pass 328 (2026-09-22)
+- **Fix attempt:** Pass 331 (2026-09-22) — dev1 `02442768` (merged to main `90a219ed`, QA build `44e7318a`)
 - **Related:** S4 (communities Following tab — fixed), S30 (cross-instance community join — fixed)
 
 ## Symptom
@@ -55,6 +56,23 @@ Add `@bind:event="oninput"` to all affected text inputs:
 - `Communities.razor:31` — `#community-name`
 - `Communities.razor:35` — `#community-handle`
 - `Compose.razor:133` — `#compose-poll-question`
+
+## Fix verification (Pass 331 — FAILED)
+
+Dev1 committed fix `02442768` ("add `@bind:event="oninput"` to text inputs so buttons enable while typing"), merged to main `90a219ed`. QA rebuilt the stack with `--no-cache` → new build stamp `44e7318a` (was `b7f6cd4f`). Both instances healthy.
+
+**Live re-verification (build `44e7318a`):**
+
+1. **Facet 2 (Create community):** `/communities` → "+ Create a community" → type "S54 Test" into Name (char-by-char, no blur) → type "s54-test" into Handle (char-by-char, no blur) → **"Create community" button REMAINS disabled** (verified via `btn.disabled === true` in JS; input DOM values ARE set: `nameValue="S54 Test"`, `handleValue="s54-test"`). Then click into Description textarea (blur) → **button ENABLES** (confirmed: `disabled` attribute removed, `cursor=pointer` added).
+2. **Facet 1 (Peers tab):** community page → Peers tab → type `!community@lemmy.ml` into IRI field (char-by-char, no blur) → **"Look up" + "Follow as this community" buttons REMAIN disabled**.
+
+**Conclusion:** The `@bind:event="oninput"` fix does NOT resolve S54. The Blazor C# binding properties (`NewName`, `NewHandle`, `PeerIriInput`) are not updated on the `input` event despite the directive being present in the source. The bug persists — the button only enables on blur (`onchange`). The root cause is deeper than the `@bind:event` directive; the fix approach may be wrong or incomplete.
+
+**Possible deeper causes to investigate:**
+- The `input` event may not be reaching the Blazor circuit (e.g., the `oninput` handler is not being registered on the DOM element in the compiled WASM).
+- The `disabled` expression may not be re-evaluating when the bound property changes (e.g., the component is not calling `StateHasChanged`).
+- There may be a CSS or DOM overlay intercepting the input events.
+- The Blazor WebAssembly runtime version may have a bug with `@bind:event="oninput"`.
 
 ## Re-verify
 
