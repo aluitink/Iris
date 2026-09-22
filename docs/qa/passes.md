@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 320 (2026-09-22) — S49 community feed facet re-confirmed + S21 cache invalidation regression
+- **Build/Live:** No rebuild (same build as Pass 315–319, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **S49 community creation (2nd community):** Created `qa-pass-319-feed`. DB confirms Group object + Kind=0 follow edge. `GET /ap/v1/c/qa-pass-319-feed` → 200. But the community does NOT appear in any tab immediately after creation.
+  2. **S21 cache invalidation regression:** `GET /ap/v1/u/ii-b1/following` (no `?refresh`) → `totalItems: 3` (missing the new community). `GET /ap/v1/u/ii-b1/following?refresh=true` → `totalItems: 4` (includes it). After hard browser reload, the community IS visible. **The S21 fix (`1f941cfb`) does not cover this code path.**
+  3. **S49 community feed facet re-confirmed:** Posted a note to `qa-pass-319-feed` (HTTP 202, `06GCNP4CNZ6X130KW4F8D7EQ1C`). `GET /ap/v1/c/qa-pass-319-feed/feed` → `orderedItems: []`. `GET /ap/v1/c/qa-pass-319-feed/followers` → `totalItems: 0`. **The owner is NOT in the followers collection, so the feed is empty. Reproducible.**
+- **Result:** **0 new defect IDs.** S49 scope broadened (community feed facet confirmed reproducible + S21 cache invalidation regression noted). Open count: **6** (S35, S44, S45, S47, S48, S49).
+- **Checkpoint:** Next: re-verify S47/S48/S49 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 319 (2026-09-22) — S49 re-verify + community feed investigation — S49 scope updated
 - **Build/Live:** No rebuild (same build as Pass 315–318, `d5b50948`). Both instances healthy.
 - **Explored:**
