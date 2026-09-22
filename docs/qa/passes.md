@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 270 (2026-09-22) — build `296e3cdd` (== main HEAD `29868526`; no `src/` change) / fast-suite green gate re-run — ALL GREEN (2267 passed, 0 failed); QA idle (only S35 remains, operator-blocked)
+- **Build/Live:** `296e3cdd` (== main HEAD; QA worktree synced down, 0 behind — now carries dev1's S40-closure doc commits). No `src/` change since Pass 269 → no redeploy needed. Live QA stack still at `296e3cdd` (rebuilt Pass 269).
+- **Explored:** QA idle (only open finding S35 is operator-blocked; dev backlog otherwise empty), so per the loop re-ran the **fast** test-suite green gate (`dotnet test --filter "Category!=Slow"` across all in-repo test projects) to confirm the build is still green between live passes.
+- **Result:** **ALL GREEN — 0 failures.** Core 467, Client 194, Client.Ext 29, WebCrypto 3, Web 113, Server.Data 23, **Server 1441** (8 skipped = Slow-gated) → **2267 passed**. Release build 0/0. The S40 fix (`296e3cdd`) + all prior fixes hold under the full fast suite. No new defects.
+- **Checkpoint:** QA idle — open count **1 (S35 only**, Mastodon-side, operator-blocked). Next: idle — S35 needs operator re-provision of the Mastodon `imuser` account; re-run when `src/` changes.
+
 ## Pass 269 (2026-09-22) — build `296e3cdd` (dev2's S40 fix, on `main` HEAD) / S40 re-verified FIXED live: community delete now removes the creator's auto-follow `Follow`(0) edge
 - **Build/Live:** QA worktree synced to `main` (0 behind, now carries dev2's S40 fix `296e3cdd` + merged `0d8fd2aa`). **Rebuilt the QA stack to `296e3cdd`** (had to `docker rm -f qa-iris-a qa-iris-b` to clear stale `stack-iris-*` containers; fresh `qa-iris-*` images; `/app/Iris.Server.dll` 06:39; both healthy; `ii-a1` login 200).
 - **Explored:** S40 re-verify on a clean entry. As `ii-a1`@A, created community `qa-pass269-s40` → confirmed the S21 auto-follow edge `ii-a1 → qa-pass269-s40` (Kind=0) recorded in DB → deleted it via the Communities UI (Delete → Confirm, HTTP 204).
