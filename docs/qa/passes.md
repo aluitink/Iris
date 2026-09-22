@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 302 (2026-09-22) — "More options" menu on a post — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1` (remote actor from B instance): clicked "More options" button on a post → menu opened with 3 buttons: Block, Mute, Report (same actions available in the profile header). Closed the menu with Escape. 0 console errors throughout.
+- **Result:** **0 new defects.** "More options" menu works correctly — it provides quick access to moderation actions (Block, Mute, Report) for the post's author. Open count unchanged: **S35 + S43 (2)**.
+- **Checkpoint:** "More options" menu verified (Block, Mute, Report actions available). Open: S35 (operator-blocked, Mastodon-side) + S43 (dev-owned, S3, data-visibility). Next: re-verify S43 once a dev fix build lands, or deeper interop testing once operator re-provisions.
+
 ## Pass 301 (2026-09-22) — Community detail page for a local community followed by a remote actor — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-a.luit.ink/ap/v1/c/ii-a8-community` (local community followed by remote actor ii-b1 from B instance): **(a)** **Profile header**: profile banner, avatar, handle "ii-a8-community", description "II-A8 Test Community" + "QA community test", Block/Mute/Report buttons + "Unfollow" button (correct — I'm following this community). **(b)** **Posts tab**: shows "No posts yet." (correct — the community has no posts). **(c)** **Followers tab**: shows ii-b1 (the remote actor from instance B) with stats (54 posts, 1 following, 2 followers) + "Unfollow" button (correct — ii-b1 is following this community). 0 console errors throughout.
