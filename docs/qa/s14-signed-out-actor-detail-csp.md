@@ -1,7 +1,7 @@
 # S14 — Signed-out remote actor-detail is CSP-blocked (S2's actor-detail facet)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** FIXED (Pass 259, 2026-09-21, build `401c08b5` — signed-out remote actor-detail renders correctly via proxy; 0 console errors)
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`)** — the S2/S14 proxy fix (Pass 259) holds: signed-out remote actor reads route through the proxy (same underlying fix as [S2](s02-signed-out-proxy-bypass.md), re-verified on the fresh build).
 - **Found:** Pass 20 (2026-09-20) — re-confirmed Passes 27, 32
 - **Related:** [S2](s02-signed-out-proxy-bypass.md) (same root cause, root-page facet)
 

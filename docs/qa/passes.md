@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 259 (2026-09-22) — build `7620faa1` / QA re-verify pass on fresh QA cluster (rebuilt from main): re-verified the fixed-in-code items; S24-D2 outbox-integrity facet still open
+- **Build/Live:** fresh QA build from `main` `7620faa1` (QA stack `qa-iris-a`/`qa-iris-b` rebuilt + healthy; FQDNs `qa-iris-a.luit.ink`/`qa-iris-b.luit.ink`).
+- **Explored:** Re-verified S2, S14, S4, S17, S19, S20, S24-D2, S24-D4, S33, S36, S38 across the two-instance QA stack (API + Playwright).
+- **Result:** **Closed (confirmed fixed):** S2/S14 (signed-out `GET /ap/v1/u/ii-b1` = 200 proxied), S4 (remote community `ii-a8-community` in Communities→Following + Profile→Communities after B joined), S17 ("Your posts" = 2 outbox reqs; Likes tab = single scoped `/liked`), S19 (community Requests tab fires `/local/v1/c/ii-a8-community/requests` 200 → "No pending join requests"), S20 (home Communities tab fires distinct `?source=communities`), S24-D4 (`GET /ap/v1/u/ii-b1/{outbox,followers,following}` all 200), S33 (B→A unfollow removes A `followers` edge 2→1 after queue drains), S36 (home feed = 39 content `Create`s, 0 actor-doc noise; UI renders 20 cards), S38 (webfinger `acct:ii-b1@qa-iris-b.luit.ink` = 200 + JRD). **Still open:** **S24-D2 outbox-integrity facet** — `ii-a1` raw local outbox (pages 1–5) still holds **17 foreign `ii-b1` items** (9 Like + 8 Create); the feed-surface facet is closed (S36) but foreign Create/Like are still physically written into the local outbox.
+- **Checkpoint:** next pass continues at S24-D2 outbox write-path (dev-owned) + S3/S21 if a repro surface becomes available.
+
 ## Pass 258 (2026-09-21) — build `401c08b5` / Actor page (UI): Posts tab shows 15 posts (all S36 test posts), Followers/Following tabs present; "Load more" button for pagination; no new defect
 - **Build/Live:** `401c08b5` (== HEAD? y — no `src/` change → no rebuild).
 - **Explored:** A actor page (UI) for ii-a1 — Posts, Followers, Following tabs.

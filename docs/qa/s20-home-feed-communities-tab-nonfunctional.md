@@ -1,7 +1,7 @@
 # S20 — Home feed "Communities" tab is non-functional (no API call, same content as Posts)
 
 - **Class:** bug / feature-gap — **Severity:** S2
-- **Status:** fixed (Pass 90, 2026-09-20, container 12:53:13)
+- **Status:** **CLOSED (QA re-verified, 2026-09-22, build `7620faa1`).** Re-verify: the Home feed **Communities** tab fires a distinct `GET /ap/v1/u/ii-a1/feed?source=communities` request (not reusing the Posts feed query) — the tab now has its own scoped feed source.
 - **Found:** Pass 42 (2026-09-20)
 - **Related:** Phase 4 of unified home feed (docs/plans/unified-home-feed.md) — "wire the tabs to the feed"
 
