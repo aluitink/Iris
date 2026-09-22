@@ -29,6 +29,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 - **Result:** **S46 CLOSED** (QA re-verified). **S47 still OPEN** (AP object URL 404 persists, now confirmed for both Followers and Direct visibility). Open count: **S35 + S44 + S45 (partial) + S47 (4)**.
 - **Checkpoint:** Next: re-verify S44 once dev provides a fix, or explore remaining untested areas. S47 object-doc endpoint fix needed.
 
+## Pass 316 (2026-09-22) — Followers-visibility note: object-detail UI + cross-instance reply
+- **Build/Live:** No rebuild (same build as Pass 315, `d5b50948`). Both instances healthy.
+- **Explored:** Two areas not previously tested for Followers-visibility notes:
+  1. **Object-detail page (UI path):** Opened the Pass 315 Followers-visibility note via the UI object-detail page on B (as remote follower). Renders correctly: author, content, Like/Boost/Reply buttons, Block/Mute/Report actions, Replies/Likes/Shares tabs. **No "To" label visible.** **0 console errors.** The S47 AP endpoint 404 is separate from the UI object-detail path.
+  2. **Cross-instance reply to Followers-visibility note:** Composed a reply from ii-b1@B to the Followers-visibility note on A. Reply delivered to A, appears in the Replies tab (1 reply), author ii-a1@A gets a notification (2 unread). Reply shows "In reply to ii-a1" with parent note quoted. **0 console errors.**
+- **Also confirmed:** Both S46 test notes (Pass 314 + Pass 315) appear in ii-b1@B's home feed, confirming the S46 fix is consistently effective.
+- **Result:** **0 new defects.** Open count unchanged: **S35 + S44 + S45 (partial) + S47 (4)**.
+- **Checkpoint:** Next: re-verify S44 once dev provides a fix, or explore remaining untested areas (e.g., search with visibility-scoped content, boost of Followers-visibility note, community post visibility).
+
 ## Pass 314 (2026-09-22) — S46 re-verification (Followers-visibility to remote followers)
 - **Build/Live:** QA stack rebuilt with `--no-cache` to carry dev1's S46 fix `2efadfbc` (merged `ef2d24df`). Both instances healthy. New code confirmed deployed (`strings Iris.Server.dll | grep IsVisibleToAsync` → 9 matches).
 - **Explored:** Signed in as ii-a1@A → composed a **Followers**-visibility note `QA Pass 314 S46 re-verify: Followers-visibility note for remote followers` → posted (HTTP 202, Note IRI `06GCMZMMD6JJA5KQWZZPWG5YYC`, `to`/`cc` = `…/ii-a1/followers`). Waited for federation. Signed in as ii-b1@B → checked home feed.
