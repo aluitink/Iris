@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 332 (2026-09-22) — NEW S55 (post edit UI stale + delete silent no-op)
+- **Build/Live:** `44e7318a` (no `src/` change since Pass 331; no rebuild needed). Both instances healthy.
+- **Explored:** Post edit/delete functionality (previously untested area).
+  1. **S55 Facet 1 (edit UI stale):** Composed a new note → opened object detail → Edit → changed text → Save. Server-side edit landed (AP object `content` updated + `updated` timestamp set; DB `Objects.Document` has new content) but **UI still shows old text**, persists across full page reload. Client-side caching issue — the Blazor WASM serves a stale cached object doc.
+  2. **S55 Facet 2 (delete silent no-op):** Clicked Delete on the object detail page → **button disappeared** from UI (replaced by empty element) but **NO network request sent** (verified via network log). Server-side: AP object still returns **200** (not tombstoned), DB `IsTombstoned=false`. The post is NOT deleted.
+  - **Root cause hypothesis:** The object detail page's Edit/Save handler does not refetch the object or invalidate the client cache after the server call. The Delete handler sets a local state flag (hiding the button) but never calls the server-side delete endpoint.
+- **Result:** **1 new defect (S55, S2).** Open count: **9** (was 8). Finding doc `s55-post-edit-ui-stale-delete-silent-no-op.md` written.
+- **Checkpoint:** Next: explore remaining untested areas (notifications detail, media upload, visibility edge cases). Re-verify S48/S52/S54 once dev lands fixes. S55 needs dev investigation of the object detail page's Edit/Save and Delete handlers.
+
 ## Pass 331 (2026-09-22) — S54 fix FAILED (buttons still disabled while typing on build `44e7318a`)
 - **Build/Live:** `44e7318a` (no-cache rebuild; was `b7f6cd4f`). Both instances healthy.
 - **S54 fix verification (FAILED):** dev1 fix `02442768` (merged to main `90a219ed`) adds `@bind:event="oninput"` to all 6 affected inputs. Live re-verify:
