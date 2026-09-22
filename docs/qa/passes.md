@@ -17,6 +17,18 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 305 (2026-09-22) — Post edit edge cases + delete flow — 0 new defects
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A): (a) Edit with special characters (quotes, ampersand, em-dash, accented, CJK) → saved correctly. (b) Edit with empty content → form stayed open (no save, no error message). (c) Edit Cancel → content unchanged. (d) Delete flow: create post → Delete → confirmation dialog → Confirm → redirect to /home → deleted post shows tombstone. 0 console errors.
+- **Result:** **0 new defects.** Post edit edge cases (special chars, empty content, cancel) and delete flow (confirmation dialog + tombstone) all work correctly. Open count unchanged: **S35 + S43 + S44 (3)**.
+- **Checkpoint:** Post edit + delete flows verified. Open: S35 (operator-blocked) + S43 (dev-owned) + S44 (dev-owned, S3, mute button in More options menu). Next: explore attachment upload, or re-verify S43/S44 once dev fix builds land.
+
+## Pass 304 (2026-09-22) — "Mute" action from "More options" menu + post edit flow — NEW S44
+- **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A): (a) Mute from "More options" menu → does nothing (actor NOT muted). (b) Mute from profile header → works (button changes to "Unmute"). (c) Post edit flow → works (same read-after-write timing issue as prior passes). 0 console errors.
+- **Result:** **NEW S44 (S3):** "Mute" button in "More options" menu doesn't work. Open count: **3 (S35 + S43 + S44)**.
+- **Checkpoint:** S44 logged. Open: S35 (operator-blocked) + S43 (dev-owned) + S44 (dev-owned, S3, mute button in More options menu). Next: post edit edge cases + delete flow.
+
 ## Pass 303 (2026-09-22) — "Report" action from the "More options" menu — 0 new defects
 - **Build/Live:** `345286cc` (== HEAD? y — no `src/` change since S42 fix → no QA redeploy needed). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) `/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1` (remote actor from B instance): clicked "More options" button on a post → clicked "Report" → no visible feedback (menu closed). Navigated to `/settings` → Account tab → Moderation section → "Reported" subsection shows "ii-b1" with a "Remove" button (correct — the report was created). Clicked "Remove" → "Reported" section now shows "You have not reported anyone." (correct — the report was removed). 0 console errors throughout.
