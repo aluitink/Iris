@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 284 (2026-09-22) — Cross-instance interop (ii-b1@B actor profile on A) — 0 new defects
+- **Build/Live:** `6680704e` (== HEAD? y — no `src/` change → no redeploy; QA stack current from Pass 280). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) navigation to a **remote actor's profile** (`/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1`): **(a) Posts tab** — 6 posts (2 cross-instance boosts of ii-a1's notes + 4 native ii-b1 posts), all with Like/Boost/Reply + "More options" buttons. **(b) Followers tab** — ii-a1 + ii-a2 (both from A following ii-b1@B). **(c) Following tab** — ii-a8-community + ii-a1 (both from A that ii-b1@B follows).
+- **Result:** **0 new defects.** All 3 tabs render correctly with cross-instance data (actor resolution, follower/following lists, post feed with boosts + replies). 0 console errors. Cross-instance interop (B→A direction) is healthy. Open count unchanged: **S35 + S42**.
+- **Checkpoint:** Cross-instance actor profile rendering verified (Posts/Followers/Following tabs all correct). Open: S35 (operator-blocked, Mastodon-side) + S42 (dev-owned, S3, data-integrity). Next: re-verify S42 once a dev fix build lands, or deeper interop testing (Mastodon/Lemmy) once operator re-provisions.
+
 ## Pass 283 (2026-09-22) — Profile editing (Edit profile flow) — 0 new defects (1 minor UX observation)
 - **Build/Live:** `6680704e` (== HEAD? y — no `src/` change → no redeploy; QA stack current from Pass 280). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) **Edit profile** flow (`/profile` → "Edit profile" button): form opens with Avatar (Choose/Change avatar), Display name, Bio, "Require approval for follow requests" checkbox, Save + Cancel buttons.
