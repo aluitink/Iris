@@ -1,50 +1,34 @@
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Server.Stores;
 
 namespace Iris.Server.Tests.Stores;
 
 /// <summary>
 /// Unit tests for the <see cref="InMemoryMediaStore"/> — the in-memory media store (Phase 20.4 (a)):
 /// persists uploaded media (a note's attachment) and hands out the same-origin media IRI
-/// (<c>{base}/ap/v1/media/{id}</c>) that an object's attachment references. Covers the
-/// <see cref="Iris.Server.Stores.IMediaStore"/> contract: store + read back (bytes, content-type, file
-/// name), a unique unguessable id per item, a missing-media miss, and that the media IRI is built on the
-/// given base's <c>/ap/v1/media/{id}</c> path.
+/// (<c>{base}/ap/v1/media/{id}</c>) that an object's attachment references. The shared
+/// <see cref="IMediaStore"/> contract behaviors (store + read back, the same-origin media-IRI shape) run
+/// via <see cref="IMediaStoreContractTests"/>; this class adds the in-memory-specific behaviors: a unique
+/// unguessable id per item, a missing-media miss, per-item independence, and id resolution from the last
+/// path segment.
 /// </summary>
-public sealed class InMemoryMediaStoreTests
+public sealed class InMemoryMediaStoreTests : IMediaStoreContractTests
 {
     private static readonly Iri Base = new("https://a.test");
     private static readonly byte[] Pixels = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // a PNG-ish blob
 
+    protected override IMediaStore CreateStore()
+        => new InMemoryMediaStore();
+
     private static InMemoryMediaStore NewStore()
         => new();
 
+    /// <summary>The shared <see cref="IMediaStore"/> contract: store + read back (bytes, content-type,
+    /// file name) and the same-origin media-IRI shape.</summary>
     [Fact]
-    public async Task Put_ThenTryGet_ReturnsBytesContentTypeAndFileName()
-    {
-        var sut = NewStore();
-
-        var iri = await sut.PutAsync(Pixels, "image/png", "cat.png", Base);
-
-        Assert.True(await sut.TryGetAsync(iri, out var content, out var contentType, out var fileName));
-        Assert.Equal(Pixels, content);
-        Assert.Equal("image/png", contentType);
-        Assert.Equal("cat.png", fileName);
-    }
-
-    [Fact]
-    public async Task Put_ReturnsSameOriginMediaIri()
-    {
-        var sut = NewStore();
-
-        var iri = await sut.PutAsync(Pixels, "image/png", "cat.png", Base);
-
-        // The media IRI is the instance's base + /ap/v1/media/{id} (same-origin — the browser loads it
-        // from the same origin, never a cross-origin media host).
-        Assert.StartsWith("https://a.test/ap/v1/media/", iri.Value);
-        // The id is an unguessable 32-char Guid ("N").
-        Assert.Equal(32, iri.Value["https://a.test/ap/v1/media/".Length..].Length);
-    }
+    public async Task Contract_PutReadBackAndSameOriginMediaIri()
+        => await RunSharedContractBehaviors();
 
     [Fact]
     public async Task Put_Twice_ReturnsDistinctIds()
@@ -62,7 +46,7 @@ public sealed class InMemoryMediaStoreTests
     {
         var sut = NewStore();
 
-        var missing = new Iri("https://a.test/ap/v1/media/deadbeefdeadbeefdeadbeefdeadbeef");
+        var missing = new Iri($"{Base.Value}/ap/v1/media/deadbeefdeadbeefdeadbeefdeadbeef");
 
         Assert.False(await sut.TryGetAsync(missing, out var content, out var contentType, out var fileName));
         Assert.Null(content);

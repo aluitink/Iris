@@ -90,19 +90,9 @@ public sealed class InstanceActorAtRootIntegrationTests : IDisposable
         Assert.Equal("Person", root.GetProperty("type").GetString());
     }
 
-    [Fact]
-    public async Task Root_DoesNotLeakPrivateKey()
-    {
-        // The root always serves the PUBLIC form — never the owner-only privateKey extension.
-        using var request = new HttpRequestMessage(HttpMethod.Get, "/");
-        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
-
-        using var response = await _http.SendAsync(request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var body = await response.Content.ReadAsStringAsync();
-        Assert.DoesNotContain("privateKey", body);
-    }
+    // NOTE: Root_DoesNotLeakPrivateKey (root GET / never leaks the owner-only privateKey extension) is
+    // asserted by InstanceActorDocumentAtRootIntegrationTests — identical request/assertion. Kept there
+    // once to de-duplicate; the public-form invariant holds for every root config.
 
     [Fact]
     public async Task Root_SiteActorDocument_CarriesPublished()
