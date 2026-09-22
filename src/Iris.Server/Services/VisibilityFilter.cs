@@ -49,6 +49,41 @@ internal static class VisibilityFilter
     /// </returns>
     public static bool IsVisibleTo(IObject? obj, Iri? requester)
     {
+        if (obj is null || IsPublic(obj))
+        {
+            return true;
+        }
+
+        return requester is { } r && (ContainsAudience(obj, r) || IsAuthor(obj, r));
+    }
+
+    /// <summary>
+    /// Reports whether a content object is visible to a given (possibly anonymous) requester, resolving
+    /// <em>followers-collection</em> audiences to membership when a follower check is supplied.
+    /// </summary>
+    /// <param name="obj">The content object whose <c>to</c>/<c>cc</c> audience is checked. May be null —
+    /// treated as visible.</param>
+    /// <param name="requester">The requesting actor's IRI, or null for an anonymous request.</param>
+    /// <param name="isFollowerOfAsync">
+    /// An async predicate reporting whether <paramref name="requester"/> is a follower of a given actor
+    /// (the owner of a <c>…/followers</c> collection audience). When a <c>to</c>/<c>cc</c> entry is a
+    /// followers-collection IRI, the object is visible to the requester if this predicate reports the
+    /// requester follows the collection's owner — the ActivityPub convention that a followers-visibility
+    /// post is visible to every follower. Pass <see langword="null"/> (the sync overload) to skip
+    /// collection resolution: a followers-collection audience then never matches (only a literal
+    /// recipient-IRI match or authorship grants visibility), which is the correct behavior for surfaces
+    /// that cannot resolve membership.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when the object is public, the requester is a named recipient, the requester
+    /// follows the owner of a followers-collection audience (when <paramref name="isFollowerOfAsync"/> is
+    /// supplied), or the requester is the author; <see langword="false"/> otherwise.
+    /// </returns>
+    public static async Task<bool> IsVisibleToAsync(
+        IObject? obj,
+        Iri? requester,
+        Func<Iri, Task<bool>>? isFollowerOfAsync = null)
+    {
         if (obj is null)
         {
             return true;
@@ -59,7 +94,85 @@ internal static class VisibilityFilter
             return true;
         }
 
-        return requester is { } r && (ContainsAudience(obj, r) || IsAuthor(obj, r));
+        if (requester is not { } r)
+        {
+            return false;
+        }
+
+        if (ContainsAudience(obj, r) || IsAuthor(obj, r))
+        {
+            return true;
+        }
+
+        // A followers-collection audience (…/followers) names the owner's followers, not a literal
+        // recipient: resolve membership so a follower of the owner can see the object.
+        if (isFollowerOfAsync is not null)
+        {
+            foreach (var owner in FollowersCollectionOwners(obj))
+            {
+                if (await isFollowerOfAsync(owner).ConfigureAwait(false))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Yields the actor IRIs that own a <c>…/followers</c> collection audience entry on
+    /// <paramref name="obj"/> (its <c>to</c>/<c>cc</c>), with the <c>/followers</c> segment stripped so
+    /// the result is the owner's actor IRI. De-duplicated (case-insensitive).
+    /// </summary>
+    private static IEnumerable<Iri> FollowersCollectionOwners(IObject obj)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in obj.To is { } to ? to.OfType<IObjectOrLink>() : [])
+        {
+            if (TryOwnerOfFollowersCollection(entry, out var owner) && seen.Add(owner.Value))
+            {
+                yield return owner;
+            }
+        }
+
+        foreach (var entry in obj.Cc is { } cc ? cc.OfType<IObjectOrLink>() : [])
+        {
+            if (TryOwnerOfFollowersCollection(entry, out var owner) && seen.Add(owner.Value))
+            {
+                yield return owner;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="entry"/> is a followers-collection IRI (<c>…/followers</c>) and,
+    /// when it is, returns the owner's actor IRI (the collection IRI with the <c>/followers</c> segment
+    /// removed). A non-collection entry (a literal actor/recipient IRI) yields <see langword="false"/>.
+    /// </summary>
+    private static bool TryOwnerOfFollowersCollection(IObjectOrLink entry, out Iri owner)
+    {
+        owner = default;
+        if (entry.ResolveObjectIri() is not { } iri)
+        {
+            return false;
+        }
+
+        const string segment = "/followers";
+        var value = iri.Value;
+        if (value.Length <= segment.Length || !value.EndsWith(segment, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var ownerValue = value[..^segment.Length];
+        if (string.IsNullOrEmpty(ownerValue))
+        {
+            return false;
+        }
+
+        owner = new Iri(ownerValue);
+        return true;
     }
 
     /// <summary>
@@ -86,6 +199,26 @@ internal static class VisibilityFilter
         };
 
         return IsVisibleTo(content, requester);
+    }
+
+    /// <summary>
+    /// Async variant of <see cref="IsFeedItemVisibleTo"/> that resolves followers-collection audiences
+    /// to membership via <paramref name="isFollowerOfAsync"/> (a followers-visibility feed item is
+    /// visible to the requester when the requester follows the item's author).
+    /// </summary>
+    public static async Task<bool> IsFeedItemVisibleToAsync(
+        IObjectOrLink item,
+        Iri? requester,
+        Func<Iri, Task<bool>>? isFollowerOfAsync = null)
+    {
+        var content = item switch
+        {
+            Activity { Object: { } objects } => objects.FirstOrDefault() as IObject,
+            IObject obj => obj,
+            _ => null,
+        };
+
+        return await IsVisibleToAsync(content, requester, isFollowerOfAsync).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -145,8 +145,20 @@ public sealed class FeedService : IFollowFeedService
         // owner (a signed request as the actor) additionally sees their own non-public posts (the author
         // clause) and any non-public items addressed to them; a signed non-recipient sees only public
         // content. Filtering after the query/type filters (and before the handler's paginate) means the
-        // viewer is not returned a page dominated by content they cannot legitimately see.
-        feed = feed.Where(item => VisibilityFilter.IsFeedItemVisibleTo(item, requesterIri)).ToList();
+        // viewer is not returned a page dominated by content they cannot legitimately see. A
+        // followers-visibility item (to/cc = the author's …/followers collection) is visible to the
+        // requester when the requester follows the author — resolved via the follow store (S46): the
+        // collection IRI names the followers, not a literal recipient, so a plain IRI match never hits.
+        var follows = _persistence.Follows;
+        Iri? requester = requesterIri;
+        var visible = await Task.WhenAll(feed.Select(async item =>
+        {
+            var ok = requester is { } r
+                ? await VisibilityFilter.IsFeedItemVisibleToAsync(item, r, owner => follows.IsFollowingAsync(r, owner, ct)).ConfigureAwait(false)
+                : VisibilityFilter.IsFeedItemVisibleTo(item, null);
+            return (item, ok);
+        }));
+        feed = visible.Where(t => t.ok).Select(t => t.item).ToList();
 
         // Source filter (unified-home-feed Phase 2): split the feed into "people" (attributedTo has no
         // Group) and "communities" (attributedTo includes a Group). A null/absent source returns the

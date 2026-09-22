@@ -7847,10 +7847,19 @@ public static class ActivityPubServerExtensions
         // information and are always served. Activities (Create, Announce, …) are metadata wrappers,
         // not content — the visibility gate applies to the embedded content object, not the activity
         // itself (a Create's `to`/`cc` is its distribution list, not a privacy gate).
-        if (obj is IObject visObj && visObj is not Tombstone && visObj is not Activity
-            && !VisibilityFilter.IsVisibleTo(visObj, requesterIri))
+        if (obj is IObject visObj && visObj is not Tombstone && visObj is not Activity)
         {
-            return Results.NotFound();
+            // S46: a followers-visibility object (to/cc = the author's …/followers collection) is visible
+            // to a follower of the author, not just a literal recipient — resolve the collection audience
+            // to membership via the follow store (a plain IRI match against the collection IRI never hits).
+            var objectVisible = requesterIri is { } requester
+                ? await VisibilityFilter.IsVisibleToAsync(
+                    visObj, requester, owner => persistence.Follows.IsFollowingAsync(requester, owner, ct)).ConfigureAwait(false)
+                : VisibilityFilter.IsVisibleTo(visObj, null);
+            if (!objectVisible)
+            {
+                return Results.NotFound();
+            }
         }
         bool? isLikedValue = null;
         bool? isSharedValue = null;

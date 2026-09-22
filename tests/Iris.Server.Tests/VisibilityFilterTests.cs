@@ -164,6 +164,115 @@ public sealed class VisibilityFilterTests
         Assert.True(VisibilityFilter.IsVisibleTo(note, null));
         Assert.True(VisibilityFilter.IsVisibleTo(note, new Iri("https://iris.example/ap/v1/u/stranger")));
     }
+
+    // S46 — followers-collection audience (to/cc = …/followers) resolves to membership via the
+    // supplied follower predicate, so a follower of the collection's owner can see the object.
+
+    private static IObject FollowersCollectionNote()
+    {
+        // A followers-visibility post: to = the author's followers collection IRI (not a literal
+        // recipient), no public sentinel.
+        return NoteWithAudience(new Link { Href = new Uri("https://iris.example/ap/v1/u/alice/followers") });
+    }
+
+    [Fact]
+    public async Task FollowersCollectionNote_VisibleToFollower_WhenPredicateResolves()
+    {
+        var alice = new Iri("https://iris.example/ap/v1/u/alice");
+        var follower = new Iri("https://iris.example/ap/v1/u/bob");
+        var stranger = new Iri("https://iris.example/ap/v1/u/carol");
+        var note = FollowersCollectionNote();
+
+        // Not public; the collection IRI never string-matches a literal requester.
+        Assert.False(VisibilityFilter.IsPublic(note));
+        Assert.False(VisibilityFilter.IsVisibleTo(note, follower)); // sync: no membership resolution
+
+        // The predicate reports "does the REQUESTER follow the owner" — the caller closes over the
+        // requester. bob follows alice → bob sees it; carol does not follow alice → carol does not.
+        Func<Iri, Task<bool>> bobFollowsAlice = owner =>
+            owner.Value == alice.Value ? Task.FromResult(true) : Task.FromResult(false);
+        Func<Iri, Task<bool>> nobodyFollows = _ => Task.FromResult(false);
+
+        Assert.True(await VisibilityFilter.IsVisibleToAsync(note, follower, bobFollowsAlice));
+        Assert.False(await VisibilityFilter.IsVisibleToAsync(note, stranger, nobodyFollows));
+
+        // Anonymous cannot (the predicate is never consulted for a null requester).
+        Assert.False(await VisibilityFilter.IsVisibleToAsync(note, null, bobFollowsAlice));
+    }
+
+    [Fact]
+    public async Task FollowersCollectionNote_AuthorSeesIt_WithoutPredicate()
+    {
+        // The author clause still grants visibility to the author of a followers-visibility post.
+        var alice = new Iri("https://iris.example/ap/v1/u/alice");
+        var note = FollowersCollectionNote();
+        note.AttributedTo = [new Person { Id = alice.Value }];
+
+        Assert.True(VisibilityFilter.IsVisibleTo(note, alice));
+        Assert.True(await VisibilityFilter.IsVisibleToAsync(note, alice));
+    }
+
+    [Fact]
+    public async Task FeedItemFollowersCollection_VisibleToFollower_WhenPredicateResolves()
+    {
+        var alice = new Iri("https://iris.example/ap/v1/u/alice");
+        var follower = new Iri("https://iris.example/ap/v1/u/bob");
+        var note = FollowersCollectionNote();
+        var create = new Create
+        {
+            Id = "https://iris.example/ap/v1/u/alice/activities/create-followers",
+            Actor = [new Link { Href = new Uri(alice.Value) }],
+            Object = [note],
+        };
+
+        // Sync: the collection IRI never matches → not visible to bob.
+        Assert.False(VisibilityFilter.IsFeedItemVisibleTo(create, follower));
+
+        // Async with a follower predicate: bob (a follower of alice) sees it; carol (non-follower) does not.
+        Func<Iri, Task<bool>> bobFollowsAlice = owner =>
+            owner.Value == alice.Value ? Task.FromResult(true) : Task.FromResult(false);
+        Func<Iri, Task<bool>> nobodyFollows = _ => Task.FromResult(false);
+        Assert.True(await VisibilityFilter.IsFeedItemVisibleToAsync(create, follower, bobFollowsAlice));
+        Assert.False(await VisibilityFilter.IsFeedItemVisibleToAsync(create, new Iri("https://iris.example/ap/v1/u/carol"), nobodyFollows));
+    }
+
+    [Fact]
+    public async Task FollowersCollectionInCc_ResolvesToo()
+    {
+        // A followers-collection in cc (not just to) is also resolved to membership.
+        var alice = new Iri("https://iris.example/ap/v1/u/alice");
+        var follower = new Iri("https://iris.example/ap/v1/u/bob");
+        var note = new Note
+        {
+            Id = "https://iris.example/ap/v1/u/alice/notes/cc-followers",
+            Content = ["body"],
+            Cc = [new Link { Href = new Uri("https://iris.example/ap/v1/u/alice/followers") }],
+        };
+
+        Assert.False(VisibilityFilter.IsPublic(note));
+        Func<Iri, Task<bool>> isFollower = owner =>
+            owner.Value == alice.Value ? Task.FromResult(true) : Task.FromResult(false);
+        Assert.True(await VisibilityFilter.IsVisibleToAsync(note, follower, isFollower));
+    }
+
+    [Fact]
+    public async Task LiteralRecipientIri_IsNotMistakenForFollowersCollection()
+    {
+        // A literal actor IRI (no /followers suffix) is matched by the plain audience clause, not the
+        // collection resolver — and the resolver must not treat it as a collection owner.
+        var bob = new Iri("https://iris.example/ap/v1/u/bob");
+        var dm = NoteWithAudience(new Link { Href = new Uri(bob.Value) });
+
+        // The predicate is never consulted for a literal-recipient match (bob is the recipient).
+        var consulted = false;
+        Func<Iri, Task<bool>> isFollower = _ =>
+        {
+            consulted = true;
+            return Task.FromResult(true);
+        };
+        Assert.True(await VisibilityFilter.IsVisibleToAsync(dm, bob, isFollower));
+        Assert.False(consulted); // the audience clause short-circuits before the collection resolver
+    }
 }
 
 /// <summary>
