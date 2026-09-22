@@ -1,8 +1,9 @@
 # S40 — Deleting a community leaves the creator's auto-follow `Follow` edge; the deleted community lingers in the Following tab (with a 404 re-fetch)
 
 - **Class:** bug / data-integrity — **Severity:** S2
-- **Status:** open (found Pass 268, 2026-09-22)
+- **Status:** fixed (dev2, 2026-09-22) — awaiting QA live re-verify
 - **Found:** Pass 268 (2026-09-22, `ii-a1`@A, no-cache build carrying `1f941cfb`)
+- **Fix:** dev2 (2026-09-22) — `DeleteCommunityAsync` now also removes inbound `Follow`(0) edges (`Target=communityIri`); `CommunityDeleteHandler` (provider-agnostic) removes the inbound `Follow` edge per owner + invalidates the owner's `following` page + feed cache. Regression tests: `CommunityDeletionFollowEdgeTests` (EF) + `CommunityDeleteIntegrationTests.DeleteCommunity_RemovesCreatorAutoFollowEdge_GoneFromFollowing` (in-memory e2e).
 - **Related:** [S21](s21-new-community-missing-following-tab.md) (the auto-follow edge this leaks), [S24](s24-cross-instance-follow-state-inconsistent.md) (Following-tab state consistency), [S4](s04-communities-following-remote.md) (Following-tab resolution)
 
 ## Symptom

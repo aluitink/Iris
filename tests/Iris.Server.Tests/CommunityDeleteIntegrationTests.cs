@@ -115,6 +115,50 @@ public sealed class CommunityDeleteIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteCommunity_RemovesCreatorAutoFollowEdge_GoneFromFollowing()
+    {
+        // S40: the community-creation path (S21) records an auto-follow edge creator -> community
+        // (EdgeKind.Follow, kind 0) via the Follows store. Deleting the community must remove that
+        // inbound edge so the deleted community does NOT linger in the creator's /following collection
+        // and Communities "Following" tab (it would otherwise 404 on re-fetch). Before the fix only the
+        // community-scoped edges (incl. the kind-10 CommunityFollower edge) were removed, orphaning this
+        // kind-0 edge.
+        var communityIri = await CreateCommunityAsync();
+
+        // S21 precondition: the creator is auto-followed on creation (a Follow edge alice -> community).
+        Assert.True(await _persistence.Follows.IsFollowingAsync(_aliceIri, communityIri),
+            "precondition: the creator auto-follows the newly created community (S21)");
+
+        // Warm the creator's /following page in its post-creation state (the community IS listed).
+        using (var warm = await _http.GetAsync($"https://{AHost}/ap/v1/u/{Alice}/following"))
+        {
+            warm.EnsureSuccessStatusCode();
+            var warmBody = await warm.Content.ReadAsStringAsync();
+            Assert.Contains(communityIri.Value, warmBody, StringComparison.Ordinal);
+        }
+
+        // Delete the community.
+        var response = await _http.SendAsync(DeleteRequest(communityIri));
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+
+        // The community is gone from the community store...
+        Assert.False(await _persistence.Communities.TryGetCommunityAsync(communityIri, out _));
+
+        // S40: the inbound auto-follow (kind 0) edge is removed — the creator no longer "follows" the
+        // deleted community.
+        Assert.False(await _persistence.Follows.IsFollowingAsync(_aliceIri, communityIri),
+            "S40: deleting the community must remove the creator's auto-follow (Follow kind 0) edge");
+        Assert.Empty(await _persistence.Follows.GetFollowersAsync(communityIri)); // S40: no inbound Follow (kind 0) edges
+
+        // ...and a fresh (non-cached) read of the creator's /following no longer lists the community.
+        using var read = await _http.GetAsync(
+            $"https://{AHost}/ap/v1/u/{Alice}/following?refresh=true");
+        read.EnsureSuccessStatusCode();
+        var readBody = await read.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(communityIri.Value, readBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task DeleteCommunity_RemovesModerationEdges()
     {
         var communityIri = await CreateCommunityAsync();

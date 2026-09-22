@@ -208,8 +208,18 @@ public sealed class EfCommunityStore : ICommunityStore
         var asSource = await db.Set<EdgeEntity>()
             .Where(e => edgeKinds.Contains(e.Kind) && e.Source == iri).ToListAsync(ct).ConfigureAwait(false);
         db.Set<EdgeEntity>().RemoveRange(asSource);
+        // S40: also remove the inbound actor-follow edges (EdgeKind.Follow, follower -> community). The
+        // community-creation path (RecordCreateLocalAsync, S21) records a Follow edge from the creator
+        // to the new community (via the Follows store) so the community surfaces in the creator's
+        // Following tab. Without this cleanup that edge is orphaned when the community is deleted — it
+        // points at a Group whose ActorEntity row is gone, so the deleted community lingers in the
+        // creator's /following collection and Following tab (with a 404 re-fetch). EdgeKind.Follow is
+        // deliberately NOT in `edgeKinds` (the community's own outgoing follows are CommunityFollow);
+        // it is removed here as an INBOUND edge (Target == iri), the inverse of the CommunityFollower
+        // (kind 10) cleanup above.
         var asTarget = await db.Set<EdgeEntity>()
-            .Where(e => e.Kind == EdgeKind.CommunityFollower && e.Target == iri).ToListAsync(ct).ConfigureAwait(false);
+            .Where(e => (e.Kind == EdgeKind.CommunityFollower || e.Kind == EdgeKind.Follow) && e.Target == iri)
+            .ToListAsync(ct).ConfigureAwait(false);
         db.Set<EdgeEntity>().RemoveRange(asTarget);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return true;
