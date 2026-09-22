@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 329 (2026-09-22) — S51 partial fix verified + S50/S53 re-confirmed
+- **Build/Live:** Rebuilt QA stack to main `0d7307e5` (carries S47 `fbeb600b`, S49 `b3a2e5fc`, S51 `369ba72f`+`db365370`). Both instances healthy.
+- **Explored:**
+  1. **S51 re-verify:** Edited `ii-a8-community` name via UI. API returns new name + non-null `updated` timestamp. **`updated` timestamp facet is FIXED.** DB still has old name (not persisted) — **stale cache facet still open.** UI shows old name after Save (partly S54 binding).
+  2. **S50 re-verify:** Cross-instance community post from B→A still uses `documents/` IRI (type "Page"), 404 on A. **Still open.**
+  3. **S53 re-verify:** Community-scoped search works for `ii-a8-community`@A (18 results) but returns 0 for `qa-pass-319-feed`@B (3 notes in DB). **Still open.**
+- **Result:** S51 marked partially fixed (`updated` timestamp facet). S50 + S53 re-confirmed open. Open count: **9**.
+- **Checkpoint:** Next: re-verify S44/S48/S52/S54 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 328 (2026-09-22) — S54 broadened + S50/S53 re-confirmed
 - **Build/Live:** No rebuild (same build as Pass 315–327, `d5b50948`). Both instances healthy.
 - **Explored:**
