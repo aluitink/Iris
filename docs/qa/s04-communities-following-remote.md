@@ -1,7 +1,7 @@
 # S4 — Communities "Following" tab drops followed REMOTE communities
 
 - **Class:** UX / bug — **Severity:** S2
-- **Status:** open for remote communities (re-confirmed Pass 39, 2026-09-20, deployed `4f5dd5c`); fixed for local communities (Pass 27)
+- **Status:** fixed (dev2, 2026-09-22, commits `83eb22aa` + `cca01fa7`)
 - **Found:** Pass 12 (2026-09-20) — re-confirmed Passes 13, 14, 15, 37
 
 ## Symptom
@@ -61,3 +61,9 @@ With QAUser1 (follows only the remote interop community): Communities → Follow
 **Re-verification evidence (Pass 94, 2026-09-20, andrew, container 13:26:35):** Communities → Following tab shows 3 local communities (technology, qa-pass46-test, qa-pass65-test) — remote interop still missing. **STILL OPEN** (20 consecutive passes).
 
 **Re-verification evidence (Pass 96, 2026-09-20, andrew, container 14:09:44):** Communities → Following tab shows 3 local communities (technology, qa-pass46-test, qa-pass65-test) — remote interop still missing. **STILL OPEN** (22 consecutive passes).
+
+**Fix (dev2, 2026-09-22):** Two root causes addressed:
+1. **Client (commit `83eb22aa`):** `Communities.razor` `ResolveFollowingCommunitiesAsync` and `Profile.razor` `LoadFollowedCommunitiesAsync` now fetch followed IRIs not in the local search cache via `Ui.GetActorAsync` (routes remote actors through the same-origin proxy) and keep them if `Group`.
+2. **Server (commit `cca01fa7`):** When a remote instance accepts a follow, it delivers the Accept to the original follow activity's IRI (`/u/{handle}/follows/{ulid}`), which is not a valid actor IRI. `HandleInboxPostAsync` now re-resolves the recipient for Accept/Reject activities: it reads the referenced follow from the activity store and uses the follower (the follow's actor) as the recipient. This fixes the "unknown recipient" 404 that prevented the follower from confirming the follow.
+
+**Re-verification evidence (dev2, 2026-09-22, deployed `cca01fa7`):** New account `s4e2e2` on iris-b follows remote community `test-community` on iris-a. Communities → Following tab shows **"test-community" with a "Leave" button**. Profile → Communities tab also shows **"test-community" with a "Leave" button**. The Accept from iris-a is correctly delivered and processed (log: `Inbox re-resolved: .../follows/... → .../u/s4e2e2 (follow response)`). **S4 CLOSED.**
