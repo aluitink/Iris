@@ -480,12 +480,14 @@ public sealed class FeedService : IFollowFeedService
         // Fallback: a named (non-public) `to` audience indicates a directed reply (Phase 101
         // heuristic, S36-corrected). Only `to` is inspected: a top-level post's `cc=[followers]`
         // is a public-carbon-copy, not a directed recipient. A `to` of just the public sentinel
-        // (or an absent `to`) is a top-level post, not a reply.
+        // (or an absent `to`) is a top-level post, not a reply. S46: a `to` that is a followers
+        // collection (`…/followers`) is likewise a top-level post (followers-only visibility), not a
+        // directed reply — the collection names the owner's followers, never a single addressed actor.
         if (contentObj.To is { } toEntries)
         {
             foreach (var entry in toEntries)
             {
-                if (entry.ResolveObjectIri() is { } iri && !iri.IsPublicAudience())
+                if (entry.ResolveObjectIri() is { } iri && !iri.IsPublicAudience() && !iri.IsFollowersCollection())
                 {
                     return true;
                 }

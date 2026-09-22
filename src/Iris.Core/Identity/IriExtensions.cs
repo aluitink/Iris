@@ -1129,6 +1129,22 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reports whether an IRI is a <c>…/followers</c> collection (an actor's followers collection,
+    /// e.g. <c>https://host/ap/v1/u/actor/followers</c>). Such an IRI in a <c>to</c>/<c>cc</c> audience
+    /// denotes a followers-only (unlisted) post, not a directed recipient (S46): the collection names
+    /// the owner's followers, never a single addressed actor.
+    /// </summary>
+    /// <param name="iri">The IRI to test. May be the default value.</param>
+    /// <returns><see langword="true"/> when <paramref name="iri"/> ends with a <c>/followers</c> segment.</returns>
+    public static bool IsFollowersCollection(this Iri iri)
+    {
+        const string segment = "/followers";
+        var value = iri.Value;
+        return value.Length > segment.Length
+            && value.EndsWith(segment, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// A case-insensitive, ordinal comparer for <see cref="Iri"/> (audience de-duplication in
     /// <see cref="GetAudienceIris"/>).
     /// </summary>

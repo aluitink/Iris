@@ -1356,6 +1356,48 @@ public sealed class FeedServiceTests
     }
 
     [Fact]
+    public async Task Feed_FollowersOnlyTopLevelPost_IsNotTreatedAsReply()
+    {
+        // S46: a top-level post with followers-only visibility (to = the author's …/followers
+        // collection) must not be misclassified as a directed reply by the audience fallback
+        // heuristic — the collection names the owner's followers, never a single addressed actor.
+        // Without this, the follow-reply filter drops every followers-only post from the home
+        // timeline before the visibility filter can grant it to the follower.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob public post");
+            // bob's followers-only top-level post: to = bob's followers collection (NOT a literal
+            // recipient and NOT as:Public), no inReplyTo.
+            var noteIri = $"https://{LocalHost}/notes/b-fol";
+            persistence.Activities.AddToOutboxAsync(bob, new Create
+            {
+                Id = noteIri,
+                Actor = [new Link { Href = new Uri(bob.Value) }],
+                Object = [new Note
+                {
+                    Id = noteIri,
+                    Content = ["bob followers-only post"],
+                    AttributedTo = [new Link { Href = new Uri(bob.Value) }],
+                    To = [new Link { Href = new Uri($"{bob.Value}/followers") }],
+                }],
+            }).GetAwaiter().GetResult();
+        }));
+
+        // Default home timeline (threadDepth null): the followers-only post is top-level content, not
+        // a reply, so it is retained by the thread filter. As a signed owner (alice) it is also visible
+        // (alice follows bob). Both posts surface.
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), requesterIri: Actor(LocalHost, "alice"));
+        var ids = feed.Select(IdOf).ToList();
+
+        Assert.Contains($"https://{LocalHost}/notes/b-1", ids);
+        Assert.Contains($"https://{LocalHost}/notes/b-fol", ids);
+    }
+
+    [Fact]
     public async Task Feed_FollowReply_ThreadDepth1_IncludesReply()
     {
         // 117.1: ?depth=1 includes first-level replies from followed actors.
