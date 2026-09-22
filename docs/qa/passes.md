@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 267 (2026-09-22) — build `ad7eba8e` (== main HEAD; live QA cluster rebuilt at Pass 261) / fast-suite green gate re-run — ALL GREEN (2265 passed, 0 failed), 4th consecutive identical (no `src/` change); QA idle
+- **Build/Live:** `ad7eba8e` (== main HEAD). QA worktree synced down (0 behind). No `src/` change since Pass 266 (dev1's S21 residual cache-invalidation fix is still **uncommitted/in-flight in dev1's worktree**, not on main) → no redeploy needed.
+- **Explored:** QA idle (only open finding S35 is operator-blocked; dev backlog otherwise empty), so per the loop re-ran the **fast** test-suite green gate to confirm the build is still green between live passes.
+- **Result:** **ALL GREEN — 0 failures.** Core 467, Client 194, Web 113, WebCrypto 3, Client.Extensions 29, **Server 1438** (8 skipped = Slow-gated), Server.Data 21 → **2265 passed**. Release build green (0/0). Identical to Passes 262/265/266 (no `src/` change). No new defects.
+- **Checkpoint:** QA idle — open count **1 (S35 only**, operator-blocked). Next: re-verify **dev1's S21 residual cache-invalidation fix** when it lands on `main` (Following-tab stale-cache after community create); S35 needs operator re-provision of the Mastodon `imuser` account; re-run when `src/` changes.
+
 ## Pass 266 (2026-09-22) — build `c5600c41` (== main HEAD; live QA cluster rebuilt at Pass 261) / fast-suite green gate re-run — ALL GREEN (2265 passed, 0 failed), 3rd consecutive identical (no `src/` change); QA idle
 - **Build/Live:** `c5600c41` (== main HEAD). QA worktree synced down (0 behind). No `src/` change since Pass 265 (dev1's S21 residual cache-invalidation fix is still **uncommitted/in-flight in dev1's worktree**, not on main) → no redeploy needed.
 - **Explored:** QA idle (only open finding S35 is operator-blocked; dev backlog otherwise empty), so per the loop re-ran the **fast** test-suite green gate to confirm the build is still green between live passes.
