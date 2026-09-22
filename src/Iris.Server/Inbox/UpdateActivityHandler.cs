@@ -252,6 +252,14 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
                 }
             }
 
+            // S51: stamp `updated` on the community Group when its name/summary/icon changes, so remote
+            // clients (and the local UI) can detect the edit. Mirrors the S31 fix for content objects
+            // (Notes, Articles) which stamps `updated` in the HandleAsync path. The `updated` timestamp
+            // is meaningful for actor/community profile documents that carry a `published` timestamp.
+            var now = DateTime.UtcNow;
+            var published = community.Published;
+            community.Updated = published is { } pub && now < pub ? pub : now;
+
             await _persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
         }
         else
