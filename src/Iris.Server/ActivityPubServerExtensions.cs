@@ -4341,7 +4341,7 @@ public static class ActivityPubServerExtensions
                 // fan-out, mirroring CreateActivityHandler's loop, not just the first follower). When the
                 // embedded object is a community (a Group whose IRI is this instance's /ap/v1/c/{name}),
                 // the community is also stored in the community store (19.5.1 creation write path).
-                var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, baseUrl, ct)
+                var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, baseUrl, collectionCache, followFeed, ct)
                     .ConfigureAwait(false);
                 foreach (var recipient in recipients)
                 {
@@ -6047,6 +6047,8 @@ public static class ActivityPubServerExtensions
         Iri authorIri,
         Create create,
         string baseUrl,
+        LocalCollectionPageCache collectionCache,
+        IFollowFeedService followFeed,
         CancellationToken ct)
     {
         // Store the embedded object (so it can be served by IRI, refreshed by an Update, tombstoned by a
@@ -6094,6 +6096,18 @@ public static class ActivityPubServerExtensions
             {
                 await StoreCreatedCommunityAsync(persistence, group, communityIri, ct).ConfigureAwait(false);
                 await persistence.Follows.RecordFollowAsync(authorIri, communityIri, ct).ConfigureAwait(false);
+
+                // S21 residual: the auto-follow edge above changes the creator's `following` collection
+                // and home feed, but the community-creation path (unlike the explicit Follow branch at
+                // the OutboxPublishHandler's switch) did not drop the affected cached pages. The
+                // `following` collection is served through the local collection-page response cache
+                // (60s fresh / 300s stale-while-revalidate), so without invalidation the creator's
+                // /following — and therefore the Communities page's Following tab (which walks it) —
+                // serves the stale pre-creation page (the new community missing) until the TTL lapses.
+                // Mirror the explicit-Follow invalidation: drop the creator's `following` page-1 entry
+                // and the per-actor feed cache so both reflect the new follow immediately.
+                InvalidateLocalCollectionPage(collectionCache, authorIri, "following");
+                followFeed.InvalidateActorFeedCache(authorIri, ct);
             }
         }
 
