@@ -70,3 +70,11 @@ Add/adjust a unit test asserting `Linkify("… @ii-a2 …", mentions=[ii-a2])` p
 **0 console errors.** Both test posts deleted after verification.
 
 **Conclusion:** the dev1 fix (`03b9c90d`) is **partial**. The regex widening in `MentionLinkify` + `InboundTagNormalizer` is correct and live, but the compose UI's mention resolution logic (which builds the `Mention` tag's actor IRI from the handle) needs the same hyphen-class widening. The compose UI is a separate project not in this repo, so this remaining facet requires a fix in the compose UI codebase.
+
+## Re-verify (Pass 313, 2026-09-22) — new facet: notification "To" label + object-detail "To" label
+
+When composing a Direct-visibility note mentioning `@ii-b1` (Pass 313, S47 repro), the truncated mention IRI (`…/u/ii`) also manifests in:
+1. The **notification's "To" label** on the recipient's instance (B): "To ii" (link → `/ap/v1/u/ii`) instead of "To ii-b1" (link → `/ap/v1/u/ii-b1`).
+2. The **object-detail page's "To" label** on the author's instance (A): "To ii" (link → `/ap/v1/u/ii`).
+
+These are additional surfaces where the truncated mention IRI is visible to the user. The root cause is the same (compose-time mention resolution truncates the handle), but the impact is broader than the content HTML + `tag` array.
