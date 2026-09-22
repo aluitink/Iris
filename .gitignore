@@ -82,9 +82,10 @@ apps/Iris.Web/wwwroot/**/*.gz
 .tmp-bunitpump2/
 .tmp-bunitpump3/
 .tmp-bunitpump4/
-.tmp-test/
-.tmp-insp/
-.loop/
+ .tmp-test/
+ .tmp-insp/
+ .tmp-publish/
+ .loop/
 probe_*.txt
 .ui-review/
 
