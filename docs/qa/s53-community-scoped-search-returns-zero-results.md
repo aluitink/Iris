@@ -26,16 +26,24 @@ On a community page, the "Search posts in this community" search box returns **0
 
 **The community-scoped search endpoint is completely non-functional.**
 
-## Root cause hypothesis
+## Root cause (CONFIRMED — Pass 330, build `0d7307e5`)
 
-The community search handler likely fails to resolve the community's IRIs (owner, members, community IRI) and builds a query that matches nothing. The global search (`/ap/v1/search`) works because it searches all objects without a community filter. The community search needs to join the `Objects` table with the community's membership/ownership edges to scope results to that community's posts.
+The community search is **not** a DB tsquery join. It is `CommunitySearchHandler` (`ActivityPubServerExtensions.cs:11833`) → `CommunityFeedService.SearchCommunityAsync` (`CommunityFeedService.cs:401`), which:
+1. Calls `GetFeedAsync(communityIri, …)` — the community's **feed** (the union of member + followed-actor outboxes, filtered to community-tagged content, 40.3).
+2. Runs an **in-memory** case-insensitive substring match (`ContainsInStrings`) over the feed items' `content`/`name`.
+
+So community search returns results **only if the community's feed is non-empty**, and the feed is non-empty **only if** (a) the community is in the **local** community store AND (b) it has ≥1 member whose outbox carries community-tagged content. Two distinct failure modes were confirmed:
+
+**Mode 1 — 404 (cross-instance, A reading a B community):** `GET A /ap/v1/c/qa-pass-319-feed/search` → **404**, because `TryGetCommunityAsync` (`ActivityPubServerExtensions.cs:11846`) fails — `qa-pass-319-feed` is a **B-hosted** community and is **not** in A's local community store (A's `Actors` has no `qa-pass-319-feed` row; A's `Objects` only has the cached Group doc + the 3 federated notes, no community-store row). The handler 404s before any search runs. **The community search endpoint cannot serve a community hosted on another instance** (no remote-community fallback / proxy, unlike the actor-document and collection-proxy seams).
+
+**Mode 2 — empty feed (own instance, B):** `GET B /ap/v1/c/qa-pass-319-feed/search?q=QA` → 200 but `totalItems: 0`. On B the community **is** in the store, but its feed is empty because the 3 notes are `attributedTo` **ii-b1 (the person)**, not the community (`attributedTo = …/u/ii-b1`), AND the community has **zero members** (no `CommunityFollower` `Kind=10` edge — only the creator's `Follow`(0) edge `ii-b1 → community`). The S49 fix added the **creator to the followers collection** on community *creation*; this community predates that or the member edge is missing, so the feed's member branch (40.3 community-tagged filter) and follow branch both contribute nothing. Even if it had a member, the notes are person-attributed, not community-tagged, so the 40.3 filter would drop them.
+
+**Why global search works:** `/ap/v1/search` searches **all** `Objects` by `SearchVector` with no community scope, so it finds the 3 notes regardless of community membership/`attributedTo`.
 
 ## Fix
 
-The community search endpoint (`GET /ap/v1/c/<handle>/search?q=…`) should:
-1. Resolve the community's IRI from the handle.
-2. Query `Objects` where `SearchVector @@ plainto_tsquery('simple', q)` AND the object is attributed to the community (i.e., `Document->'attributedTo'` contains the community IRI).
-3. Return matching objects in an OrderedCollection.
+1. **Remote community search (Mode 1):** when `TryGetCommunityAsync` fails for a *known remote* community (a cached Group doc exists in the object store), the handler should proxy the search to the community's home instance (mirroring the S24-D4 remote-actor collection proxy, `ProxyRemoteActorCollectionAsync`) instead of 404ing.
+2. **Empty-feed search (Mode 2):** the feed-based search is inherently limited to community-tagged, member-contributed content. Either (a) ensure community posts are `attributedTo` the community (so the 40.3 filter admits them) and the creator is a member (S49), or (b) add a DB-backed tsquery path that scopes by `Document->'attributedTo'` / community membership edges rather than relying on the in-memory feed walk.
 
 ## Re-verify
 
