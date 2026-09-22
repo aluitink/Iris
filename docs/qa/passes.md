@@ -17,6 +17,13 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 324 (2026-09-22) — Poll in community: empty Note — S52 broadened
+- **Build/Live:** No rebuild (same build as Pass 315–323, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Poll in community:** On `/compose?community=…`, selected "Poll", filled question + 2 options, clicked "Post to community" → **HTTP 202**. The Create activity's object has `type: "Note"`, **empty `content`**, **`oneOf: null`**. The entire poll payload is **silently dropped** — the user gets a success message but an empty, contentless Note. **S52 broadened** (was Article-only; now covers Poll data loss).
+- **Result:** **S52 broadened** (Poll facet added). No new defect ID. Open count: **9** (unchanged).
+- **Checkpoint:** Next: re-verify S47/S48/S49/S50/S51/S52 once dev provides fixes. Explore remaining untested areas.
+
 ## Pass 323 (2026-09-22) — Community post type ignored — NEW S52
 - **Build/Live:** No rebuild (same build as Pass 315–322, `d5b50948`). Both instances healthy.
 - **Explored:**
