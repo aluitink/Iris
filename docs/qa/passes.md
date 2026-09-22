@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 275 (2026-09-22) — authless landing feed sweep (boost cards, object detail) — NEW DEFECT S41
+- **Build/Live:** `2686795a` (== HEAD? y — no `src/` change → no redeploy). QA stack healthy.
+- **Explored:** Signed-out `GET /` (public feed): boost-card rendering + network/console capture; authless object-detail route; S35 re-check (`imuser`@qa-mastodon still 404 on AP actor doc — unchanged, operator-blocked).
+- **Result:** **NEW defect [S41](s41-authless-boost-card-content-unavailable.md) (S3):** on the signed-out root page every bare-link **Announce** renders "Content unavailable — view original post" — `UiContext.GetContentObjectAsync` (`Ui/UiContext.cs:403`) returns null when `_session.Client` is null (signed out), so the 121.7 boost-target fetch is silently skipped; the signed-out anonymous-proxy seam (`FetchViaAnonymousProxyAsync`) that `FetchActorAsync` uses was never wired into the **object** read path. 0 console errors, target note serves 200 anonymously. Authless `/object?iri=…` → clean redirect to `/login` (auth gate, not a defect). S35 unchanged.
+- **Checkpoint:** S41 filed to dev (fix = route the signed-out `GetContentObjectAsync` through the same-origin anonymous proxy GET). Open: S35 (operator-blocked) + S41 (new, low-ish S3).
+
 ## Pass 274 (2026-09-22) — Directory "All known" re-verify (Inbox item, fix `401c08b5`) — PASS
 - **Build/Live:** QA stack carries `401c08b5` (rebuilt to main `1b2e6b62` in Pass 273; no `src/` change since → no redeploy).
 - **Explored:** Directory → People → **"All known"** scope (signed `ii-a1`@A, clean entry, cache/cookies cleared) + signed wire `GET /ap/v1/search?q=&type=Actor&local=false&limit=100`.
