@@ -399,8 +399,41 @@ else
                 }
             }
 
-            FollowedCommunities = _allLocalGroups
-                .Where(g => g.Id is { Length: > 0 } id && _followingIris.Any(f => string.Equals(f.Value, id, StringComparison.OrdinalIgnoreCase)))
+            var localById = _allLocalGroups
+                .Where(g => g.Id is { Length: > 0 })
+                .ToDictionary(g => g.Id!, g => g, StringComparer.OrdinalIgnoreCase);
+
+            var followed = new List<Group>();
+            foreach (var iri in _followingIris)
+            {
+                if (localById.TryGetValue(iri.Value, out var local))
+                {
+                    followed.Add(local);
+                    continue;
+                }
+
+                // S4: a followed community not in the local search is a REMOTE community (or a
+                // just-created local one the search cache hasn't refreshed to). Fetch it by IRI
+                // via the UiContext seam (which routes a remote actor through the same-origin
+                // proxy) and keep it when it is a Group — so the Communities tab is never
+                // missing a followed community.
+                IObject? doc;
+                try
+                {
+                    doc = await Ui.GetActorAsync(iri);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (doc is Group group)
+                {
+                    followed.Add(group);
+                }
+            }
+
+            FollowedCommunities = followed
                 .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }

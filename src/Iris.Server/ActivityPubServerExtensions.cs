@@ -3509,6 +3509,7 @@ public static class ActivityPubServerExtensions
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
         IOAuthTokenStore? tokenStore = null,
+        IPersistenceProvider? persistence = null,
         CancellationToken ct = default)
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
@@ -3541,6 +3542,45 @@ public static class ActivityPubServerExtensions
                 RecordInboundTrace(trace, context, recipientIri, 401, null, null);
                 return Results.Unauthorized();
             }
+        }
+
+        if (!exists)
+        {
+            // S4: an Accept or Reject is delivered to the original follow activity's IRI
+            // (e.g. /u/{handle}/follows/{ulid}), which is not a valid actor IRI. Before
+            // rejecting, re-resolve the recipient: read the follow activity from the store
+            // and use the follower (the follow's actor) as the recipient instead.
+            context.Request.EnableBuffering();
+            var preJson = await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(preJson) && persistence is { } pers)
+            {
+                var preParsed = ActivityJson.Deserialize<IObjectOrLink>(preJson);
+                if (preParsed is Activity { Object: { } acceptObjects } acceptActivity
+                    && (acceptActivity is Accept or Reject))
+                {
+                    if (FirstIriFromCollection(acceptObjects) is { } followIriStr)
+                    {
+                        var followIri = new Iri(followIriStr);
+                        if (await pers.Activities.TryGetActivityAsync(followIri, out var storedFollow, ct).ConfigureAwait(false)
+                            && storedFollow is Follow { Actor: { } followActorIris } stored)
+                        {
+                            if (FirstIriFromCollection(followActorIris) is { } followerIriStr)
+                            {
+                                var followerIri = new Iri(followerIriStr);
+                                if (await pers.Actors.TryGetActorAsync(followerIri, out _, ct).ConfigureAwait(false))
+                                {
+                                    logger.LogInformation(
+                                        "Inbox re-resolved: {Recipient} → {Follower} (follow response)",
+                                        recipientIri, followerIri);
+                                    recipientIri = followerIri;
+                                    exists = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            context.Request.Body.Position = 0;
         }
 
         if (!exists)
@@ -3610,8 +3650,8 @@ public static class ActivityPubServerExtensions
         // + reply edge) — the inbound half of the tombstone contract.
         if (payload is KristofferStrube.ActivityStreams.Tombstone { Id: not null } inboundTombstone)
         {
-            var persistence = context.RequestServices.GetRequiredService<IPersistenceProvider>();
-            await TombstoneInbound.ApplyAsync(persistence, inboundTombstone, ct).ConfigureAwait(false);
+            var tombstonePersistence = context.RequestServices.GetRequiredService<IPersistenceProvider>();
+            await TombstoneInbound.ApplyAsync(tombstonePersistence, inboundTombstone, ct).ConfigureAwait(false);
             logger.LogInformation(
                 "Inbox accepted: Tombstone. Recipient: {Recipient}, Object: {ObjectIri}, Peer: {Peer}",
                 recipientIri, inboundTombstone.Id, senderHost);
@@ -3852,7 +3892,7 @@ public static class ActivityPubServerExtensions
         var actorIri = BuildActorIri(baseUrl, handle);
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, tokenStore, persistence, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -4083,7 +4123,7 @@ public static class ActivityPubServerExtensions
         foreach (var recipient in recipients)
         {
             var exists = await persistence.Actors.TryGetActorAsync(recipient, out _, ct).ConfigureAwait(false);
-            await HandleInboxPostAsync(context, recipient, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
+            await HandleInboxPostAsync(context, recipient, exists, inboxProcessor, rateLimiter, tokenStore, persistence, ct).ConfigureAwait(false);
         }
 
         return Results.Accepted();
@@ -11604,7 +11644,7 @@ public static class ActivityPubServerExtensions
         var communityIri = BuildCommunityIri(baseUrl, name);
 
         var exists = await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, tokenStore, persistence, ct).ConfigureAwait(false);
     }
 
     /// <summary>
