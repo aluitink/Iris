@@ -130,7 +130,7 @@
     {
         <div class="compose-poll">
             <label for="compose-poll-question">Question</label>
-            <input id="compose-poll-question" class="compose-poll-question" type="text" @bind="PollQuestion"
+            <input id="compose-poll-question" class="compose-poll-question" type="text" @bind="PollQuestion" @bind:event="oninput"
                    placeholder="Ask a question…" maxlength="500" disabled="@Busy" />
             <div class="compose-poll-options">
                 @for (var i = 0; i < PollOptions.Count; i++)

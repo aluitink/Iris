@@ -86,12 +86,12 @@ else
             <form @onsubmit="SubmitCommunityEditAsync">
                 <div class="form-group">
                     <label for="edit-community-name">Name</label>
-                    <input id="edit-community-name" type="text" @bind="EditName" maxlength="100"
+                    <input id="edit-community-name" type="text" @bind="EditName" @bind:event="oninput" maxlength="100"
                            placeholder="Community name" />
                 </div>
                 <div class="form-group">
                     <label for="edit-community-summary">Description</label>
-                    <textarea id="edit-community-summary" @bind="EditSummary" rows="3" maxlength="500"
+                    <textarea id="edit-community-summary" @bind="EditSummary" @bind:event="oninput" rows="3" maxlength="500"
                               placeholder="What is this community about?"></textarea>
                 </div>
                 <div class="form-group">
@@ -246,7 +246,7 @@ else
             <form class="peers-add-form" @onsubmit="SubmitAddPeerAsync">
                 <div class="form-group">
                     <label for="peer-iri">Follow a community or actor</label>
-                    <input id="peer-iri" type="text" @bind="PeerIriInput"
+                    <input id="peer-iri" type="text" @bind="PeerIriInput" @bind:event="oninput"
                             placeholder="!community@host or user@host, or a full IRI (https://…)"
                            autocomplete="off" />
                     <p class="muted peers-add-hint">
