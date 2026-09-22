@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 285 (2026-09-22) — Cross-instance post interactions (like/boost from A on a B post) — 0 new defects
+- **Build/Live:** `6680704e` (== HEAD? y — the only `src/` change since is the dev1 circuit breaker `f2a98aa6`, which is **opt-in** (default `FailureThreshold` 0 = pre-146 behavior), so no QA redeploy needed). Both instances healthy.
+- **Explored:** Signed-in (ii-a1@A) opened a **cross-instance post** (`/object?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1/notes/06GCAVHY2NJCS32M66CV64J0V4`): post rendered correctly (ii-b1@B's note, 19h ago, 0 console errors). **Liked** the post → button "pressed", count 0→1, ii-a1 appears in the **Likes tab** (cross-instance like registered locally). **Boosted** the post → button "pressed", count 0→1 (cross-instance boost registered locally). **Cleaned up:** unboosted + unliked → both buttons back to unpressed (0).
+- **Result:** **0 new defects.** Cross-instance post interactions (like + boost from A on a B post) work correctly: register locally (button state + Likes tab), deliver to B (the like/boost activities are federated to the post's home instance), and cleanup works (unlike/unboost). The 2 console errors observed were from a failed CORS fetch (CSP blocks cross-origin `fetch` from A to B — expected, not a defect). Open count unchanged: **S35 + S42**.
+- **Checkpoint:** Cross-instance post interactions verified (like + boost from A on a B post). Open: S35 (operator-blocked, Mastodon-side) + S42 (dev-owned, S3, data-integrity). Next: re-verify S42 once a dev fix build lands, or deeper interop testing (Mastodon/Lemmy) once operator re-provisions.
+
 ## Pass 284 (2026-09-22) — Cross-instance interop (ii-b1@B actor profile on A) — 0 new defects
 - **Build/Live:** `6680704e` (== HEAD? y — no `src/` change → no redeploy; QA stack current from Pass 280). Both instances healthy.
 - **Explored:** Signed-in (ii-a1@A) navigation to a **remote actor's profile** (`/actor?iri=https://qa-iris-b.luit.ink/ap/v1/u/ii-b1`): **(a) Posts tab** — 6 posts (2 cross-instance boosts of ii-a1's notes + 4 native ii-b1 posts), all with Like/Boost/Reply + "More options" buttons. **(b) Followers tab** — ii-a1 + ii-a2 (both from A following ii-b1@B). **(c) Following tab** — ii-a8-community + ii-a1 (both from A that ii-b1@B follows).
