@@ -1,9 +1,9 @@
 # S49 — Community creation is a silent no-op (no error, community not created)
 
 - **Class:** bug — **Severity:** S2
-- **Status:** open (partially resolved — see Pass 319)
+- **Status:** CLOSED (dev1 `b3a2e5fc`, merged to main `9b9d9ba4`, live-verified 2026-09-22). Creator is now added to the followers collection on community creation.
 - **Found:** Pass 318 (2026-09-22)
-- **Updated:** Pass 319 (2026-09-22)
+- **Updated:** Pass 319 (2026-09-22), Closed 2026-09-22
 - **Related:** S21 (newly created community missing from Following tab — fixed, but creation itself now fails entirely)
 
 ## Symptom
