@@ -17,6 +17,15 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 323 (2026-09-22) — Community post type ignored — NEW S52
+- **Build/Live:** No rebuild (same build as Pass 315–322, `d5b50948`). Both instances healthy.
+- **Explored:**
+  1. **Community post type (Article):** On `/compose?community=…`, selected "Article" from the post type dropdown, typed content, clicked "Post to community" → **HTTP 202**. The Create activity's object has `type: "Note"` + a `notes/` IRI. **The Article selection is silently ignored.**
+  2. **Control test (no community):** Regular compose + "Article" → **HTTP 202** → `type: "Article"` + `articles/` IRI. **Correct.**
+  3. **Poll in community:** Not yet tested (S52 doc notes to re-verify with Poll after fix).
+- **Result:** **1 new defect (S52).** The community post handler does not respect the post type dropdown — it always creates a Note. Open count: **9** (added S52).
+- **Checkpoint:** Next: test Poll in community context. Re-verify S47/S48/S49/S50/S51/S52 once dev provides fixes.
+
 ## Pass 322 (2026-09-22) — Community edit + S49 feed deep-dive — NEW S51
 - **Build/Live:** No rebuild (same build as Pass 315–321, `d5b50948`). Both instances healthy.
 - **Explored:**
