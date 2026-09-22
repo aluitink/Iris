@@ -8,76 +8,115 @@
 
 ## Symptom
 
-On the **signed-out** root page (`https://qa-iris-a.luit.ink/`), every **Announce** (boost) item whose
-target is a **bare IRI link** renders the fallback:
+On the **signed-out** root page (the public feed), every feed item that is an **Announce**
+(Boost) whose target is a bare IRI — the common shape, the feed's Announce carries only a link,
+no embedded object — renders:
 
 > **Content unavailable — view original post**
 
-instead of the boosted note's author + text preview. The affected items are real, resolvable public
-notes — e.g. `ii-b1`@qa-iris-b boosting `ii-a1`'s note
-`https://qa-iris-a.luit.ink/ap/v1/u/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0`, which:
+…a dead link to `/object?iri=…` (which itself redirects to `/login` for a signed-out visitor),
+instead of a content preview (author, text, media). Observed on `GET /` with `ii-b1`@B's boosts
+of `ii-a1`@A's notes (`…/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0` and
+`…/ii-a1/notes/06GCG0FRQGDTVK2TZQGH4P821G`), and on the signed-out remote-actor page
+(`/actor?iri=…/qa-iris-b.luit.ink/ap/v1/u/ii-b1`) whose feed shows the same Announces — 7
+"Content unavailable" cards. The signed-in views of the same items render the full preview.
 
-- serves **200** with full content at `GET /ap/v1/u/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0` (anonymous),
-- appears in the anonymous `GET /ap/v1/public/feed` wire payload as an `Announce` whose
-  `object` is the **bare string IRI** (no embedded object),
-- opens correctly on `/object?iri=…` **when signed in** (0 console errors, full content + tabs).
+**Not** an auth gate, **not** a data problem, **not** a console error:
 
-**0 console errors, 0 failed network requests** — the card silently renders the fallback.
+- 0 console errors, 0 failed requests — the target fetch is **silently skipped**, never attempted.
+- The target note serves **200 anonymously** on the wire (`GET …/ii-a1/notes/06GCGV…` = 200, full
+  content), and the same-origin anonymous proxy relays it: `GET /ap/v1/proxy/{note}` = **200** signed-out.
+- Signed-in, the identical Announce cards render the resolved content (121.7 fetch runs and succeeds).
 
-Signed-in, the same Announce cards resolve their bare-link targets fine (the 121.7 fetch path works
-there), so this is specific to the **signed-out** circuit.
+## Repro (signed-out, clean entry)
 
-## Root cause (static trace)
+1. Open `https://qa-iris-a.luit.ink/` signed out (no cookies).
+2. The public feed shows `ii-b1`'s boosts of `ii-a1`'s notes.
+3. Every one of those boost cards renders **"Content unavailable — view original post"** with a
+   Like/Reply action bar and no preview text.
+4. Same result on the signed-out remote-actor page `/actor?iri=…/qa-iris-b.luit.ink/ap/v1/u/ii-b1`.
+5. Sign in as `ii-a1` → the same cards now show the full note preview.
 
-1. `PagedCollection.razor:74` renders each public-feed item via `<ObjectView Item="item" />`.
-2. `ObjectView.razor.cs:1331-1347` (the 121.7 bare-link Announce resolution): when the Announce's
-   target is a bare link, it calls `Ui.GetContentObjectAsync(announceIri)` to fetch the target and
-   render a content preview.
-3. `UiContext.GetContentObjectAsync` (`Ui/UiContext.cs:403-406`):
+## Expected
 
-   ```csharp
-   if (_session.Client is null)
-   {
-       return null;
-   }
-   ```
+A signed-out visitor on the public feed sees the **same content preview** for a boost as a signed-in
+visitor (the boosted note's author, text, media) — the note is public and anonymously readable.
 
-   and `IActorSessionAccessor.Client` (`Accounts/IActorSessionAccessor.cs:459-462`) is **null when
-   signed out** (the signing client only exists for a signed-in actor).
-4. So the target fetch is **silently skipped** when signed out → `BoostedObject` stays null →
-   `ObjectView.razor:277-279` renders the "Content unavailable — view original post" fallback.
+## Root cause (confirmed from code + wire)
 
-The fix pattern already exists in the same file for **actors**: `FetchActorAsync`
-(`Ui/UiContext.cs:494-507`) routes the signed-out read through the **same-origin anonymous proxy seam**
-(`GET /ap/v1/proxy/{target}`, S2/S14 — `FetchViaAnonymousProxyAsync`, `:625-641`), which relays an
-unsigned public GET (cache-first). The **object** read path (`GetContentObjectAsync`, `:395-453`)
-never got the equivalent: when `_session.Client is null` it returns null instead of consulting the
-anonymous proxy. Note it already *does* try `FetchViaProxyAsync` (the signed POST proxy) for remote
-IRIs (`:415-429`) — that also returns null signed out because it's only reached after the
-`_session.Client is null` early-return is bypassed… (it is not bypassed; the early return at
-`:403-406` precedes it), so signed-out visitors get **no** proxy read for objects at all.
+`apps/Iris.Web.Client/Components/ObjectView.razor.cs:1331-1347` (the 121.7 Announce-target
+resolution) calls:
 
-## Why it matters
+```csharp
+var announced = await Ui.GetContentObjectAsync(announceIri);
+if (announced is { } announcedObj) { _announcedObject = announcedObj; }
+```
 
-The authless root page is the instance's public landing (SEO + first impression). Its feed is
-supposed to preview boosted posts (the `IsContentItem` filter in `Home.razor:83-112` deliberately
-keeps `Announce` items in the feed). Instead, every boost by a non-author whose target arrives as a
-bare link (the common outbox shape) is a dead link, with no content and no author.
+`UiContext.GetContentObjectAsync` (`apps/Iris.Web.Client/Ui/UiContext.cs:395`) bails out early
+when the visitor is signed out:
+
+```csharp
+if (_session.Client is null)
+{
+    return null;          // <- signed out: never even attempts a fetch
+}
+```
+
+(`_session.Client` is null exactly when signed out — `IActorSessionAccessor.Client`.) So the
+boost-target fetch is **never issued** and the card falls to the "Content unavailable" branch
+(`ObjectView.razor:278,306`).
+
+The infrastructure to fix this **already exists and is proven** for the actor facet (S2/S14):
+`FetchViaAnonymousProxyAsync` (`UiContext.cs:625`) performs a cookie-less same-origin
+`GET /ap/v1/proxy/{target}` (the server relays a public read, cache-first, and archives the result
+— server tests `ProxyFallbackIntegrationTests.Proxy_AnonymousGetOfRemoteNote_RelaysAndArchivesNote`
++ `…OfRemoteActor_…` cover exactly this seam), and `FetchActorAsync` (`UiContext.cs:500`) already
+uses it for signed-out **remote actor** reads:
+
+```csharp
+doc = _session.Client is not null
+    ? await FetchViaProxyAsync(actorIri)
+    : await FetchViaAnonymousProxyAsync(actorIri);
+```
+
+`GetContentObjectAsync` simply never wires the same seam into the signed-out **object** read path.
+
+Live wire evidence (signed-out, Pass 275/276):
+
+| Request | Result |
+|---|---|
+| `GET /ap/v1/u/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0` (direct) | 200, full content |
+| `GET /ap/v1/proxy/https%3A%2F%2Fqa-iris-a.luit.ink%2Fap%2Fv1%2Fu%2Fii-a1%2Fnotes%2F06GCGV…` | 200 |
+| `GET /ap/v1/proxy/https%3A%2F%2Fqa-iris-b.luit.ink%2Fap%2Fv1%2Fu%2Fii-b1` (remote actor, same seam) | 200 |
 
 ## Suggested fix
 
-In `UiContext.GetContentObjectAsync` (`apps/Iris.Web.Client/Ui/UiContext.cs:395`), when
-`_session.Client is null` (signed out), fall through to the **anonymous same-origin proxy seam**
-(`FetchViaAnonymousProxyAsync`, `GET /ap/v1/proxy/{target}`) — the same pattern
-`FetchActorAsync` uses — before giving up. The proxy is cache-first and serves public objects to
-unsigned reads, so the boost card then resolves the target and renders the preview. (A direct
-same-origin `GET` on a **local** object IRI would also work as a last resort, mirroring
-`FetchActorDocumentAnonymousAsync`.)
+In `GetContentObjectAsync` (`apps/Iris.Web.Client/Ui/UiContext.cs:395`), when `_session.Client is
+null` (signed out), do **not** return null outright — mirror the `FetchActorAsync` signed-out seam:
 
-## Repro
+- **remote** object IRI (`IsRemoteObjectIri(objectIri)`): `await FetchViaAnonymousProxyAsync(objectIri)`
+  (the proven anonymous proxy GET; the server relays + archives, so later signed-in reads are cache hits);
+- **local** object IRI: a plain unsigned `GET` of the note's own IRI (same-origin, public — the
+  same shape as `FetchActorDocumentAnonymousAsync` for local actors);
+- non-2xx / failure → fall back to returning null (the card's existing "Content unavailable"
+  behavior is the correct degradation).
 
-1. Signed out, open `https://qa-iris-a.luit.ink/`.
-2. Scroll to any "Boosted by ii-b1" card (e.g. the 3h/5h-ago cards targeting
-   `…/ii-a1/notes/06GCGV9ZFKC24Q60Z9AQCJTBA0` / `…/06GCG0FRQGDTVK2TZQGH4P821G`).
-3. Card body is "Content unavailable — view original post" (no author, no text), 0 console errors.
-4. Sign in as `ii-a1` → same Announce cards (in `/home`/object detail) render full content.
+Keep the existing per-circuit cache (`_contentObjects`) + in-flight coalescing (`_contentInFlight`)
+around the fetch so N cards pointing at the same target still collapse into one request (147.1).
+
+A minimal variant would route **all** signed-out reads through `FetchViaAnonymousProxyAsync`
+(same-origin, so it also works for a local IRI — the proxy relays the GET to its own store) — but
+the direct local GET avoids the proxy hop for the common local case.
+
+## Re-verify steps (after the fix lands on a fresh QA build)
+
+1. Clean entry (fresh browser context, no cookies) on `https://qa-iris-a.luit.ink/`.
+2. The public feed's `ii-b1`-by-`ii-a1` boost cards render the **full note preview** (author, text,
+   "QA pass273 S28 repro…"), not "Content unavailable — view original post".
+3. Signed-out `/actor?iri=…/qa-iris-b.luit.ink/ap/v1/u/ii-b1` — the feed's boost cards also render
+   the preview (remote-object target, anonymous proxy seam).
+4. 0 console errors, 0 failed requests; the network panel shows the target fetch (direct local GET
+   or `/ap/v1/proxy/{note}`) returning 200.
+5. Sign in — the same cards still render correctly (no regression to the signed-in 121.7 path).
+6. A boost of a **deleted/404** note still degrades to "Content unavailable — view original post"
+   (the fallback is intact).

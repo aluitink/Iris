@@ -17,6 +17,12 @@ Findings live in [per-finding docs](README.md) — **not** here. This file is a 
 
 ---
 
+## Pass 276 (2026-09-22) — S41 facet sweep (signed-out actor/object detail, search, community) + S35 re-check — S41 scope widened, no new defects
+- **Build/Live:** `2686795a` (== HEAD? y — no `src/` change → no redeploy). QA stack healthy (`/ap/v1/health` 200 both instances).
+- **Explored:** Signed-out (clean entry) sweep of the remaining S41 facets: local actor detail (`/actor?iri=…/ii-a1` — renders, Posts (51), 0 errors), **remote** Iris actor detail (`/actor?iri=…/qa-iris-b.luit.ink/…/ii-b1` — renders via the anonymous proxy seam; its feed shows the SAME "Content unavailable" boost cards → S41 surfaces on remote-actor pages too, not just `/`), remote Mastodon actor detail (`/actor?iri=…/mastodon.social/@gnomon` — renders full profile, 0 errors — the S2/S14 actor facet holds), **S35 re-check** (`/actor?iri=…/qa-mastodon.luit.ink/@imuser` — proxy 404 + CSP-blocked fallback, same as before: Mastodon-side, unchanged, operator-blocked), authless `/search?q=…` (clean redirect to `/login`), authless `/community?iri=…` (clean redirect to `/login`), and the signed-in object-detail route (`/object?iri=…/ii-a1/notes/06GCGV…` renders the note + "1 boost", 0 console errors).
+- **Result:** **0 new defects.** S41 confirmed still open + **scope widened**: the signed-out "Content unavailable" boost-card failure (S41) is not limited to `GET /` — it also renders on the signed-out **remote-actor** page (ii-b1's feed, 7 dead boost cards). Authless object/community/search detail remain clean auth-gated redirects to `/login` (not defects). S35 unchanged.
+- **Checkpoint:** S41 fix re-verify on next build (check BOTH `GET /` and the signed-out remote-actor page). Open: S35 (operator-blocked) + S41 (dev-owned, S3).
+
 ## Pass 275 (2026-09-22) — authless landing feed sweep (boost cards, object detail) — NEW DEFECT S41
 - **Build/Live:** `2686795a` (== HEAD? y — no `src/` change → no redeploy). QA stack healthy.
 - **Explored:** Signed-out `GET /` (public feed): boost-card rendering + network/console capture; authless object-detail route; S35 re-check (`imuser`@qa-mastodon still 404 on AP actor doc — unchanged, operator-blocked).
