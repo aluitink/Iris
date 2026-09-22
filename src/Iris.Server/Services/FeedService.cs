@@ -258,9 +258,21 @@ public sealed class FeedService : IFollowFeedService
         // to other actors' content are filtered out by default (117.5) — the home timeline shows
         // top-level content; replies are visible on the parent post's page. The threadDepth parameter
         // allows opting in to include own replies (consistent with the followed-actor reply filter).
+        //
+        // S24-D2 / S36: the local outbox is not pure "own content" — the boost fan-out
+        // (AnnounceActivityHandler) records a local follower's *boost of someone else's note* in the
+        // follower's own outbox, and actor-document activity (Update/Follow/Like/Undo/Delete) is
+        // recorded there too. Without a filter, the home feed is dominated by that foreign content and
+        // actor-doc noise, and the actor's real posts get pushed out of the MaxItems cap. Keep only the
+        // content items the actor THEMSELVES authored (a Create/Announce whose `actor` is the feed
+        // owner). The feed endpoint is owner-gated (private), so this filtering does not affect any
+        // cross-instance reader, which federates via the public outbox, not this feed.
         foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
         {
-            feed.Add(item);
+            if (IsOwnContentItem(item, actorIri))
+            {
+                feed.Add(item);
+            }
         }
 
         // 147.2: parallelize the per-follow fan-out. Previously each follow's outbox (local or
@@ -405,6 +417,86 @@ public sealed class FeedService : IFollowFeedService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Reports whether an own-outbox item is <em>content the actor themselves authored</em> — a
+    /// <c>Create</c> of a <c>Note</c>/<c>Article</c>/<c>Question</c> or an <c>Announce</c> (boost) whose
+    /// <c>actor</c> is the feed owner. Used to filter the actor's own outbox in the home feed (S24-D2 /
+    /// S36): the local outbox also contains foreign content mirrored by the boost fan-out (a local
+    /// follower's boost of someone else's note is recorded in the follower's own outbox) and
+    /// actor-document activity (Update/Follow/Like/Undo/Delete), neither of which belongs in the home
+    /// timeline. Items that are not content, or whose actor is a different actor (the foreign boost case),
+    /// return <see langword="false"/>.
+    /// </summary>
+    private static bool IsOwnContentItem(IObjectOrLink item, Iri ownerIri)
+    {
+        if (item is not Activity activity)
+        {
+            return false;
+        }
+
+        // Content activities only: a Create (a post) or an Announce (a boost the actor themselves made).
+        // Actor-document activity (Update/Follow/Like/Undo/Delete/...) is never content.
+        var type = activity.Type?.FirstOrDefault();
+        if (type is not ("Create" or "Announce"))
+        {
+            return false;
+        }
+
+        // A Create must reference a content object (a Note/Article/Question); a Create of a Group (a
+        // community join) or a bare link is not feedable content.
+        if (type == "Create")
+        {
+            var hasContentObject = activity.Object is { } objects
+                && objects.Any(o => o is Note || o is Article || o is Question);
+            if (!hasContentObject)
+            {
+                return false;
+            }
+        }
+
+        // The activity must be authored by the feed owner. The `actor` is a bare IRI (an ILink) in the
+        // common case (Iris emits "actor": "https://…/u/handle") but may be an embedded object (an
+        // IObject carrying an id); both shapes are resolved and compared to the owner IRI. A foreign
+        // boost recorded in the owner's outbox has the *booster's* actor, so it is excluded here.
+        var actorIri = ResolveActorIri(activity.Actor);
+        if (actorIri is null)
+        {
+            return false;
+        }
+
+        return new Iri(actorIri) == ownerIri;
+    }
+
+    /// <summary>
+    /// Resolves the IRI string of the first resolvable actor reference in an ActivityStreams actor
+    /// collection. An <c>actor</c> on an activity is a bare IRI string (an <see cref="ILink"/>) in the
+    /// common case but may be an embedded object (an <see cref="IObject"/> carrying an <c>id</c>); both
+    /// shapes are accepted so the comparison is correct regardless of how the activity serialized the
+    /// actor (mirrors the client's <c>OutboxFilter.ResolveActorIri</c>).
+    /// </summary>
+    private static string? ResolveActorIri(IEnumerable<IObjectOrLink>? refs)
+    {
+        if (refs is null)
+        {
+            return null;
+        }
+
+        foreach (var reference in refs)
+        {
+            if (reference is ILink { Href: { } href })
+            {
+                return href.ToString();
+            }
+
+            if (reference is IObject { Id: { Length: > 0 } id })
+            {
+                return id;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

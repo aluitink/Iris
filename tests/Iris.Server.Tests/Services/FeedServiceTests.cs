@@ -1575,13 +1575,18 @@ public sealed class FeedServiceTests
     public async Task S36_LiveWireShape_CommunityGroupCreatePlusActorDocNoisePlusOwnNotePlusFollowNote_AllContentCreatesPresent()
     {
         // Reproduces the EXACT S36 live wire shape (ii-a1 feed, 16 items): the actor's outbox holds a
-        // community Group Create (the "only content Create" in the live feed), heavy actor-document
-        // noise (Updates on the actor IRI, self Follow, Like, Undo, Delete, Add/Remove on the actor
-        // IRI), the actor's OWN note Create, AND a local-follow's note Create. The live feed showed
-        // NONE of the note Creates (only the Group Create). This test asserts all three content
-        // Creates (Group + own note + follow note) are present in the feed. If it passes, the server
-        // is correct and the live issue is environmental (data shape not reproducible in-process).
-        // If it fails, it reveals the root cause.
+        // community Group Create, heavy actor-document noise (Updates on the actor IRI, self Follow,
+        // Like, Undo, Delete, Add/Remove on the actor IRI), the actor's OWN note Create, AND a
+        // local-follow's note Create. The live (pre-fix) feed showed NONE of the note Creates and was
+        // dominated by the Group Create + actor-doc noise.
+        //
+        // S24-D2 / S36 (corrected expectation): the home feed's own-outbox branch now keeps only the
+        // content the actor THEMSELVES authored (a Create of a Note/Article/Question, or their own
+        // Announce). The Group Create (a community join, NOT a post) and the actor-doc noise are
+        // excluded — so the feed surfaces the two real note Creates (own + local-follow) and drops the
+        // Group Create and all the noise. The pre-fix assertion (Group Create present) encoded the
+        // buggy S36 symptom where the Group was the "only content Create" precisely because the note
+        // Creates were being dropped.
         var groupIri = $"https://{LocalHost}/c/test-community";
         var (service, _) = Build(persistence: SeedLocal(persistence =>
         {
@@ -1662,18 +1667,27 @@ public sealed class FeedServiceTests
         var alice = Actor(LocalHost, "alice");
         var feed = await service.GetFeedAsync(alice);
 
-        // The feed contains Create activities; check for the Group Create by its Create IRI
-        // (the activity's IRI, not the embedded Group's IRI).
-        var createIris = feed
-            .OfType<Create>()
-            .Select(c => c.Id)
-            .ToList();
-        // The Group Create must be present (it was the "only content Create" in the live feed).
-        Assert.Contains($"{alice.Value}/create-group", createIris);
+        // The feed contains Create activities; check for the note Creates by their object IRI.
+        var createObjectIris = new List<string?>();
+        foreach (var create in feed.OfType<Create>())
+        {
+            if (create.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is IObject io)
+                    {
+                        createObjectIris.Add(io.Id);
+                    }
+                }
+            }
+        }
+        // The Group Create (a community join, not a post) is correctly excluded from the content feed.
+        Assert.DoesNotContain(groupIri, createObjectIris);
         // The actor's OWN note Create must be present (absent in the live S36 feed).
-        Assert.Contains($"https://{LocalHost}/notes/a-own", createIris);
+        Assert.Contains($"https://{LocalHost}/notes/a-own", createObjectIris);
         // The local-follow's note Create must be present (absent in the live S36 feed).
-        Assert.Contains($"https://{LocalHost}/notes/b-1", createIris);
+        Assert.Contains($"https://{LocalHost}/notes/b-1", createObjectIris);
     }
 
     [Fact]
@@ -1928,6 +1942,68 @@ public sealed class FeedServiceTests
         // Bob's directed reply (to=[alice]) is filtered.
         Assert.DoesNotContain(feed, item =>
             item is Create c && c.Object?.FirstOrDefault() is IObject o && o.Id == $"https://{LocalHost}/ap/v1/u/bob/notes/b-reply");
+    }
+
+    /// <summary>
+    /// S24-D2 regression: a foreign boost recorded in the owner's own outbox must not appear in the
+    /// owner's home feed. The boost fan-out (AnnounceActivityHandler) records a local follower's boost
+    /// of someone else's note in the follower's OWN outbox (an <c>Announce</c> whose <c>actor</c> is the
+    /// foreign announcer, not the owner). Without a filter that foreign content pollutes the home feed
+    /// (S24-D2: "foreign activities in local outbox") and, together with actor-doc noise, pushes the
+    /// owner's real posts out of the MaxItems cap (S36). The own-outbox branch now keeps only the content
+    /// the owner THEMSELVES authored: the foreign boost (actor = the announcer) is excluded, while the
+    /// owner's own note and a followed actor's note (read via the follow branch, where the foreign
+    /// content is legitimate) are both present.
+    /// </summary>
+    [Fact]
+    public async Task S24D2_ForeignBoostInOwnOutbox_IsExcluded_OwnPostAndFollowPost_Present()
+    {
+        var alice = Actor(LocalHost, "alice");
+        var bob = Actor(LocalHost, "bob");
+        var carol = Actor(LocalHost, "carol");
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                SeedActor(p, alice, "Alice");
+                SeedActor(p, bob, "Bob");
+                SeedActor(p, carol, "Carol");
+                // alice follows bob (so bob's post is legitimate content in alice's feed).
+                p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+                // alice's own note (to=Public, cc=followers) — must be in the feed.
+                AddPost(p, alice, "a-own", "alice own post");
+
+                // A FOREIGN boost recorded in alice's own outbox by the fan-out: an Announce of bob's
+                // note whose actor is carol (the announcer), NOT alice. This is the S24-D2 foreign
+                // content — it must be excluded from alice's home feed.
+                p.Activities.AddToOutboxAsync(alice, new Announce
+                {
+                    Id = $"{carol.Value}/announces/b-note",
+                    Actor = [new Link { Href = new Uri(carol.Value) }],
+                    Object = [new Link { Href = new Uri($"https://{LocalHost}/notes/b-1") }],
+                }).GetAwaiter().GetResult();
+
+                // bob's note (the object of the foreign boost) in BOB's outbox — read via the follow
+                // branch, where it is legitimate content. Must be in the feed.
+                AddPost(p, bob, "b-1", "bob post 1");
+            }),
+            options: new FeedOptions { MaxItems = 200, PagesPerActor = 1 });
+
+        var feed = await service.GetFeedAsync(alice, requesterIri: alice);
+
+        // alice's own note is present.
+        Assert.Contains(feed, item =>
+            item is Create c && c.Object?.FirstOrDefault() is IObject o && o.Id == $"https://{LocalHost}/notes/a-own");
+
+        // bob's note (via the follow branch) is present.
+        Assert.Contains(feed, item =>
+            item is Create c && c.Object?.FirstOrDefault() is IObject o && o.Id == $"https://{LocalHost}/notes/b-1");
+
+        // The foreign boost (an Announce of bob's note authored by carol) is NOT present in alice's
+        // home feed — the only Announce of bob's note in the feed would be this foreign one.
+        Assert.DoesNotContain(feed, item =>
+            item is Announce a && a.Object?.FirstOrDefault().ResolveObjectIri() is { } obj
+            && obj.Value == $"https://{LocalHost}/notes/b-1");
     }
 
     // --- Builders --------------------------------------------------------------------
