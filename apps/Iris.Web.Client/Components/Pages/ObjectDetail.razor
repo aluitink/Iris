@@ -393,6 +393,26 @@ else if (ObjectDoc is null)
     }
 
     /// <summary>
+    /// True when the IRI is a remote IRIS instance's object (S43): its IRI carries the Iris
+    /// <c>/ap/v1</c> marker but is NOT on this instance (the <see cref="IsLocalIri"/> complement for
+    /// Iris-hosted IRIs). Such a post DOES expose the AS collection endpoints (/replies, /likes,
+    /// /shares) — the Iris server serves them for every stored object — and the client routes the
+    /// cross-instance read through the home proxy, so the Replies/engagement walks succeed. A
+    /// non-Iris remote platform (Lemmy) object carries no <c>/ap/v1</c> marker and is therefore
+    /// excluded (the S13 skip for it is preserved).
+    /// </summary>
+    private bool IsRemoteIrisIri(Iri iri)
+    {
+        if (IsLocalIri(iri))
+        {
+            return false;
+        }
+
+        const string marker = "/ap/v1";
+        return iri.Value.Contains(marker, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The href for the "Reply" button, or null when the object is not a replyable content type
     /// (a Note, or any non-actor content object) or when the post is locked (<c>iris:locked: true</c>,
     /// 138.25 follow-up).
@@ -539,10 +559,18 @@ else if (ObjectDoc is null)
             // S3: derive collection walks from the content object's IRI (the Note), not the raw
             // activity IRI — the server serves /replies, /likes, /shares only for the stored object.
             var contentIri = ContentIri ?? iri;
-            // S13: remote platforms (e.g. Lemmy) do not expose AS collection endpoints
-            // (/replies, /likes, /shares). Skip the walks for non-local objects to avoid
-            // 3 × 404 console noise per remote post.
-            if (IsLocalIri(contentIri))
+            // S13: non-Iris remote platforms (e.g. Lemmy) do not expose AS collection endpoints
+            // (/replies, /likes, /shares) — skip the walks for those to avoid 3 × 404 console noise per
+            // remote post. But a REMOTE IRIS instance (an object whose IRI carries the /ap/v1 marker)
+            // DOES expose them (the Iris server serves /replies, /likes, /shares for every stored object),
+            // and the client routes cross-instance GET reads through the home proxy
+            // (ProxyFallbackHandler, RouteCrossInstanceReadsViaProxy), so the walks succeed for a remote
+            // Iris post. S43: the S13 gate was over-broad — it skipped the Replies walk for ALL non-local
+            // objects, so a cross-instance reply (A replies to a B post) never rendered in the B post's
+            // Replies tab on A (the header reply count, read off the doc's iris:repliedCount, was correct,
+            // so the count and the list disagreed). Allow the walks for local objects AND remote-Iris
+            // objects; only skip for non-Iris remote platforms (Lemmy et al.).
+            if (IsLocalIri(contentIri) || IsRemoteIrisIri(contentIri))
             {
                 await LoadRepliesAsync(client, contentIri);
                 await LoadEngagementAsync(client, contentIri);
