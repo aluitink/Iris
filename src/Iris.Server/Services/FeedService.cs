@@ -522,12 +522,14 @@ public sealed class FeedService : IFollowFeedService
             return false;
         }
 
-        // A Create must reference a content object (a Note/Article/Question); a Create of a Group (a
-        // community join) or a bare link is not feedable content.
+        // A Create must reference a content object (a Note/Article/Question/Page); a Create of a Group (a
+        // community join) or a bare link is not feedable content. S50: a top-level cross-post to a remote
+        // (non-Iris, e.g. Lemmy) community carries a Page (138.11) — a Page is content, so the author's
+        // home feed must show it (it is recorded in the author's outbox by the local-outbox publish path).
         if (type == "Create")
         {
             var hasContentObject = activity.Object is { } objects
-                && objects.Any(o => o is Note || o is Article || o is Question);
+                && objects.Any(o => o is Note || o is Article || o is Question || o is Page);
             if (!hasContentObject)
             {
                 return false;

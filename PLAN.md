@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S50 | OPEN | - | cross-instance community post 404 on remote (IRI fix merged; end-to-end blocked on S57 QA)
+S50 | OPEN-QA | dev2 | home feed omits author's own cross-post Page (138.11) — feed filter now admits Page
 
 ## OPEN-QA
 
