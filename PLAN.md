@@ -12,6 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S69 | NEW | - | cross-instance direct note not federated to recipient (remote IRI not found, no notification)
 S68 | NEW | - | Poll federation: remote home/search miss Question Object; remote vote not federated back (origin stays 0)
 S67 | NEW | - | cross-instance mention local path + no notification; remote search misses federated mention
 S66 | NEW | - | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong)
