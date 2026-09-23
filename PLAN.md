@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S58 | OPEN | - | surface prod health degraded (dead letters, 40/4537 signable) in UI
-
 ## NEW
 
 ## OPEN-QA
+
+S58 | OPEN-QA | dev1 | surface prod health degraded (dead letters, 40/4537 signable) in UI
 
 ## CLOSED
 

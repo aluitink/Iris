@@ -8,6 +8,7 @@ using Iris.Core.Identity;
 using Iris.Core.Signing;
 using Iris.Server;
 using Iris.Server.Data;
+using Iris.Server.Delivery;
 using Iris.Server.Data.Accounts;
 using Iris.Server.Data.Stores;
 using Iris.Server.InMemory;
@@ -1441,10 +1442,27 @@ public static class WebAppFactory
         }).RequireAuthorization(p => p.RequireRole("Admin"));
 
         // Instance admin dashboard (53.3): GET /local/v1/admin/stats — user count, post count,
-        // storage usage, recent registrations.
+        // storage usage, recent registrations, plus the federation-observability signal (S58): the
+        // dead-letter backlog and the stored-actors-without-a-resolvable-signing-identity gap that
+        // /ap/v1/health already reports as "degraded".
+        endpoints.MapGet("/local/v1/admin/stats", MapAdminStatsEndpoint).RequireAuthorization(p => p.RequireRole("Admin"));
+    }
+
+    /// <summary>
+    /// Maps <c>GET /local/v1/admin/stats</c> (53.3 + S58): the instance admin dashboard payload —
+    /// user count, post count, recent registrations, and the federation-observability signal
+    /// (<see cref="IKeyProvider"/> resolvable-actor gap + <see cref="IDeliveryDeadLetterStore"/>
+    /// dead-letter count, the two figures the <c>/ap/v1/health</c> observability check reports as
+    /// "degraded"). Extracted from the inline lambda so the operator-facing read path is testable in
+    /// isolation (no auth, no full host).
+    /// </summary>
+    public static void MapAdminStatsEndpoint(IEndpointRouteBuilder endpoints)
+    {
         endpoints.MapGet("/local/v1/admin/stats", async (
             IUserAccountStore accounts,
             IPersistenceProvider persistence,
+            IKeyProvider keyProvider,
+            IDeliveryDeadLetterStore deadLetters,
             CancellationToken ct) =>
         {
             var allAccounts = await accounts.GetAllAsync(ct);
@@ -1465,13 +1483,31 @@ public static class WebAppFactory
             var allObjects = await persistence.Objects.ListObjectsAsync(ct);
             var postCount = allObjects.Count(o => o is not KristofferStrube.ActivityStreams.Tombstone);
 
+            // S58: the same two figures the /ap/v1/health observability check reports as "degraded" —
+            // how many stored actors the key provider can currently sign federation as, and the
+            // dead-letter backlog. Surfacing them in the admin dashboard is the operator-visible
+            // counterpart to the raw health endpoint.
+            var actors = await persistence.Actors.ListActorsAsync(ct);
+            int storedActors = actors.Count;
+            int resolvableActors = 0;
+            foreach (var actor in actors)
+            {
+                if (actor.Id is { Length: > 0 } id && keyProvider.TryGetIdentity(new Iri(id), out _))
+                {
+                    resolvableActors++;
+                }
+            }
+
             return Results.Json(new
             {
                 UserCount = userCount,
                 PostCount = postCount,
                 RecentRegistrations = recentRegistrations,
+                DeadLetterCount = deadLetters.Count,
+                StoredActors = storedActors,
+                ResolvableActors = resolvableActors,
             });
-        }).RequireAuthorization(p => p.RequireRole("Admin"));
+        });
     }
 
     /// <summary>

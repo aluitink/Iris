@@ -29,7 +29,31 @@ else
             <div class="stat-value">@Stats.PostCount</div>
             <div class="stat-label">Posts (objects)</div>
         </div>
+        <div class="card stat-card">
+            <div class="stat-value @DeadLetterValueClass">@(Stats.DeadLetterCount ?? 0)</div>
+            <div class="stat-label">Dead-lettered deliveries</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value @SignableValueClass">@(Stats.ResolvableActors ?? 0)/@(Stats.StoredActors ?? 0)</div>
+            <div class="stat-label">Signable / stored actors</div>
+        </div>
     </div>
+
+    @if (Degraded)
+    {
+        <div class="card admin-degraded-banner" role="status">
+            <strong>Federation degraded.</strong>
+            @if ((Stats.DeadLetterCount ?? 0) > 0)
+            {
+                <span> @(Stats.DeadLetterCount) delivery(ies) dead-lettered.</span>
+            }
+            @if ((Stats.StoredActors ?? 0) > (Stats.ResolvableActors ?? 0))
+            {
+                <span> @(Stats.StoredActors - Stats.ResolvableActors) stored actor(s) have no resolvable signing identity.</span>
+            }
+            <span class="muted"> See <code>/ap/v1/health</code>.</span>
+        </div>
+    }
 
     <div class="card" style="margin-top: 1rem;">
         <h2 style="margin-top: 0;">Recent registrations</h2>
@@ -122,6 +146,23 @@ else
     private static string RoleLabel(int role) => role == 1 ? "Admin" : "User";
     private static string RoleBadgeClass(int role) => role == 1 ? "badge--admin" : "badge--user";
 
-    private sealed record DashboardStats(int UserCount, int PostCount, List<DashboardUser> RecentRegistrations);
+    // S58: the federation-observability signal (dead letters + un-signable actors). The fields are
+    // optional so the page still renders against an older backend that predates S58.
+    private bool Degraded =>
+        (Stats?.DeadLetterCount ?? 0) > 0
+        || (Stats is not null && (Stats.StoredActors ?? 0) > (Stats.ResolvableActors ?? 0));
+    private string DeadLetterValueClass => (Stats?.DeadLetterCount ?? 0) > 0 ? "stat-value--warn" : string.Empty;
+    private string SignableValueClass =>
+        Stats is null || (Stats.StoredActors ?? 0) <= (Stats.ResolvableActors ?? 0)
+            ? string.Empty
+            : "stat-value--warn";
+
+    private sealed record DashboardStats(
+        int UserCount,
+        int PostCount,
+        List<DashboardUser> RecentRegistrations,
+        int? DeadLetterCount,
+        int? StoredActors,
+        int? ResolvableActors);
     private sealed record DashboardUser(Guid Id, string Username, string ActorIri, int Role, DateTimeOffset CreatedAt);
 }
