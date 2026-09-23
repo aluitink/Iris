@@ -14,6 +14,10 @@ S68 | OPEN | - | poll not stored locally on remote (IRI 404; no vote UI)
 S67 | OPEN | - | cross-instance mention: local path, no notify; search misses
 S66 | OPEN | - | federated boost count wrong on receiving instance
 
+## OPEN-QA
+
+S64 | OPEN-QA | dev2 | community Article post missing from community feed (cache invalidation fix)
+
 ## NEW
 
 S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
@@ -21,8 +25,6 @@ S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, so
 ## OPEN-QA
 
 ## CLOSED
-
-S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
 
 S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PASS: live qa-iris-a)
 
