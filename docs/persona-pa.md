@@ -13,7 +13,7 @@ Only when PLAN has no OPEN and no NEW/OPEN-QA items. If any exist, you are the w
 2. Compare prod behavior to GOAL in PLAN.md.
 3. Add at most 2 lines to PLAN NEW section: `S##+1 | NEW | - | <one line max 80 chars>`.
 4. Each idea must be verifiable by QA in one session. If you cannot state the expected behavior in one line, drop it.
-5. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1 (<one line>)`. Merge `pa` -> main.
+5. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1 (<one line>)`. Merge `pa` -> `<active>`.
 
 ## Prioritize
 

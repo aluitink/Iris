@@ -13,11 +13,14 @@ Thread name is identity only; it never fixes a role or a worktree.
 | QA   | qa         | qa        | qa env  | every turn |
 | PA   | pa         | pa        | prod (read-only) | every non-idle turn |
 
+The loop operates on `ACTIVE_BRANCH` from /workspace/LOOP-CONFIG (call it `<active>`).
+All `main` in this file means `<active>`. Humans set it; agents never do.
+
 ## Turn (exactly this, in order)
 
 1. State gate: rewrite `.state/<you>.md` FIRST (format below). `WORK: idle` if role not yet selected.
    No worktree, test, or PLAN.md access before this file exists on disk.
-2. Read: `PLAN.md`, `.state/<other>.md`.
+2. Read: `LOOP-CONFIG`, `PLAN.md`, `.state/<other>.md`.
 3. Pick role by PLAN state:
    - any NEW or OPEN-QA item -> QA
    - else any OPEN item -> DEV
@@ -31,7 +34,7 @@ Thread name is identity only; it never fixes a role or a worktree.
 5. Update `.state/<you>.md` `CLAIM` and `WORK` lines to your selection.
 6. Do ONE unit of work (docs/persona-<role>.md) in your claimed worktree.
 7. Edit PLAN.md **in your worktree** for items you touched. Commit in the worktree.
-8. Merge to main when your role's merge rule above is met.
+8. Merge to `<active>` when your role's merge rule above is met.
 9. Final rewrite of `.state/<you>.md` with this turn's `HIST`.
 10. Stop. No extra work, no extra writing.
 
@@ -106,14 +109,31 @@ QA finds bug -> `NEW`. PA accepts (or dev claims) -> `OPEN`. Dev fixes in worktr
 - Never edit docs/*.md. PLAN.md, persona files, and PROTOCOL.md are human-maintained at the root;
   agents edit PLAN.md only inside their worktree.
 
+## Startup (human, before each loop session)
+
+Run from root, in order:
+
+```
+git checkout <active>
+git pull --ff-only origin <active>
+for b in dev1 dev2 qa pa; do git -C .worktrees/$b merge <active> --no-edit; done
+```
+
+Then confirm `.state/agent-a.md` and `.state/agent-b.md` exist (create idle ones if not)
+and that root's working tree is clean. If any worktree merge conflicts, resolve before
+starting the loop — agents never resolve conflicts.
+
+Switching the active branch: edit LOOP-CONFIG, then re-run startup. The old branch's
+commits stay on its worktree branches; nothing is lost.
+
 ## Environments
 
 - dev1, dev2, qa, pa worktrees: `/workspace/.worktrees/<name>`, branches of the same name.
-- Stacks (dev1, dev2, qa) are built from their worktrees. prod is built from root (main).
+- Stacks (dev1, dev2, qa) are built from their worktrees. prod is built from root (`<active>`).
 - URLs, ports, and role->environment binding: docs/ENVIRONMENTS.md. Read it when you need to dial
   a stack. Dial public FQDNs only — never localhost, container names, or host ports.
 - An agent dials only its bound environment (plus prod for PA). Cross-environment dials are forbidden.
-- Merges: worktree branch -> main (root) per the role's merge rule in the Roles table.
+- Merges: worktree branch -> `<active>` (root) per the role's merge rule in the Roles table.
   Root moves only by merge. Agents never commit in root except the merge command itself.
 
 ## Failure handling

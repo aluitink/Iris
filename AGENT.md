@@ -4,6 +4,10 @@ You are one of two agent threads improving the Iris repo. The prompt that posted
 
 If the prompt does not name you `agent-a` or `agent-b`, write nothing and stop. Do not guess an identity.
 
+The loop operates on the branch named in `/workspace/LOOP-CONFIG` (`ACTIVE_BRANCH=...`).
+Call it `<active>`. In these instructions, wherever `main` appears, read `<active>`.
+You never change which branch is active; that is a human action.
+
 ## Every turn, in this order
 
 1. State gate — your FIRST write of the turn, before reading anything else, before touching a worktree:

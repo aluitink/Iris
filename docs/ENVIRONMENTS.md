@@ -42,7 +42,7 @@ dials give false results: a dev1 browser hitting a qa FQDN tests qa's build, not
 | lemmy | https://lemmy.luit.ink |
 | mastodon | https://mastodon.luit.ink |
 
-Built from root (main). Any agent may dial prod read-only; only PA does so as part of its turn.
+Built from root's active branch (LOOP-CONFIG). Any agent may dial prod read-only; only PA does so as part of its turn.
 
 ## Environment binding
 
@@ -62,6 +62,6 @@ Stacks are built from worktrees, never from root. The compose file builds with
 docker compose -f environments/stack/docker-compose.yml --env-file environments/<env>/.env -p <env> up -d --build
 ```
 
-`<env>` is `dev1`, `dev2`, or `qa`. Rebuild after every merge you ship so the stack matches main.
+`<env>` is `dev1`, `dev2`, or `qa`. Rebuild after every merge you ship so the stack matches `<active>`.
 Health: `https://<FQDN_IRIS_A>/ap/v1/health`.
 If a stack is down, restart once. Down after 2 tries -> `BLOCKED` in your .state file, stop.

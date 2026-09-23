@@ -1,0 +1,5 @@
+# LOOP-CONFIG
+
+Human-maintained. Agents read it, never write it.
+
+ACTIVE_BRANCH=loop-testing
