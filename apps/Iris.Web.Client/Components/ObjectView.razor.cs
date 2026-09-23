@@ -1409,6 +1409,50 @@ public partial class ObjectView
                 // Non-fatal: the score simply won't show.
             }
         }
+
+        // S72: restore the "Reported" (flagged) state on load. The Report button's state lives only in
+        // in-memory component state (_reportedAuthorIri, set by CardReportAsync), so a fresh page load
+        // loses it and the button renders "Report" even though the flag is still recorded. Read the
+        // local actor's flags collection and restore the state when the card's moderation author is
+        // already in that set — mirroring how Settings -> Reported already reads the collection.
+        if (Session.ActorId is { } me && Session.Client is { } client)
+        {
+            var target = Item is Announce ? BoostedAuthorIri : ActivityActorIri;
+            if (target is { } modAuthor && CanModerateAuthor(modAuthor))
+            {
+                try
+                {
+                    var flags = await CollectIrisAsync(client.GetFlagsAsync(me));
+                    if (ReportStateRestore.ShouldRestoreReportedState(flags, modAuthor))
+                    {
+                        _reportedAuthorIri = modAuthor;
+                        StateHasChanged();
+                    }
+                }
+                catch
+                {
+                    // Non-fatal: the button stays in its default (unreported) state.
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Collects the actor IRIs from a paged moderation collection (flags), mirroring Settings' same
+    /// helper. Used to restore the "Reported" state on load (S72).
+    /// </summary>
+    private static async Task<List<Iri>> CollectIrisAsync(IAsyncEnumerable<IObjectOrLink> items)
+    {
+        var result = new List<Iri>();
+        await foreach (var item in items)
+        {
+            if (item is Link link && link.Href is { } href)
+            {
+                result.Add(new Iri(href.ToString()));
+            }
+        }
+
+        return result;
     }
 
     /// <summary>
