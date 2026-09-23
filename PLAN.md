@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S61 | OPEN | pa | admin bootstrap dead: env var read as `APP_ADMIN:USERNAME` so App:Admin:Username always null; no admin provisioned in any env (blocker for all /local/v1/admin authed QA)
+S61 | OPEN-QA | dev1 | admin bootstrap dead: read APP_ADMIN__USERNAME/PASSWORD from env directly (config keys fallback); no admin in any env (unblocks /admin authed QA)
 
 ## NEW
 
