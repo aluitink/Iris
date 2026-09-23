@@ -20,7 +20,7 @@ S61 | OPEN-QA | dev1 | admin bootstrap reads wrong env key; no admin in any env 
 
 ## CLOSED
 
-S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live on qa 302/400 distinct from SPA fallback; TestServer covers list shape+replay+404; authed body blocked by bootstrap env, see S61)
+S60 | CLOSED | qa | dead letters: admin list/replay (PASS: live 302/400 on qa; blocked by S61)
 
 S59 | CLOSED | dev2 | signable-actor metric counted remote actors (PASS: local-only; remote excluded)
 
