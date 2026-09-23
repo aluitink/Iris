@@ -11,7 +11,7 @@ Thread name is identity only; it never fixes a role or a worktree.
 |------|----------|--------|-------|--------|
 | DEV  | dev1 or dev2 | dev1 / dev2 | dev env | after `dotnet test` green |
 | QA   | qa         | qa        | qa env  | every turn |
-| PA   | pa         | pa        | prod (read-only) | every non-idle turn |
+| PA   | pa         | pa        | unclaimed dev env (redeployed) | every non-idle turn |
 
 The loop operates on `ACTIVE_BRANCH` from /workspace/LOOP-CONFIG (call it `<active>`).
 All `main` in this file means `<active>`. Humans set it; agents never do.
@@ -21,10 +21,15 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
 1. State gate: rewrite `.state/<you>.md` FIRST (format below). `WORK: idle` if role not yet selected.
    No worktree, test, or PLAN.md access before this file exists on disk.
 2. Read: `LOOP-CONFIG`, `PLAN.md`, `.state/<other>.md`.
-3. Pick role by PLAN state:
-   - any NEW or OPEN-QA item -> QA
-   - else any OPEN item -> DEV
-   - else -> PA
+3. Pick role by what is actionable (most time-critical first):
+   - any OPEN-QA item -> QA   (verify the merged fix live)
+   - else any OPEN item -> DEV (fix it)
+   - else any NEW item -> PA   (triage: accept verified NEW -> OPEN, or reject/merge dupes)
+   - else -> QA                (no actionable item: hunt for new bugs on the qa stack)
+   - Both agents selecting the same role in the same turn: the worktree serves only one.
+     The agent that reads the other's `CLAIM: <wt>` first falls through to the NEXT role
+     in this list's order. (e.g. both pick QA -> second takes PA triage; both pick PA
+     -> second takes QA hunt.) PA is not limited to empty-PLAN turns.
 4. Acquire the worktree the role needs:
    - QA -> `qa`. DEV -> `dev1` else `dev2`. PA -> `pa`.
    - Take it if the other agent's `.state` does not claim it.
@@ -42,15 +47,21 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
 
 - `.state/` is gitignored and lives on the shared filesystem at `/workspace/.state/`. It is the only
   same-turn coordination channel. Visibility is read-time: you see what is on disk when you read.
-- A worktree is claimed by writing `CLAIM: <worktree>` in your `.state` file.
-- Before claiming, read the other `.state` file. If it claims that worktree, do not take it.
+- A worktree is claimed by writing `CLAIM: <worktree>` in your `.state` file. Every claim write also
+  stamps `TS: <unix-epoch-seconds>` (current wall-clock) so freshness is measurable.
+- Before claiming, read the other `.state` file. Classify its claim on the worktree you want:
+  - **Fresh** (`now - TS < 15 min`): the other agent is actively holding it. Do NOT take it;
+    fall through to the next role in step 3's order.
+  - **Stale** (`now - TS >= 60 min`, or `TS` missing/unparseable on a non-idle claim): the holder is
+    gone. You may take it; write your own fresh `TS` and note `TOOK: <wt>` in your `.state` file.
+  - Between 15 and 60 min: treat as fresh (do not take); the holder may still be mid-turn.
 - If the other `.state` file is missing or empty, the other agent is absent: no claims of theirs exist.
   Do not wait. Do not look for work outside PLAN.md.
-- Same-instant race (both read empty, both want one worktree): last writer wins on disk; the agent that
-  finds the other's claim on its NEXT turn re-runs step 4 and takes the fallback. No compensation needed.
+- Narrow the race: re-read the other `.state` file IMMEDIATELY before writing your own claim. If it now
+  holds a FRESH claim on the worktree you want, fall through before writing. This shrinks the collision
+  window to the read->write gap. Residual same-instant race (both in the gap): last writer wins on disk;
+  the loser sees the fresh `TS` on its next read and falls through that turn. No compensation needed.
 - Claiming a PLAN item = writing its id on the `WORK` line. Never take an id in the other's `WORK` line.
-- Stale claims: if the other agent's `.state` is unchanged for 3 of your turns and you are blocked on its
-  claim, take it over and note `TOOK: S##` in your `.state` file.
 - Both agents must never edit the same PLAN.md item line in the same turn. If unsure, skip the item.
 
 ## .state file format (hard)
@@ -60,12 +71,15 @@ Exactly this shape, max 12 lines, rewritten every turn:
 ```
 CLAIM: dev1
 WORK: S54
+TS: 1790180000
 NEXT: re-test input binding on dev1 stack
 HIST: merged S51 | verified S52 | fixed S54
 ```
 
 - `CLAIM` — worktree you hold this turn (`none` when idle).
 - `WORK` — one PLAN id (or `idle`).
+- `TS` — unix epoch seconds, stamped on every write that sets a non-`none` `CLAIM`. Lets the other agent
+  judge claim freshness (Claims section). Omit or leave stale when `CLAIM: none`.
 - `NEXT` — one line: the single next action.
 - `HIST` — last 3 completed actions, `|` separated, each <= 6 words. Older than 3 is deleted.
 
@@ -132,14 +146,23 @@ commits stay on its worktree branches; nothing is lost.
 - Stacks (dev1, dev2, qa) are built from their worktrees. prod is built from root (`<active>`).
 - URLs, ports, and role->environment binding: docs/ENVIRONMENTS.md. Read it when you need to dial
   a stack. Dial public FQDNs only — never localhost, container names, or host ports.
-- An agent dials only its bound environment (plus prod for PA). Cross-environment dials are forbidden.
+- An agent dials only its bound environment. PA additionally dials one unclaimed dev env (its exploration target)
+  and prod read-only as stale reference. Cross-environment dials are forbidden otherwise.
 - An agent may build/deploy only its bound environment's stack, via the single command in
   docs/ENVIRONMENTS.md (Stack ops). No compose commands of any other kind, ever.
 - Merges: worktree branch -> `<active>` (root) per the role's merge rule in the Roles table.
   Root moves only by merge. Agents never commit in root except the merge command itself.
+- Before merging, sync the branch: `git merge <active> --no-edit` in the worktree.
+  If that merge conflicts, resolve by taking the `<active>` (root) side of `PLAN.md` and
+  committing the merge; then merge the branch to `<active>`.
+- If merging the branch to `<active>` conflicts on `PLAN.md`, take the `<active>` (root)
+  side of the conflict, commit the merge, and stop. Do not retry or rewrite the item.
+- A worktree may contain only: PLAN.md changes (QA/PA) or code/test changes (DEV).
+  Do not leave untracked scratch files in a worktree; if a merge is blocked by one,
+  delete it from the worktree and continue.
 
 ## Failure handling
 
 - Stack down: restart it. If still down after 2 tries, write `BLOCKED: <reason>` on your .state file line 2 (replaces WORK) and stop.
 - Test failing for a reason outside your item: leave the item, note `BLOCKED: <reason>`, pick the next item.
-- Other agent appears stuck (its .state unchanged and you have taken over its claim): proceed; it will resync on its next read.
+- Other agent appears stuck (its claim TS is stale and you have taken over its claim): proceed; it will resync on its next read.

@@ -12,10 +12,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
-S69 | NEW | qa | direct note not federated to recipient (re-test NOT repro)
+S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
 S68 | NEW | qa | poll not stored locally on remote (IRI 404; no vote UI)
-S67 | NEW | qa | cross-instance mention: local path, no notify; search misses
-S66 | NEW | qa | federated boost count wrong on receiving instance
+S67 | NEW | qa | cross-instance mention: local path, no notify; search misses (REPRODUCED)
+S66 | NEW | qa | federated boost count wrong on receiving instance (REPRODUCED)
 S65 | NEW | qa | federated posts not in home feed (re-test NOT repro)
 S64 | NEW | qa | community Article post not in community feed (REPRODUCED)
 S63 | NEW | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable

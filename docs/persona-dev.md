@@ -36,6 +36,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 ```
 CLAIM: dev1
 WORK: S54
+TS: 1790180000
 NEXT: add oninput binding to Peers lookup input
 HIST: merged S51 | verified S52 | fixed S54
 ```
