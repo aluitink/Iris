@@ -133,6 +133,8 @@ commits stay on its worktree branches; nothing is lost.
 - URLs, ports, and role->environment binding: docs/ENVIRONMENTS.md. Read it when you need to dial
   a stack. Dial public FQDNs only — never localhost, container names, or host ports.
 - An agent dials only its bound environment (plus prod for PA). Cross-environment dials are forbidden.
+- An agent may build/deploy only its bound environment's stack, via the single command in
+  docs/ENVIRONMENTS.md (Stack ops). No compose commands of any other kind, ever.
 - Merges: worktree branch -> `<active>` (root) per the role's merge rule in the Roles table.
   Root moves only by merge. Agents never commit in root except the merge command itself.
 

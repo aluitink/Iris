@@ -11,7 +11,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 ## Work (in your worktree, branch dev1 or dev2)
 
 1. Sync base: `git merge <active>` in your worktree (root's active branch is the base; worktrees share the repo). Never work on a stale base.
-2. Make sure your stack is up and built from your worktree (docs/ENVIRONMENTS.md, Stack ops). Rebuild if it does not match your branch HEAD.
+2. Build your stack from your worktree: the single deploy command in docs/ENVIRONMENTS.md (Stack ops), for your env. Your worktree is the build context, so this deploys your current branch.
 3. Reproduce: run the failing behavior against your dev stack via its public FQDN (playwright) or a failing test.
 4. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
 5. Add or update one test that fails without the fix.
@@ -22,7 +22,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 1. In PLAN.md (in your worktree) set the item to `OPEN-QA`, owner your worktree.
 2. Commit: `fix(<area>): S## — <one line>`. Put evidence (repro steps, before/after) in the commit body.
 3. Merge to `<active>` from root: `git merge <branch> --no-ff`.
-4. Deploy your dev stack from the merged build so QA sees the same code.
+4. Re-run the deploy command (docs/ENVIRONMENTS.md) so your stack matches the merged code.
 
 ## Do not
 

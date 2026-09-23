@@ -62,6 +62,18 @@ Stacks are built from worktrees, never from root. The compose file builds with
 docker compose -f environments/stack/docker-compose.yml --env-file environments/<env>/.env -p <env> up -d --build
 ```
 
-`<env>` is `dev1`, `dev2`, or `qa`. Rebuild after every merge you ship so the stack matches `<active>`.
+`<env>` is `dev1`, `dev2`, or `qa`.
+
+You may build and deploy **only your bound environment's stack** (binding table above).
+Deploy means exactly this one command, from root, against your env's `.env` — nothing else:
+
+```
+docker compose -f environments/stack/docker-compose.yml --env-file environments/<env>/.env -p <env> up -d --build
+```
+
+Never run compose against another agent's env, another env's `.env` file, or with a different
+`-p` project name. Never `down`, `rm`, `restart -f`, or prune containers or images of any env.
+If `up -d --build` fails twice, `BLOCKED: stack <env> build failed` in your .state file, stop.
+
+Rebuild after every merge you ship so the stack matches `<active>`.
 Health: `https://<FQDN_IRIS_A>/ap/v1/health`.
-If a stack is down, restart once. Down after 2 tries -> `BLOCKED` in your .state file, stop.

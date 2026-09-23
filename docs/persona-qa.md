@@ -10,7 +10,7 @@ Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
 
 ## Verify OPEN-QA
 
-1. Check the qa stack is built from the qa worktree at `<active>` HEAD. If not, rebuild it (docs/ENVIRONMENTS.md, Stack ops).
+1. If the qa stack may be stale, redeploy it: the single deploy command in docs/ENVIRONMENTS.md (Stack ops), env `qa` (builds from the qa worktree).
 2. Follow the fix's repro from its commit body.
 3. Pass -> PLAN: item to CLOSED. Fail -> item back to OPEN, owner `-`.
 4. Verdict + evidence (steps, observed, expected, build id) go in a commit on the qa branch:
