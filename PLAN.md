@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S72 | OPEN-QA | dev1 | Report button "Reported" state not restored on reload (in-memory only; dedup OK)
 S76 | OPEN-QA | dev2 | NRE in Iri.get_Value on empty-IRI mention tag (default(Iri).Value throws); null-safe Value/IsAbsolute + skip empty-IRI mention
 S77 | OPEN | - | Prod Instance - user andrew:Password1 - only sees users content in home stream - notifications is full of followed content.
 S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
@@ -19,6 +18,7 @@ S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items r
 
 ## CLOSED
 
+S72 | CLOSED | qa | Report button "Reported" state not restored on reload (fix: moderation cache walks /flags; QA PASS: live qa-iris-a, reported s67bob, navigate away/back, button shows "Reported ✓" disabled)
 S73 | CLOSED | qa | community join state lost on nav — PASS: live qa-iris-a join 3 communities, navigate away/back, all show Leave
 S71 | CLOSED | qa | community ns#followersCount reads Follow not CommunityFollower; AP doc 1 vs 5 — PASS: live qa-iris-a AP doc ns#followersCount=5, /followers=5, UI Members(5)
 S66 | CLOSED | qa | federated boost count wrong on receiving instance — NOT REPRODUCED: qa live B-boost of A note shows ns#sharedCount=1 on home A (count correct; likely misread of top-level vs ns# key)
