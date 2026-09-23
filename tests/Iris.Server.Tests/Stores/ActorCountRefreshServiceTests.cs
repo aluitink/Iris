@@ -21,6 +21,7 @@ public sealed class ActorCountRefreshServiceTests
     private static readonly Iri Carol = new("https://a.test/ap/v1/u/carol");
     private static readonly Iri Note1 = new("https://a.test/ap/v1/o/note-1");
     private static readonly Iri Note2 = new("https://a.test/ap/v1/o/note-2");
+    private static readonly Iri Community = new("https://a.test/ap/v1/c/test-community");
 
     private static (ActorCountRefreshService SUT, InMemoryPersistenceProvider Persistence) CreateSut()
     {
@@ -35,6 +36,12 @@ public sealed class ActorCountRefreshServiceTests
     }
 
     private static Actor MakeActor(Iri iri, string name) => new()
+    {
+        Id = iri.Value,
+        Name = [name],
+    };
+
+    private static Group MakeGroup(Iri iri, string name) => new()
     {
         Id = iri.Value,
         Name = [name],
@@ -155,6 +162,34 @@ public sealed class ActorCountRefreshServiceTests
         Assert.True(foundBob);
         Assert.Equal(1, GetExtInt(storedBob, Ns + IrisExtensionTerms.FollowersCount));
         Assert.Equal(1, GetExtInt(storedBob, Ns + IrisExtensionTerms.FollowingCount));
+    }
+
+    [Fact]
+    public async Task RefreshOnce_Group_FollowersCount_UsesCommunityMembership()
+    {
+        // S71: a community (Group) stores membership under EdgeKind.CommunityFollower (ICommunityStore),
+        // not the actor-follow edges (EdgeKind.Follow) that IFollowStore reads. The refresh must count the
+        // community's members via the community store, so the document's followersCount matches the
+        // /followers collection. Without the fix the Group's followersCount is taken from the Follow
+        // store (0 here) and disagrees with the 3 members.
+        var (sut, persistence) = CreateSut();
+        var community = MakeGroup(Community, "Test Community");
+        await persistence.Actors.PutActorAsync(community);
+        // Store the members as actors too (so ListActorsAsync / filterDeletedActors can see them).
+        await persistence.Actors.PutActorAsync(MakeActor(Alice, "Alice"));
+        await persistence.Actors.PutActorAsync(MakeActor(Bob, "Bob"));
+        await persistence.Actors.PutActorAsync(MakeActor(Carol, "Carol"));
+
+        // Membership is recorded via the community store (EdgeKind.CommunityFollower), NOT the Follow store.
+        _ = await persistence.Communities.AddFollowerAsync(Community, Alice);
+        _ = await persistence.Communities.AddFollowerAsync(Community, Bob);
+        _ = await persistence.Communities.AddFollowerAsync(Community, Carol);
+
+        await sut.RefreshOnceAsync(CancellationToken.None);
+
+        var (found, stored) = await GetActorAsync(persistence, Community);
+        Assert.True(found);
+        Assert.Equal(3, GetExtInt(stored, Ns + IrisExtensionTerms.FollowersCount));
     }
 
     [Fact]
