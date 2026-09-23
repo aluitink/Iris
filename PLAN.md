@@ -10,14 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S61 | OPEN-QA | dev1 | admin bootstrap dead: read APP_ADMIN__USERNAME/PASSWORD from env directly (config keys fallback); no admin in any env (unblocks /admin authed QA)
-
 ## NEW
 
 S62 | NEW | - | reply's to/cc omits parent author: no notify + no cross-instance delivery
 
 ## OPEN-QA
 
+S61 | OPEN-QA | dev1 | admin bootstrap reads wrong env key; no admin in any env (blocks admin QA)
 S60 | OPEN-QA | dev1 | dead letters: admin list/replay (store RemoveAsync + GET/POST /local/v1/admin/dead-letters[/{i}/replay] RequireRole(Admin) + DeadLetterPanel on /admin; 6 tests green; route+auth live 302, replay 400 distinct from SPA fallback)
 
 ## CLOSED
