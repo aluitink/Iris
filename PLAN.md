@@ -17,7 +17,7 @@ S68 | NEW | - | Poll federation: remote home/search miss Question Object; remote
 S67 | NEW | qa | cross-instance mention local path + no notification; remote search misses federated mention (FAIL: live s58qa->s56qa; mention post missing from s56qa home + no mention notification)
 S66 | NEW | qa | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong) (REPRODUCED: origin boost=1, remote home boost=2)
 S65 | NEW | qa | federated posts from followed remote users not in home feed (accessible via IRI) (FAIL: live s58qa->s56qa; s56qa post still missing from s58qa home)
-S64 | NEW | - | community Article post not appearing in community feed (post visible on author profile)
+S64 | NEW | qa | community Article post not appearing in community feed (post visible on author profile) (REPRODUCED: Article in outbox, missing from community feed)
 S63 | NEW | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 
 ## OPEN-QA
