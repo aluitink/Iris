@@ -414,33 +414,51 @@ public sealed class CommunityFeedService : ICommunityFeedService
         {
             // An outbox item is an activity (e.g. a Create) whose content lives on the nested object
             // (e.g. the Create's Note). Match the activity's own content/name and, for activities, the
-            // content/name of each referenced object.
-            if (item is IObject obj)
+            // content/name of the objects referenced anywhere in its envelope. S53: remote (e.g. Lemmy)
+            // communities arrive as an Announce of an embedded Create of a Note — the relay envelope
+            // (138.20) — so a match at the first level (the Create) misses the content two levels down;
+            // the recursive walk mirrors the backfill's unwrap (PersistRemoteOutboxItemsAsync).
+            if (item is IObject obj && ItemMatchesQuery(obj, normalized))
             {
-                var activityMatches =
-                    ContainsInStrings(obj.Content, normalized) || ContainsInStrings(obj.Name, normalized);
-                var nestedMatches = false;
-                if (obj is Activity activity)
-                {
-                    foreach (var referenced in activity.Object ?? [])
-                    {
-                        if (referenced is IObject refObj &&
-                            (ContainsInStrings(refObj.Content, normalized) || ContainsInStrings(refObj.Name, normalized)))
-                        {
-                            nestedMatches = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (activityMatches || nestedMatches)
-                {
-                    matches.Add(item);
-                }
+                matches.Add(item);
             }
         }
 
         return matches;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="obj"/> (or any object reachable through its activity envelope)
+    /// contains <paramref name="query"/> in its <c>content</c> or <c>name</c>. The walk is bounded: an
+    /// activity's referenced objects are visited, but a content object's own <c>object</c> reference
+    /// (a Note's object, e.g. an attachment) is not traversed — only the activity envelope is unwrapped.
+    /// </summary>
+    private static bool ItemMatchesQuery(IObject obj, string query, int depth = 0)
+    {
+        if (ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query))
+        {
+            return true;
+        }
+
+        // Guard the recursion: the envelope is shallow (Announce -> Create -> Note) and content objects
+        // are not descended into, but a depth cap protects against a cyclic reference in stored data.
+        if (depth >= 4)
+        {
+            return false;
+        }
+
+        if (obj is Activity activity)
+        {
+            foreach (var referenced in activity.Object ?? [])
+            {
+                if (referenced is IObject refObj && ItemMatchesQuery(refObj, query, depth + 1))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -583,31 +601,40 @@ public sealed class CommunityFeedService : ICommunityFeedService
     /// Returns true when the feed item is community-tagged: the community IRI appears in the
     /// <c>attributedTo</c> of the note (for a <c>Create</c>), the referenced object (for an
     /// <c>Announce</c> or <c>Like</c>), or the item itself (a bare object). Items that are not
-    /// community-tagged are excluded from the community feed (40.3).
+    /// community-tagged are excluded from the community feed (40.3). S53: the check recurses through
+    /// the activity envelope — a remote (Lemmy) relay item is an <c>Announce</c> whose object is an
+    /// embedded <c>Create</c> of the tagged <c>Note</c> (138.20), so the tag lives two levels down.
+    /// The same bounded walk as <see cref="ItemMatchesQuery"/> is used, so the feed and the community
+    /// search admit exactly the same items.
     /// </summary>
     private static bool IsCommunityTagged(IObjectOrLink item, string communityIriValue)
     {
-        if (item is not IObject obj)
+        return item is IObject obj && TagWalk(obj, communityIriValue, depth: 0);
+    }
+
+    private static bool TagWalk(IObject obj, string communityIriValue, int depth)
+    {
+        if (HasCommunityInAttributedTo(obj, communityIriValue))
+        {
+            return true;
+        }
+
+        // The envelope is shallow (Announce -> Create -> Note); the depth cap protects against a cyclic
+        // reference in stored data.
+        if (depth >= 4 || obj is not Activity activity)
         {
             return false;
         }
 
-        // For activities (Create, Announce, Like, etc.), check the referenced object's attributedTo.
-        if (obj is Activity activity)
+        foreach (var referenced in activity.Object ?? [])
         {
-            foreach (var referenced in activity.Object ?? [])
+            if (referenced is IObject refObj && TagWalk(refObj, communityIriValue, depth + 1))
             {
-                if (referenced is IObject refObj && HasCommunityInAttributedTo(refObj, communityIriValue))
-                {
-                    return true;
-                }
+                return true;
             }
-
-            return false;
         }
 
-        // For bare objects (Note, Article, etc.), check their own attributedTo.
-        return HasCommunityInAttributedTo(obj, communityIriValue);
+        return false;
     }
 
     /// <summary>
