@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S50 | OPEN | - | cross-instance community post uses documents/ IRI -> 404 on remote
+S50 | OPEN | - | cross-instance community post 404 on remote (IRI fix merged; end-to-end blocked on S57 QA)
 
-## NEW
+## OPEN-QA
 
-S57 | NEW | - | cross-post to remote community dropped by shared-inbox (no local recipient)
+S57 | OPEN-QA | dev2 | cross-post to local community dropped by shared-inbox (route to community inbox; accept community as recipient)
 
 ## CLOSED
 
