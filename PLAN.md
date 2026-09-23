@@ -11,10 +11,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S50 | OPEN-QA | dev2 | cross-instance community post uses documents/ IRI -> 404 on remote
+S56 | OPEN-QA | dev2 | remote actor profile shows Posts (0) though their posts appear in the timeline
 
 ## NEW
-
-S56 | OPEN-QA | dev2 | remote actor profile shows Posts (0) though their posts appear in the timeline
 
 ## CLOSED
 
