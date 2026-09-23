@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S66 | OPEN | dev1 | federated boost count wrong on receiving instance
+S66 | OPEN | - | federated boost count wrong on receiving instance (not reproduced on dev1: B boost of A note shows 1 on both; needs repro steps)
 S69 | OPEN-QA | dev1 | direct note not federated via UI /outbox (fix: local inbox leg + Note type preservation)
 S70 | OPEN-QA | loop-testing | note edit not federated: shared inbox dropped Update (owner remote) + audience was collection (fix: fan out to local followers + merge followers into cc)
 
