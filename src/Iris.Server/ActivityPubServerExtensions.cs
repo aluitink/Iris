@@ -6239,6 +6239,37 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        // S64: when the Create addresses a LOCAL community (a Group whose IRI is this instance's
+        // /ap/v1/c/{name}) in its `to` audience — a local cross-post to a peered community on this
+        // instance — record the activity in that community's local members' outboxes (the community
+        // feed surface). Mirrors the S57 cross-post pattern: the shared inbox routes the delivery to
+        // the community's inbox, which then records it via CommunityContentRecorder. For the LOCAL
+        // outbox publish path, we record directly (no inbox delivery needed — the author is local).
+        // Without this, a local author's post to a local community (e.g. an Article) never reaches
+        // the community feed: the person branch stores it in the author's outbox only, and the
+        // community's feed (which merges members' outboxes) never sees it.
+        if (create.To is { } createTo)
+        {
+            foreach (var toEntry in createTo)
+            {
+                if (toEntry.ResolveObjectIri() is not { } toIri)
+                {
+                    continue;
+                }
+
+                if (IsOnInstance(toIri, baseUrl)
+                    && await persistence.Communities.TryGetCommunityAsync(toIri, out _, ct).ConfigureAwait(false))
+                {
+                    await Inbox.CommunityContentRecorder.RecordToMembersAsync(
+                        persistence,
+                        localActors,
+                        toIri,
+                        create,
+                        ct).ConfigureAwait(false);
+                }
+            }
+        }
+
         // The federation targets are the author's remote, non-blocked followers (a local follower sees
         // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
         // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
