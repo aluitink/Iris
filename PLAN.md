@@ -12,6 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S68 | NEW | - | Poll federates as Question Object; remote home feed + search miss it
 S67 | NEW | - | cross-instance mention resolves to local actor path (no mention notification on remote instance)
 S66 | NEW | - | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong)
 S65 | NEW | - | federated posts from followed remote users not in home feed (accessible via IRI)
