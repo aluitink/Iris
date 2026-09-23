@@ -10,12 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+S68 | OPEN | - | poll not stored locally on remote (IRI 404; no vote UI)
+S67 | OPEN | - | cross-instance mention: local path, no notify; search misses
+S66 | OPEN | - | federated boost count wrong on receiving instance
+
 ## NEW
 
 S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
-S68 | NEW | qa | poll not stored locally on remote (IRI 404; no vote UI)
-S67 | NEW | qa | cross-instance mention: local path, no notify; search misses (REPRODUCED)
-S66 | NEW | qa | federated boost count wrong on receiving instance (REPRODUCED)
 
 ## OPEN-QA
 
