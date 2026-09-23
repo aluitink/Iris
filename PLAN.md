@@ -15,7 +15,7 @@ S53 | OPEN | - | community-scoped search returns 0 (in-memory feed substring mat
 
 ## NEW
 
-S55 | NEW | - | post edit UI stale + delete silent no-op
+S55 | OPEN | - | post edit UI stale + delete silent no-op (CONFIRMED Pass 343: edit feed facet real, root-caused; delete clean)
 
 ## CLOSED
 
