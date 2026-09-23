@@ -11,7 +11,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S68 | OPEN | - | poll not stored locally on remote (IRI 404; no vote UI)
-S67 | OPEN | - | cross-instance mention: local path, no notify; search misses
 S66 | OPEN | - | federated boost count wrong on receiving instance
 
 ## NEW
@@ -20,6 +19,7 @@ S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, so
 
 ## CLOSED
 
+S67 | CLOSED | qa | cross-instance mention: notify + search by mention (PASS: live qa-iris-a/b)
 S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
 
 S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PASS: live qa-iris-a)
