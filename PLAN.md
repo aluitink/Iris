@@ -12,6 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S61 | NEW | - | reply's to/cc omits parent author: no notify + no cross-instance delivery
 S60 | NEW | pa | dead letters: no admin list/replay (9 stuck deliveries in prod undiagnosable)
 
 ## OPEN-QA
