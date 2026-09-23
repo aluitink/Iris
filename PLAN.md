@@ -10,9 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+S71 | OPEN | - | community ns#followersCount reads Follow not CommunityFollower; AP doc 1 vs 5
+
 ## NEW
 
-S71 | NEW | qa | community (Group) ns#followersCount AP counter wrong: ActorCountRefreshService computes it from the actor Follow store (EdgeKind.Follow) instead of community membership (EdgeKind.CommunityFollower); qa-iris-a community ii-a8-community shows ns#followersCount=1 in AP doc while /followers collection + UI "Members" show 5 (ii-b1, qa-s55-v344, replyauth, s64qa2, s66b). Repro: B actor joins A community; collection totalItems=5 but AP doc counter=1.
 
 ## CLOSED
 
