@@ -1632,30 +1632,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)
-    {
-        // If the fetched object is itself a page, use it directly.
-        if (collection is OrderedCollectionPage)
-        {
-            return collectionId;
-        }
-
-        // Otherwise follow the collection's `first` link to reach the first page.
-        if (collection is Collection { First: { } first })
-        {
-            return first.ResolveCollectionIri();
-        }
-
-        // A collection that carries its items directly (an OrderedCollection with orderedItems, or a
-        // Collection with items) and has no `first` link: the collection's own IRI is the first page.
-        // Lemmy serves its outbox this way (an OrderedCollection with orderedItems, no first link).
-        if (collection is Collection col &&
-            (col.OrderedItems is { } oi && oi.Any() || col.Items is { } ci && ci.Any()))
-        {
-            return collectionId;
-        }
-
-        return null;
-    }
+        => CollectionPageFactory.ResolveFirstPageIri(collection, collectionId);
 
     private async Task<CollectionPage?> FetchCollectionPageAsync(Iri pageIri, bool bypassCache, CancellationToken ct)
     {

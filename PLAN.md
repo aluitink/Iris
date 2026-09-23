@@ -14,7 +14,7 @@ S50 | OPEN-QA | dev2 | cross-instance community post uses documents/ IRI -> 404 
 
 ## NEW
 
-S56 | NEW | - | remote actor profile shows Posts (0) though their posts appear in the timeline
+S56 | OPEN-QA | dev2 | remote actor profile shows Posts (0) though their posts appear in the timeline
 
 ## CLOSED
 

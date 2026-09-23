@@ -1,5 +1,6 @@
 @using Iris.Client
 @using Iris.Client.Collections
+@using Iris.Core.Collections
 @using KristofferStrube.ActivityStreams
 
 @if (HasAnyClient && CollectionIri is not null)
@@ -464,14 +465,7 @@
         // LOCAL (same-origin) collection dials directly.
         if (AnonymousHttpClient is { } anonClient)
         {
-            if (IsRemoteCollectionIri(resumeIri))
-            {
-                await FetchAnonymousPageViaProxyAsync(anonClient, resumeIri);
-            }
-            else
-            {
-                await FetchAnonymousPageAsync(anonClient, resumeIri);
-            }
+            await FetchAnonymousPageAsync(anonClient, resumeIri);
         }
     }
 
@@ -499,55 +493,84 @@
     }
 
     /// <summary>
-    /// Fetches a single REMOTE collection page through the SAME-ORIGIN anonymous proxy seam
-    /// (<c>GET /ap/v1/proxy/{target}</c>, S2/S14). A signed-out visitor's browser cannot dial a
-    /// cross-origin remote instance directly (a direct <c>GET</c> is CORS-/CSP-blocked), so the page
-    /// IRI rides in the proxy path and the <c>limit</c> query rides on the proxy request's own query
-    /// string (the proxy's catch-all <c>{**target}</c> route value captures only the path, so the query
-    /// must ride on the proxy request — exactly the shape the authenticated proxy fallback drives). The
-    /// proxy relays an unsigned public <c>GET</c> to the remote and returns the page JSON; the rest of
-    /// the parsing is shared with <see cref="FetchAnonymousPageAsync"/>.
-    /// </summary>
-    private async Task FetchAnonymousPageViaProxyAsync(HttpClient http, Iri pageIri)
-    {
-        var query = PageSize is { } size ? $"?limit={size}" : null;
-        var proxyPath = $"/ap/v1/proxy/{Uri.EscapeDataString(pageIri.Value)}"
-            + (query is not null ? query : string.Empty);
-        using var response = await http.GetAsync(proxyPath);
-        if (!response.IsSuccessStatusCode)
-        {
-            LoadError = "Failed to load. Please try again.";
-            return;
-        }
-
-        var json = await response.Content.ReadAsStringAsync();
-        ApplyPageJson(json);
-    }
-
-    /// <summary>
-    /// Fetches a single LOCAL (same-origin) collection page via plain HTTP (no ActivityPub signing)
-    /// and parses it. Used for public reads when signed out (54.27). A REMOTE (cross-origin) collection
-    /// page is instead read through the SAME-ORIGIN anonymous proxy seam
-    /// (<see cref="FetchAnonymousPageViaProxyAsync"/>, S2/S14) — a direct cross-origin GET is
-    /// CORS-/CSP-blocked in the browser.
+    /// Fetches a single collection page anonymously (no ActivityPub signing) and parses it. Used
+    /// for public reads when signed out (54.27). The page IRI is routed through the SAME-ORIGIN
+    /// anonymous proxy seam (<c>GET /ap/v1/proxy/{target}</c>, S2/S14) when it is REMOTE
+    /// (cross-origin — a direct <c>GET</c> is CORS-/CSP-blocked in the browser), or fetched
+    /// directly when it is LOCAL (same-origin).
     /// </summary>
     private async Task FetchAnonymousPageAsync(HttpClient http, Iri pageIri)
     {
-        var url = pageIri.Value;
+        var json = await FetchPageJsonAsync(http, pageIri);
+        if (json is not null)
+        {
+            ApplyPageJson(json);
+        }
+    }
+
+    /// <summary>
+    /// Fetches the page at <paramref name="pageIri"/> as raw JSON through the same-origin seam the
+    /// anonymous read uses: REMOTE (cross-origin) pages ride the anonymous proxy seam
+    /// (<c>GET /ap/v1/proxy/{target}</c>, S2/S14 — a direct cross-origin GET is CORS-/CSP-blocked in
+    /// the browser), LOCAL (same-origin) pages are fetched directly. The <see cref="PageSize"/>
+    /// query rides the request's own query string either way (the proxy's catch-all <c>{**target}</c>
+    /// route value captures only the path). Returns <see langword="null"/> (and sets
+    /// <see cref="LoadError"/>) on a failed fetch.
+    /// </summary>
+    private async Task<string?> FetchPageJsonAsync(HttpClient http, Iri pageIri)
+    {
+        var target = pageIri.Value;
         if (PageSize is { } size)
         {
-            url += (url.Contains('?') ? '&' : '?') + $"limit={size}";
+            target += (target.Contains('?') ? '&' : '?') + $"limit={size}";
         }
+
+        var url = IsRemoteCollectionIri(pageIri)
+            ? $"/ap/v1/proxy/{Uri.EscapeDataString(target)}"
+            : target;
 
         using var response = await http.GetAsync(url);
         if (!response.IsSuccessStatusCode)
         {
             LoadError = "Failed to load. Please try again.";
-            return;
+            return null;
         }
 
-        var json = await response.Content.ReadAsStringAsync();
-        ApplyPageJson(json);
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// Fetches a page document's raw JSON for the initial-load <c>first</c>-link follow-up (S56):
+    /// the collection's own IRI was fetched and came back as an envelope, so the first-page IRI is
+    /// refetched through the same-origin seam. Routes through the proxy for a remote collection —
+    /// the first page of a remote collection is cross-origin (CORS-/CSP-blocked in the browser).
+    /// </summary>
+    private async Task<string?> FetchPageJsonAsync(Iri fetchedIri, Iri pageIri)
+    {
+        if (AnonymousHttpClient is not { } http)
+        {
+            return null;
+        }
+
+        var remote = IsRemoteCollectionIri(fetchedIri) || IsRemoteCollectionIri(pageIri);
+        var target = pageIri.Value;
+        if (PageSize is { } size)
+        {
+            target += (target.Contains('?') ? '&' : '?') + $"limit={size}";
+        }
+
+        var url = remote
+            ? $"/ap/v1/proxy/{Uri.EscapeDataString(target)}"
+            : target;
+
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+        {
+            LoadError = "Failed to load. Please try again.";
+            return null;
+        }
+
+        return await response.Content.ReadAsStringAsync();
     }
 
     /// <summary>
@@ -559,6 +582,31 @@
     {
         var doc = System.Text.Json.JsonDocument.Parse(json);
         var root = doc.RootElement;
+
+        // A collection ENVELOPE (an OrderedCollection carrying a `first` link and no items of its
+        // own — the canonical Mastodon shape) is not a page: the signed-in path (the client's
+        // GetCollectionAsync) follows the `first` link to reach the first page (the collection
+        // document served at {collection}?page=true), while this anonymous path previously parsed
+        // the envelope as an empty page and rendered the empty state — the signed-out remote
+        // actor's "Posts" tab showed "No posts yet." though the actor's posts appeared in the
+        // public timeline (S56). Mirror the signed-in rule via the shared
+        // CollectionPageFactory.ResolveFirstPageIri: when the fetched document resolves to a
+        // different first-page IRI, refetch that page and parse it instead.
+        if (_resumeFrom is { } resumeIri &&
+            CollectionPageFactory.ResolveFirstPageIri(
+                ActivityJson.Deserialize<IObjectOrLink>(json) is IObject obj ? obj : null,
+                resumeIri) is { } firstIri &&
+            !firstIri.Equals(resumeIri))
+        {
+            // Bounded to one hop: the first-page document is a real page, so the recursive call
+            // parses it directly.
+            var pageJson = FetchPageJsonAsync(resumeIri, firstIri).GetAwaiter().GetResult();
+            if (pageJson is not null)
+            {
+                ApplyPageJson(pageJson);
+            }
+            return;
+        }
 
         Items ??= [];
 
