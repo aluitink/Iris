@@ -21,9 +21,9 @@ S66 | NEW | qa | federated boost count wrong on receiving instance (REPRODUCED)
 
 ## OPEN-QA
 
-S63 | OPEN-QA | dev1 | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
-
 ## CLOSED
+
+S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PASS: live qa-iris-a)
 
 S62 | CLOSED | qa | reply to remote parent now notifies parent author (PASS: live s56qa->s58qa)
 
