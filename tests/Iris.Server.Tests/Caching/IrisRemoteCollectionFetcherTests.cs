@@ -191,6 +191,10 @@ public sealed class IrisRemoteCollectionFetcherTests
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
             => Task.FromResult<IObject?>(null);
 
+        /// <inheritdoc/>
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => Task.FromResult<IObject?>(null);
+
         public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri iri, CancellationToken ct = default) => Task.FromResult<LemmyPostScore?>(null);
         public Task<DeliveryResult> DislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
         public Task<DeliveryResult> UndislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));

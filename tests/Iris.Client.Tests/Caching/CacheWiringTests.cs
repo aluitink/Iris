@@ -129,6 +129,24 @@ public class CacheWiringTests
     }
 
     [Fact]
+    public async Task GetObjectFreshAsync_BypassesActorCache_EveryReadHitsNetwork()
+    {
+        var handler = new CountingHandler(ActorJson());
+        var cache = new ActorCache();
+        using var client = new ActivityPubClient(new HttpClient(handler), cache, null);
+
+        // Warm the cache via the normal (cached) read path.
+        await client.GetObjectAsync(new Iri(ActorIri));
+        Assert.Equal(1, handler.Hits);
+
+        // Fresh reads must bypass the cache and always hit the network, even for a warm IRI.
+        await client.GetObjectFreshAsync(new Iri(ActorIri));
+        await client.GetObjectFreshAsync(new Iri(ActorIri));
+
+        Assert.Equal(3, handler.Hits);
+    }
+
+    [Fact]
     public async Task GetActorAsync_WithActorCache_SecondReadHitsCache()
     {
         var handler = new CountingHandler(ActorJson());

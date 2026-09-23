@@ -647,6 +647,9 @@ public sealed class CreateActivityHandlerTests
             return Task.FromResult(_fetchedObject);
         }
 
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => GetObjectAsync(objectId, ct);
+
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(null);
 
