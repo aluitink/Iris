@@ -4049,6 +4049,46 @@ public static class ActivityPubServerExtensions
                         recipients.Add(pa);
                     }
                 }
+
+                // S57 (cross-post to remote community): when the Create addresses a LOCAL community
+                // (Group) in its `to` audience — a cross-post to a peered community on this instance —
+                // route the delivery to that community's inbox. The community's CreateActivityHandler
+                // then stores the object and the community feed surfaces it. Without this, the shared
+                // inbox sees only the author's local followers (none, for a remote author) and drops
+                // the activity ("no local recipient"), leaving the community feed empty and the
+                // object doc 404 on this instance. The cross-post target lives in the `to` audience:
+                // the embedded object's own `to` when the object is embedded (the common shape),
+                // otherwise the activity's `to` (a bare IRI reference is still checked).
+                IEnumerable<IObjectOrLink>? cpAudience = null;
+                if (typedActivity.Object?.FirstOrDefault() is IObject cpEmbeddedObj && cpEmbeddedObj.To is { } cpEmbeddedTo)
+                {
+                    cpAudience = cpEmbeddedTo;
+                }
+                else if (createActivity.To is { } cpActivityTo)
+                {
+                    cpAudience = cpActivityTo;
+                }
+                if (cpAudience is { } audience)
+                {
+                    foreach (var toEntry in audience)
+                    {
+                        if (toEntry.ResolveObjectIri() is not { } toIri)
+                        {
+                            continue;
+                        }
+
+                        // The community lives in the separate community store, not the actor store —
+                        // IsLocalActorAsync (actor-store membership) is false for it, so check the
+                        // community store explicitly. IsLocalIri (origin + instance-base prefix)
+                        // keeps a remote community IRI cached in the store (RemoteCommunityPersister)
+                        // from being misrouted to a local recipient.
+                        if (IsLocalIri(toIri, optionsAccessor.Value.BaseUri)
+                            && await persistence.Communities.TryGetCommunityAsync(toIri, out _, ct).ConfigureAwait(false))
+                        {
+                            recipients.Add(toIri);
+                        }
+                    }
+                }
             }
             else if (typedActivity is Announce
                      && typedActivity.Object is { } announceObjects
@@ -4198,7 +4238,13 @@ public static class ActivityPubServerExtensions
         // activity a no-op on the second-and-later recipient.
         foreach (var recipient in recipients)
         {
-            var exists = await persistence.Actors.TryGetActorAsync(recipient, out _, ct).ConfigureAwait(false);
+            // S57: a recipient is valid when it is a local actor OR a local community. Communities live
+            // in the separate community store (not the actor store), so the actor-only existence check
+            // (below) 404'd a cross-post routed to a local community's inbox — the shared-inbox handler
+            // correctly added the community as a recipient, but HandleInboxPostAsync rejected it as
+            // "unknown recipient" before the community's CreateActivityHandler could store the object.
+            var exists = await persistence.Actors.TryGetActorAsync(recipient, out _, ct).ConfigureAwait(false)
+                || await persistence.Communities.TryGetCommunityAsync(recipient, out _, ct).ConfigureAwait(false);
             await HandleInboxPostAsync(context, recipient, exists, inboxProcessor, rateLimiter, tokenStore, persistence, ct).ConfigureAwait(false);
         }
 
