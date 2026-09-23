@@ -12,12 +12,12 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
-S69 | NEW | qa | cross-instance direct note not federated to recipient (remote IRI not found, no notification) (REPRODUCED s58qa->s56qa; re-test replyauth->s68qa NOT reproduced: notification + proxy page work, local IRI 404 + search miss remain; 2nd retest s58qa->s56qa REPRODUCED: create 06GCWFNW2RCN6R09YR0MVM9KYM, remote IRI 404, no mention notification, search miss)
-S68 | NEW | qa | Poll federation: remote home feed misses poll (not stored locally, AP IRI 404); search finds it via index; no vote UI on remote (FAIL: live replyauth->s68qa; poll 404 locally, absent from home, search+proxy work)
-S67 | NEW | qa | cross-instance mention local path + no notification; remote search misses federated mention (FAIL: live s58qa->s56qa; mention post missing from s56qa home + no mention notification)
-S66 | NEW | qa | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong) (REPRODUCED: origin boost=1, remote home boost=2)
-S65 | NEW | qa | federated posts from followed remote users not in home feed (accessible via IRI) (FAIL prior s58qa->s56qa; re-test replyauth->s68qa NOT reproduced: public Note appears in s68qa home after refresh; likely follow-propagation timing)
-S64 | NEW | qa | community Article post not appearing in community feed (post visible on author profile) (REPRODUCED: Article in outbox, missing from community feed)
+S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
+S68 | NEW | qa | poll not stored locally on remote (IRI 404; no vote UI)
+S67 | NEW | qa | cross-instance mention: local path, no notify; search misses
+S66 | NEW | qa | federated boost count wrong on receiving instance
+S65 | NEW | qa | federated posts not in home feed (re-test NOT repro)
+S64 | NEW | qa | community Article post not in community feed (REPRODUCED)
 S63 | NEW | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 
 ## OPEN-QA
