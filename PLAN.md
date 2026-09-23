@@ -14,9 +14,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S58 | OPEN-QA | dev1 | surface prod health degraded (dead letters, 40/4537 signable) in UI
-
 ## CLOSED
+
+S58 | CLOSED | dev1 | admin dashboard surfaces dead letters + signable-actor gap (PASS: endpoint fields + live /admin clean)
 
 S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS re-verify: live home feed now shows the cross-posted Page — 2nd fix IsCommunityActorIri exempts community `to` from IsFollowReply's reply fallback; strengthened regression test fails w/o fix; 1462 server tests green)
 
