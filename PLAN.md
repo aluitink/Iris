@@ -12,6 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S65 | NEW | - | federated posts from followed remote users not in home feed (accessible via IRI)
 S64 | NEW | - | community Article post not appearing in community feed (post visible on author profile)
 S63 | NEW | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 
