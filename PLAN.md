@@ -13,6 +13,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
 ## NEW
 
+S79 | NEW | - | actor doc postsCount counts only Note+Article; misses Page/Question (Lemmy posts, polls)
+S80 | NEW | - | profile + actor page Posts omit Page cross-posts (client filter lacks Page; home feed has it)
+S81 | NEW | - | client OutboxFilter + server postsCount are 3 divergent copies of one classification
+
 
 ## CLOSED
 
