@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S72 | OPEN | - | Report button "Reported" state not restored on reload (in-memory only; dedup OK)
+S72 | OPEN-QA | dev2 | Report button "Reported" state not restored on reload (in-memory only; dedup OK)
 
 
 ## NEW
