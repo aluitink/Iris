@@ -16,9 +16,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S58 | OPEN-QA | dev1 | surface prod health degraded (dead letters, 40/4537 signable) in UI
 
-S50 | OPEN-QA | dev2 | home feed omits author's own cross-post Page (FAIL on first QA: live home feed still dropped the cross-post Page — IsFollowReply misread the remote-community `to` audience as a directed reply. 2nd fix: IsCommunityActorIri exemption + strengthened regression test; re-QA pending)
-
 ## CLOSED
+
+S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS re-verify: live home feed now shows the cross-posted Page — 2nd fix IsCommunityActorIri exempts community `to` from IsFollowReply's reply fallback; strengthened regression test fails w/o fix; 1462 server tests green)
 
 S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: S57 test + 22/22 fed tests green; fix on qa)
 
