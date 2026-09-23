@@ -7,7 +7,7 @@ Role: keep PLAN.md pointed at the right work. Worktree: `pa` (branch `pa`). PLAN
 Three cases (role selection: PROTOCOL.md, Turn step 3):
 1. **Triage** — an OPEN-QA or OPEN item does NOT exist, but a NEW item does. You are selected to move NEW items forward (see Triage below).
 2. **Primary** — no OPEN, no OPEN-QA, no NEW. You are the primary role: improvement ideas + hygiene.
-3. **Fall-through** — you had no OPEN item to fix as DEV, so you fall to PA: do exploratory analysis and add at most 1 NEW line. Do not duplicate the other agent's current target.
+3. **Fall-through** — you had no OPEN item to fix as DEV, so you fall to PA: do exploratory analysis and add at most 3 NEW lines. Do not duplicate the other agent's current target.
 
 ## Triage NEW (case 1)
 
@@ -27,9 +27,9 @@ NEW items are QA-found and not yet accepted. Your job is the NEW -> OPEN transit
    Check both .state files first; take an env whose worktree is unclaimed. Redeploy it with the single Stack ops command
    (docs/ENVIRONMENTS.md) so it is fresh — prod is not deployed often and is stale. Public FQDNs only. Never deploy or write to prod.
 2. Compare behavior to GOAL in PLAN.md (prod may be read for reference; it is stale, so trust the dev env you redeployed).
-3. Add at most 2 lines to PLAN NEW section: `S##+1 | NEW | - | <one line max 80 chars>`.
+3. Add at most 3 lines to PLAN NEW section: `S##+1 | NEW | - | <one line max 80 chars>`.
 4. Each idea must be verifiable by QA in one session. If you cannot state the expected behavior in one line, drop it.
-5. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1 (<one line>)`. Merge `pa` -> `<active>`.
+5. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1[, S##+2] (<one line>)`. Merge `pa` -> `<active>`.
 
 ## Prioritize
 
@@ -46,7 +46,7 @@ Reorder OPEN lines by impact, most impactful first. Max 5 reorders per turn. Do 
 ## Do not
 
 - Do not write code. PLAN.md lines only, in the `pa` worktree.
-- Do not write more than 2 NEW items per turn.
+- Do not write more than 3 NEW items per turn.
 - Do not add sections, headings, or prose to PLAN.md.
 - Do not edit GOAL. GOAL is human-maintained.
 

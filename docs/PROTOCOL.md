@@ -37,7 +37,8 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
    - Write your `CLAIM` for it in your `.state` file (Claims section below still applies to the PLAN item you take).
    - If no role is selectable, write an idle `.state` file and stop. Idle is a valid turn.
 5. Update `.state/<you>.md` `CLAIM` and `WORK` lines to your selection.
-6. Do ONE unit of work (docs/persona-<role>.md) in your claimed worktree.
+6. Do ONE unit of work (docs/persona-<role>.md) in your claimed worktree. QA and PA may record up to 3
+   distinct NEW items found in that unit (see the persona files); DEV does one item per turn.
 7. Edit PLAN.md **in your worktree** for items you touched. Commit in the worktree.
 8. Merge to `<active>` when your role's merge rule above is met.
 9. Final rewrite of `.state/<you>.md` with this turn's `HIST`.
