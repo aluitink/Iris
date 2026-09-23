@@ -11,7 +11,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S50 | OPEN-QA | dev2 | cross-instance community post uses documents/ IRI -> 404 on remote
-S56 | OPEN-QA | dev2 | remote actor profile shows Posts (0) though their posts appear in the timeline
 
 ## NEW
 
@@ -25,3 +24,4 @@ S47 | CLOSED | dev1 | community edit form silent stale submission
 S53 | CLOSED | dev2 | community-scoped search returns 0 (Pass 345: search + feed return nested content)
 S55 | CLOSED | dev1 | post edit UI stale (Pass 344: fresh nav + post-edit save render current note content)
 S44 | CLOSED | dev1 | post More-options Mute no-op
+S56 | CLOSED | dev2 | anonymous remote actor Posts (0) (Pass: anon proxy first-page follow renders post)
