@@ -10,11 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S60 | OPEN | dev1 | dead letters: no admin list/replay (9 stuck deliveries in prod undiagnosable)
+S61 | OPEN | pa | admin bootstrap dead: env var read as `APP_ADMIN:USERNAME` so App:Admin:Username always null; no admin provisioned in any env (blocker for all /local/v1/admin authed QA)
 
 ## NEW
 
 ## OPEN-QA
+
+S60 | OPEN-QA | dev1 | dead letters: admin list/replay (store RemoveAsync + GET/POST /local/v1/admin/dead-letters[/{i}/replay] RequireRole(Admin) + DeadLetterPanel on /admin; 6 tests green; route+auth live 302, replay 400 distinct from SPA fallback)
 
 ## CLOSED
 
