@@ -30,7 +30,8 @@ Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
 - Do not fix code. You own the qa worktree for notes only.
 - Do not edit OPEN items or desc lines.
 - Do not close an item on the dev stack; only the qa stack counts as live verification.
-- Do not write more than one NEW item per turn unless the flow produced a single root cause with distinct facets (then one line per facet, same root).
+- Do not write more than 3 NEW items per turn. Each must be a distinct bug with its own repro (facets of a
+  single root cause count as one item).
 
 ## State file
 

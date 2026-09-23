@@ -27,11 +27,12 @@ You never change which branch is active; that is a human action.
    - If the other agent's .state `WORK` line holds the top item of that section, take the next item in it, or the next section.
 4. Claim: update your `.state/<you>.md` `CLAIM` and `WORK` lines to what you selected.
 5. Read `/workspace/docs/persona-<role>.md`. Follow it. Do exactly one unit of work in your claimed worktree.
+   QA and PA may record up to 3 distinct NEW items found in that one unit; DEV still does one item per turn.
 6. PLAN.md: edit it **in your worktree** only, for items you touched. Commit it in your worktree.
    It reaches root when your branch merges. Never edit `/workspace/PLAN.md` directly.
 7. Commit your work in the worktree. Merge to main when your persona says to (DEV: tests green; QA/PA: every turn).
 8. Final rewrite of `/workspace/.state/<you>.md` with this turn's `HIST`.
-9. Stop. No second item, no extra files.
+9. Stop. No second unit of work, no extra files (QA/PA: the up-to-3 NEW items from step 5 are the exception).
 
 ## Hard rules
 
