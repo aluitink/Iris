@@ -1445,7 +1445,7 @@ public static class WebAppFactory
         // storage usage, recent registrations, plus the federation-observability signal (S58): the
         // dead-letter backlog and the stored-actors-without-a-resolvable-signing-identity gap that
         // /ap/v1/health already reports as "degraded".
-        endpoints.MapGet("/local/v1/admin/stats", MapAdminStatsEndpoint).RequireAuthorization(p => p.RequireRole("Admin"));
+        MapAdminStatsEndpoint(endpoints);
     }
 
     /// <summary>
