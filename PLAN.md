@@ -12,6 +12,8 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S59 | NEW | pa | signable-actor metric counts remote actors (misleading 40/4542; only local actors need keys)
+
 ## OPEN-QA
 
 ## CLOSED
