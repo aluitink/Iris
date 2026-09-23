@@ -9,6 +9,7 @@ using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -93,6 +94,7 @@ public sealed class AdminStatsObservabilityTests
                 builder.ConfigureServices(services =>
                 {
                     services.AddRouting();
+                    services.AddControllers();
                     services.AddSingleton(accounts);
                     services.AddSingleton(persistence);
                     services.AddSingleton(keyProvider);

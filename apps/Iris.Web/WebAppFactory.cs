@@ -1454,17 +1454,22 @@ public static class WebAppFactory
     /// (<see cref="IKeyProvider"/> resolvable-actor gap + <see cref="IDeliveryDeadLetterStore"/>
     /// dead-letter count, the two figures the <c>/ap/v1/health</c> observability check reports as
     /// "degraded"). Extracted from the inline lambda so the operator-facing read path is testable in
-    /// isolation (no auth, no full host).
+    /// isolation (no auth, no full host). The dependencies are resolved through a single
+    /// <see cref="IServiceProvider"/> parameter: with five separate typed parameters the minimal API
+    /// would infer one as a request body ("Body was inferred but the method does not allow inferred
+    /// body parameters"), so they are pulled out of the provider instead.
     /// </summary>
     public static void MapAdminStatsEndpoint(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/local/v1/admin/stats", async (
-            IUserAccountStore accounts,
-            IPersistenceProvider persistence,
-            IKeyProvider keyProvider,
-            IDeliveryDeadLetterStore deadLetters,
+            IServiceProvider sp,
             CancellationToken ct) =>
         {
+            var accounts = sp.GetRequiredService<IUserAccountStore>();
+            var persistence = sp.GetRequiredService<IPersistenceProvider>();
+            var keyProvider = sp.GetRequiredService<IKeyProvider>();
+            var deadLetters = sp.GetRequiredService<IDeliveryDeadLetterStore>();
+
             var allAccounts = await accounts.GetAllAsync(ct);
             var userCount = allAccounts.Count;
             var recentRegistrations = allAccounts
