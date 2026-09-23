@@ -2320,6 +2320,59 @@ public sealed class FeedServiceTests
             && obj.Value == $"https://{LocalHost}/notes/b-1");
     }
 
+    [Fact]
+    public async Task S77_FollowedContentSurfaces_WhenOwnOutboxIsLarge()
+    {
+        // S77: a user with many own posts (large own outbox) and a followed actor with a recent post.
+        // Before the date-sort fix, the own outbox filled the MaxItems cap first and the followed
+        // actor's recent post was never shown. After the fix, the feed is sorted newest-first by
+        // published date, so the recent followed post surfaces even when the own outbox is large.
+        var (service, _) = Build(
+            persistence: SeedLocal(p =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                var bob = Actor(LocalHost, "bob");
+                SeedActor(p, alice, "Alice");
+                SeedActor(p, bob, "Bob");
+                p.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+                // Alice has 250 own posts (exceeds MaxItems=200).
+                var now = DateTime.UtcNow;
+                for (var i = 0; i < 250; i++)
+                {
+                    p.Activities.AddToOutboxAsync(alice, new Create
+                    {
+                        Id = $"https://{LocalHost}/notes/a-{i}",
+                        Actor = [new Link { Href = new Uri(alice.Value) }],
+                        Object = [new Note { Id = $"https://{LocalHost}/notes/a-{i}", Content = [$"alice {i}"] }],
+                        Published = now.AddDays(-30),
+                    }).GetAwaiter().GetResult();
+                }
+
+                // Bob has one recent post (published now — newer than all of alice's posts).
+                p.Activities.AddToOutboxAsync(bob, new Create
+                {
+                    Id = $"https://{LocalHost}/notes/b-recent",
+                    Actor = [new Link { Href = new Uri(bob.Value) }],
+                    Object = [new Note { Id = $"https://{LocalHost}/notes/b-recent", Content = ["bob recent"] }],
+                    Published = now,
+                }).GetAwaiter().GetResult();
+            }),
+            options: new FeedOptions { MaxItems = 200, PagesPerActor = 1 });
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        // Bob's recent post must be in the feed (it's the newest item).
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/b-recent");
+
+        // The feed is capped at 200.
+        Assert.Equal(200, feed.Count);
+
+        // The feed is sorted newest-first: bob's post (newest) is first.
+        Assert.Equal($"https://{LocalHost}/notes/b-recent", IdOf(feed[0]));
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(
