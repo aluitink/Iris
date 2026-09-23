@@ -16,6 +16,8 @@ S55 | OPEN-QA | dev1 | post edit UI stale (CONFIRMED Pass 343: feed serves stale
 
 ## NEW
 
+S56 | NEW | - | remote actor profile shows Posts (0) though their posts appear in the timeline
+
 ## CLOSED
 
 S54 | CLOSED | dev1 | input buttons disabled while typing (oninput binding)
