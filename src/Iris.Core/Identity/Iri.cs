@@ -55,12 +55,17 @@ public readonly struct Iri
     /// <summary>
     /// Gets the wrapped <see cref="Uri"/>.
     /// </summary>
-    public Uri Uri => _uri;
+    public Uri Uri => _uri!;
 
     /// <summary>
-    /// Gets the IRI as an absolute URI string (the canonical wire form).
+    /// Gets the IRI as an absolute URI string (the canonical wire form). For the <see langword="default"/>
+    /// value (an <see cref="Iri"/> with no underlying <see cref="Uri"/>) this is the empty string — an
+    /// empty IRI is never a valid identifier, so no member that reads <see cref="Value"/> can throw on
+    /// a <see langword="default"/> value (S76: <c>default(Iri).Value</c> previously threw
+    /// <see cref="NullReferenceException"/> and crashed rendering of a note whose mention/hashtag tag
+    /// carried an empty IRI).
     /// </summary>
-    public string Value => _uri.IsAbsoluteUri ? _uri.AbsoluteUri : _uri.ToString();
+    public string Value => _value() ?? string.Empty;
 
     /// <summary>
     /// Two IRIs are equal when their <see cref="Value"/> (the canonical absolute-URI string, which
@@ -109,9 +114,11 @@ public readonly struct Iri
     public static Iri Public { get; } = new("https://www.w3.org/ns/activitystreams#Public");
 
     /// <summary>
-    /// Returns <see langword="true"/> when the IRI is absolute (has a scheme).
+    /// Returns <see langword="true"/> when the IRI is absolute (has a scheme). The <see langword="default"/>
+    /// value (no underlying <see cref="Uri"/>) is not absolute, so this returns <see langword="false"/> for it
+    /// instead of throwing.
     /// </summary>
-    public bool IsAbsolute => _uri.IsAbsoluteUri;
+    public bool IsAbsolute => _uri is { } uri && uri.IsAbsoluteUri;
 
     /// <summary>
     /// Returns a value indicating whether this IRI is <see cref="Iri.Public"/>.
