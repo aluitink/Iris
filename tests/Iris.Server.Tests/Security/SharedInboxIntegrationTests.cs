@@ -470,6 +470,69 @@ public sealed class SharedInboxIntegrationTests : IDisposable
         Assert.Contains("a note by bob (edited)", refreshedContent);
     }
 
+    // --- S70: an Update of a REMOTE note (owner is a remote actor) delivered to the shared inbox must
+    // --- fan out to local followers of the remote owner. The note's owner (alice, hosted by A) is NOT
+    // --- a local actor on B, so the owner-routing branch adds no recipient. But bob (local on B)
+    // --- follows alice and holds a federated copy of the note. The shared inbox must detect the local
+    // --- follower and deliver the Update to bob's inbox, whose UpdateActivityHandler refreshes the
+    // --- stored copy. Without this, the shared inbox drops the activity ("no local recipient") and
+    // --- bob's copy stays stale (the S70 note-edit federation bug). ---
+
+    [Fact]
+    public async Task UpdateOfRemoteNote_DeliveredToSharedInbox_FansOutToLocalFollower()
+    {
+        // alice (remote, hosted by A) authored a note. bob (local on B) follows alice, so B holds a
+        // federated copy of the note in its object store.
+        var noteIri = $"https://{AHost}/ap/v1/u/{Alice}/notes/{Guid.NewGuid():N}";
+        await _bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri,
+            Content = ["a note by alice (original)"],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        });
+
+        // bob (local on B) follows alice (remote on A): the follow edge is stored in B's follow store.
+        await _bPersistence.Follows.RecordFollowAsync(BobActorIri, AliceActorIri);
+
+        // alice edits her own note: an Update whose object is the embedded updated Note. The Update's
+        // actor is alice (the note's owner). alice's instance delivers this Update to B's shared inbox.
+        var updateIri = $"https://{AHost}/activities/update-{Guid.NewGuid():N}";
+        var updatedNote = new Note
+        {
+            Id = noteIri,
+            Content = ["a note by alice (edited)"],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        };
+        var update = new Update
+        {
+            Id = updateIri,
+            Actor = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            Object = [updatedNote],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, update);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B stored the Update (the shared inbox did NOT drop it as "no local recipient").
+        Assert.True(
+            await _bPersistence.Activities.TryGetActivityAsync(new Iri(updateIri), out _),
+            "An Update of a remote note delivered to the shared inbox should be stored (routed to local followers), not dropped (S70).");
+
+        // B's UpdateActivityHandler refreshed the stored note with the new content.
+        Assert.True(
+            await _bPersistence.Objects.TryGetObjectAsync(new Iri(noteIri), out var refreshed),
+            "The note should still be present in B's object store after an Update.");
+        var refreshedContent = (refreshed as KristofferStrube.ActivityStreams.Object)?.Content
+            ?.Select(c => c.ToString())
+            .ToArray();
+        Assert.NotNull(refreshedContent);
+        Assert.Contains("a note by alice (edited)", refreshedContent);
+    }
+
     // --- S57: a Create addressed to a LOCAL community (a cross-post to a peered community on this
     // --- instance) delivered to B's shared inbox must route to the community's inbox. Without this, the
     // --- shared inbox sees only the author's local followers (none, for a remote author) and drops the

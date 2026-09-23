@@ -4178,13 +4178,34 @@ public static class ActivityPubServerExtensions
                 // stored object (authorizing the remote owner — the delete's actor is the note's
                 // attributedTo). A local object's owner is read from the object store (no wire hop); an
                 // unresolvable owner degrades to the object IRI, which the per-recipient actor-existence
-                // check below then drops as before (no local recipient). Only route to the owner if the
-                // owner is a local actor (the note's home instance); if the owner is remote, the note is
-                // not this instance's to delete/update, so the activity is dropped (no local recipient).
+                // check below then drops as before (no local recipient).
                 var ownerIri = await ResolveObjectOwnerForDeliveryAsync(persistence, null, new Iri(editedObjectIri), ct).ConfigureAwait(false);
                 if (await localActors.IsLocalActorAsync(ownerIri, ct).ConfigureAwait(false))
                 {
                     recipients.Add(ownerIri);
+                }
+
+                // S70: when the owner is remote (the note's home instance is a peer), the local actors
+                // who follow the owner also hold a copy of the note and must receive the Delete/Update
+                // so their stored copy is tombstoned / refreshed. Fan out to local followers of the
+                // remote owner (mirroring the content fan-out for Create/Announce). A follower who has
+                // blocked the owner is suppressed (F-07); the idempotency guard makes re-delivery a no-op.
+                if (!await localActors.IsLocalActorAsync(ownerIri, ct).ConfigureAwait(false))
+                {
+                    foreach (var follower in await persistence.Follows.GetFollowersAsync(ownerIri, ct).ConfigureAwait(false))
+                    {
+                        if (!await localActors.IsLocalActorAsync(follower, ct).ConfigureAwait(false))
+                        {
+                            continue;
+                        }
+
+                        if (await persistence.Moderation.IsBlockedAsync(follower, ownerIri, ct).ConfigureAwait(false))
+                        {
+                            continue;
+                        }
+
+                        recipients.Add(follower);
+                    }
                 }
             }
             else
@@ -6917,10 +6938,19 @@ public static class ActivityPubServerExtensions
             // no-op (the audience cannot be recovered).
             case Delete del:
                 await ApplyStoredObjectAudienceAsync(del, persistence, ct).ConfigureAwait(false);
+                // S70 (same root cause as Update): merge individual remote followers into cc so the
+                // peer's shared-inbox handler can route the Delete to each follower's personal inbox.
+                del.Cc = MergeAudience(del.Cc, followers);
                 break;
 
             case Update upd:
                 await ApplyStoredObjectAudienceAsync(upd, persistence, ct).ConfigureAwait(false);
+                // S70: the stored object's cc is the followers *collection* (a single IRI), which a
+                // peer's shared-inbox handler cannot route to a specific local actor. Merge the
+                // individual remote followers into cc (mirroring the Create's audience rewrite) so
+                // the peer's inbox handler sees each follower's IRI and delivers to their personal
+                // inbox.
+                upd.Cc = MergeAudience(upd.Cc, followers);
                 break;
         }
     }
