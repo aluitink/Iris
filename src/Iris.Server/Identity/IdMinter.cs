@@ -106,8 +106,17 @@ public sealed class IdMinter
     /// </summary>
     /// <param name="obj">The object to classify.</param>
     /// <returns>The namespace segment (e.g. <c>notes</c>), or <c>objects</c> for an unrecognized type.</returns>
+    /// <remarks>
+    /// S50: <see cref="Page"/> is matched BEFORE its base type <see cref="Document"/>. A top-level
+    /// cross-post to a remote (non-Iris, e.g. Lemmy) community is authored as a <see cref="Page"/> (the
+    /// Lemmy-compatible top-level content type, 138.11). A <see cref="Page"/> is content — semantically a
+    /// top-level post — so it is minted under <c>notes/</c>, the content-object namespace the object
+    /// document endpoint and remote peers resolve. Without this arm, the pattern falls through to
+    /// <see cref="Document"/> (<c>documents/</c>), and the remote instance's GET of the post's IRI 404s.
+    /// </remarks>
     public static string NamespaceFor(IObject obj) => obj switch
     {
+        Page => "notes",
         Note => "notes",
         Group => "groups",
         Article => "articles",
