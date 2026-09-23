@@ -10,12 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+S69 | OPEN | pa | direct note not federated via UI /outbox (no Direct-recipient leg in OutboxPublishHandler; cross-post leg drops local + transforms Note→Article)
 S68 | OPEN | - | poll not stored locally on remote (IRI 404; no vote UI)
 S66 | OPEN | - | federated boost count wrong on receiving instance
 
 ## NEW
-
-S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
 
 ## CLOSED
 
