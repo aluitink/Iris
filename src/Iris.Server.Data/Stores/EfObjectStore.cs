@@ -90,10 +90,17 @@ public sealed class EfObjectStore : IObjectStore
                 setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'summary')::text, '')), 'C') ||
                 setweight(to_tsvector('simple', COALESCE(
                     (SELECT string_agg(
-                        CASE WHEN (t ->> 'type') ~* 'mention' THEN COALESCE(t ->> 'href', '')
-                             ELSE COALESCE(t ->> 'name', '') END, ' ')
-                     FROM jsonb_array_elements(COALESCE(""Document"" -> 'tag', '[]'::jsonb)) AS t
-                     WHERE (t ->> 'type') ~* 'mention' OR (t ->> 'type') ~* 'hashtag' OR (t ->> 'href') IS NOT NULL
+                        CASE WHEN jsonb_typeof(t) = 'object' THEN
+                             CASE WHEN (t ->> 'type') ~* 'mention' THEN COALESCE(t ->> 'href', '')
+                                  ELSE COALESCE(t ->> 'name', '') END
+                         ELSE t::text END, ' ')
+                      FROM jsonb_array_elements(
+                           CASE WHEN jsonb_typeof(COALESCE(""Document"" -> 'tag', '[]'::jsonb)) = 'array'
+                                THEN ""Document"" -> 'tag'
+                                ELSE '[]'::jsonb END
+                           ) AS t
+                      WHERE jsonb_typeof(t) <> 'object'
+                         OR (t ->> 'type') ~* 'mention' OR (t ->> 'type') ~* 'hashtag' OR (t ->> 'href') IS NOT NULL
                     ), '')), 'D')
               WHERE ""Id"" = {0}", new object[] { iri }, ct).ConfigureAwait(false);
     }
