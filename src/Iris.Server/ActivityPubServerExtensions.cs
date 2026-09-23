@@ -4454,6 +4454,26 @@ public static class ActivityPubServerExtensions
                 // the community is also stored in the community store (19.5.1 creation write path).
                 var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, baseUrl, collectionCache, followFeed, ct)
                     .ConfigureAwait(false);
+
+                // S64: invalidate the community feed cache when a new post is tagged to a local community.
+                // The community feed (CommunityFeedService.GetFeedAsync) merges the community's followers'
+                // outboxes and is served through the local collection-page response cache (60s TTL).
+                // Without invalidation, a new post (Note or Article) would not appear in the community
+                // feed until the TTL lapses. Detect local communities in the embedded object's
+                // attributedTo and drop their cached feed pages.
+                if (create.ExtractEmbeddedObject() is KristofferStrube.ActivityStreams.Object embeddedObj
+                    && embeddedObj.AttributedTo is { } attributedTo)
+                {
+                    foreach (var attr in attributedTo)
+                    {
+                        if (attr.ResolveObjectIri() is { } communityIri
+                            && TryParseLocalCommunityIri(baseUrl, communityIri.Value, out var localCommunityIri))
+                        {
+                            InvalidateLocalCollectionPage(collectionCache, localCommunityIri, "feed");
+                        }
+                    }
+                }
+
                 foreach (var recipient in recipients)
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
