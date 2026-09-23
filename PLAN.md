@@ -12,9 +12,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S50 | OPEN-QA | dev2 | home feed omits author's own cross-post Page (138.11) — feed filter now admits Page
-
 ## CLOSED
+
+S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS: Feed_OwnCrossPostPage_SurfacesInHomeFeed + 109 feed/crosspost tests green)
 
 S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: S57 test + 22/22 fed tests green; fix on qa)
 
