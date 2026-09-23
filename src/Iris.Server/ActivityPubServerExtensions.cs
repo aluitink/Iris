@@ -4530,6 +4530,48 @@ public static class ActivityPubServerExtensions
                     }
                 }
 
+                // S69: deliver the post to LOCAL named recipients (the actors in the embedded object's
+                // `to` array who are on this instance) when the post is a Direct message. A Direct post's
+                // audience names the recipients (not the author's followers), so the server must add the
+                // post to each local recipient's inbox so the recipient can fetch it by IRI and see the
+                // notification. Remote named recipients are handled by the cross-post leg below (which
+                // reads the same `to` audience and delivers over the wire) — the S69 guard on that leg
+                // (isCommunityTarget) now preserves the Note type for person targets, fixing the
+                // shape-mismatch that made remote Direct notes 404 at the recipient. A recipient who has
+                // blocked the author is skipped (F-07). This mirrors the S47 block in CreateActivityHandler
+                // (the inbound path); the outbox-publish path (this branch, what the production UI uses)
+                // previously had no local Direct-recipient leg, so Direct notes posted via the UI were
+                // never surfaced to local recipients.
+                var s69Embedded = create.ExtractEmbeddedObject();
+                if (s69Embedded is KristofferStrube.ActivityStreams.IObject s69ContentObj && s69ContentObj.To is { } s69ToEntries)
+                {
+                    var s69Delivered = new HashSet<Iri>(AudienceIriComparer.Instance);
+                    foreach (var s69Entry in s69ToEntries)
+                    {
+                        if (s69Entry.ResolveObjectIri() is not { } s69TargetIri
+                            || s69TargetIri.IsPublicAudience()
+                            || s69TargetIri == actorIri
+                            || !s69Delivered.Add(s69TargetIri))
+                        {
+                            continue;
+                        }
+
+                        if (await persistence.Moderation
+                                .IsBlockedAsync(s69TargetIri, actorIri, ct)
+                                .ConfigureAwait(false))
+                        {
+                            continue;
+                        }
+
+                        if (await localActors.IsLocalActorAsync(s69TargetIri, ct).ConfigureAwait(false))
+                        {
+                            await persistence.Activities
+                                .AddToInboxAsync(s69TargetIri, activity, ct)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                }
+
                 // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
                 // star-subscribed fan-out servers) so they can re-fan the content to the wider federation.
                 await DeliverToRelaysAsync(persistence, delivery, actorIri, activity, ct).ConfigureAwait(false);
@@ -4548,14 +4590,28 @@ public static class ActivityPubServerExtensions
                 // fan-out and the local record already succeeded.
                 var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, baseUrl, actorIri, create, recipients, ct)
                     .ConfigureAwait(false);
-                // 138.11 (Lemmy interop, Note-vs-Page): a top-level cross-post (no inReplyTo) to ANY
-                // remote community carries an Article, not a Note. Lemmy's Note struct REQUIRES inReplyTo
+                // 138.11 (Lemmy interop, Note-vs-Page): a top-level cross-post (no inReplyTo) to a remote
+                // community carries an Article/Page, not a Note. Lemmy's Note struct REQUIRES inReplyTo
                 // (it is a comment); a top-level post has no parent, so it must be an Article/Page. An
                 // Iris target handles both (CreateActivityHandler uses IObject; CommunityContentRecorder
                 // tags both Note and Article). Replies (which have inReplyTo) keep their Note type.
-                var crossPostActivity = TransformCreateForCrossPost(create);
+                // S69: the Note→Page transform applies ONLY to community (Group) targets — a Direct note
+                // addressed to a remote PERSON must keep its Note type (the recipient's inbox expects a
+                // Create of a Note, not a Create of a Page). The cross-post leg's audience read (above)
+                // already includes person targets for Direct notes; without this guard a top-level Direct
+                // Note would be reshaped into a Page for the remote recipient, producing a shape mismatch
+                // (the "remote IRI 404" symptom).
                 foreach (var target in crossPostTargets)
                 {
+                    // S69: the Note→Page transform applies ONLY to community (Group) targets — a Direct note
+                    // addressed to a remote PERSON must keep its Note type (the recipient's inbox expects a
+                    // Create of a Note, not a Create of a Page). The cross-post leg's audience read (above)
+                    // already includes person targets for Direct notes; without this guard a top-level Direct
+                    // Note would be reshaped into a Page for the remote recipient, producing a shape mismatch
+                    // (the "remote IRI 404" symptom). We determine if the target is a community by checking
+                    // its IRI pattern: communities are addressed as {base}/ap/v1/c/{name}.
+                    var isCommunityTarget = target.Value.Contains("/ap/v1/c/");
+                    var crossPostActivity = isCommunityTarget ? TransformCreateForCrossPost(create) : (Activity)create;
                     await delivery.DeliverToActorAsync(target, crossPostActivity, actorIri, ct).ConfigureAwait(false);
                 }
             }
