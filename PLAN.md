@@ -14,6 +14,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S72 | NEW | - | Report(Flag) button state not restored on reload: _reportedAuthorIri in-memory only; server dedup OK
 
 ## CLOSED
 
