@@ -10,6 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+## NEW
+
+S58 | NEW | - | prod /ap/v1/health degraded (dead letters, 40/4537 signable actors)
+
 ## OPEN-QA
 
 ## CLOSED
