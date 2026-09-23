@@ -12,7 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
-S69 | NEW | - | cross-instance direct note not federated to recipient (remote IRI not found, no notification)
+S69 | NEW | qa | cross-instance direct note not federated to recipient (remote IRI not found, no notification) (REPRODUCED: live s58qa->s56qa; direct note IRI 404 on iris-b, no mention notification)
 S68 | NEW | qa | Poll federation: remote home feed misses poll (not stored locally, AP IRI 404); search finds it via index; no vote UI on remote (FAIL: live replyauth->s68qa; poll 404 locally, absent from home, search+proxy work)
 S67 | NEW | qa | cross-instance mention local path + no notification; remote search misses federated mention (FAIL: live s58qa->s56qa; mention post missing from s56qa home + no mention notification)
 S66 | NEW | qa | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong) (REPRODUCED: origin boost=1, remote home boost=2)
