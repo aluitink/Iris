@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S77 | OPEN | - | Prod Instance - user andrew:Password1 - only sees users content in home stream - notifications is full of followed content.
+S77 | OPEN-QA | dev1 | Prod Instance - user andrew:Password1 - only sees users content in home stream - notifications is full of followed content.
 S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
 ## NEW
 

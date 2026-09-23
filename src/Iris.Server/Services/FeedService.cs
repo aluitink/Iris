@@ -396,6 +396,11 @@ public sealed class FeedService : IFollowFeedService
             feed.AddRange(perFollowTimed[i].Items);
         }
 
+        // S77: sort newest-first by published date before the MaxItems cap. Without this, a large own
+        // outbox (e.g. 2000+ posts) fills the entire cap and followed content is never shown — the
+        // home feed reduces to "own content only" while notifications (which read the inbox, not the
+        // outbox merge) still show followed content. Mirrors PublicFeedService.SortByDateNewestFirst.
+        feed = SortByDateNewestFirst(feed).ToList();
         var result = TruncateDedup(feed);
         sw.Stop();
 
@@ -990,6 +995,26 @@ public sealed class FeedService : IFollowFeedService
         // Embedded when the activity carries the object as a full object (not a bare link) — that item
         // is the one that renders the content (and the server-rendered engagement counters) in place.
         return (objIri, first is IObject);
+    }
+
+    private static IReadOnlyList<IObjectOrLink> SortByDateNewestFirst(IReadOnlyList<IObjectOrLink> feed)
+        => feed
+            .OrderByDescending(item => ExtractPublishedDate(item))
+            .ToList();
+
+    private static DateTime? ExtractPublishedDate(IObjectOrLink item)
+    {
+        if (item is Activity activity)
+        {
+            return activity.Published;
+        }
+
+        if (item is IObject { Published: { } published })
+        {
+            return published;
+        }
+
+        return null;
     }
 }
 
