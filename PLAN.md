@@ -15,6 +15,8 @@ S72 | OPEN | - | Report button "Reported" state not restored on reload (in-memor
 
 ## NEW
 
+S73 | NEW | - | community join state lost on nav: /communities shows Join, AP ns#followersCount=2, Members lists user
+
 
 ## CLOSED
 
