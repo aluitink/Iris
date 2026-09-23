@@ -23,7 +23,8 @@ public sealed class InMemoryDeliveryDeadLetterStore : IDeliveryDeadLetterStore
     public const int DefaultCapacity = 1000;
 
     private readonly int _capacity;
-    private readonly ConcurrentQueue<DeadLetterEntry> _entries = new();
+    private readonly ConcurrentDictionary<long, DeadLetterEntry> _entries = new();
+    private long _sequence;
 
     /// <summary>
     /// Initializes a new store with the default capacity.
@@ -57,11 +58,14 @@ public sealed class InMemoryDeliveryDeadLetterStore : IDeliveryDeadLetterStore
         ArgumentNullException.ThrowIfNull(entry);
         ct.ThrowIfCancellationRequested();
 
-        _entries.Enqueue(entry);
-        // Evict the oldest beyond the capacity (newest stays).
-        while (_entries.Count > _capacity && _entries.TryDequeue(out _))
+        var key = _sequence++;
+        _entries[key] = entry;
+        // Evict beyond the capacity (a bounded operational signal; the most recent failures are the most
+        // actionable). Drop the oldest (smallest sequence) until the bound holds.
+        while (_entries.Count > _capacity)
         {
-            // drop the oldest
+            var oldest = _entries.MinBy(kv => kv.Key);
+            _entries.TryRemove(oldest.Key, out _);
         }
 
         return Task.CompletedTask;
@@ -71,8 +75,25 @@ public sealed class InMemoryDeliveryDeadLetterStore : IDeliveryDeadLetterStore
     public Task<IReadOnlyList<DeadLetterEntry>> ListAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        // Newest first: the ConcurrentQueue is FIFO, so reverse.
+        // Present entries newest-first (the dashboard shows the most recent failures on top).
         return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(
-            _entries.Reverse().ToList());
+            _entries.Values.OrderByDescending(e => e.DeadLetteredAtUtc).ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task RemoveAsync(DeadLetterEntry entry, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ct.ThrowIfCancellationRequested();
+        foreach (var kv in _entries)
+        {
+            if (kv.Value == entry)
+            {
+                _entries.TryRemove(kv.Key, out _);
+                break;
+            }
+        }
+
+        return Task.CompletedTask;
     }
 }

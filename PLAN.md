@@ -10,9 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-## NEW
+S60 | OPEN | dev1 | dead letters: no admin list/replay (9 stuck deliveries in prod undiagnosable)
 
-S60 | NEW | pa | dead letters: no admin list/replay (9 stuck deliveries in prod undiagnosable)
+## NEW
 
 ## OPEN-QA
 

@@ -1446,6 +1446,65 @@ public static class WebAppFactory
         // dead-letter backlog and the stored-actors-without-a-resolvable-signing-identity gap that
         // /ap/v1/health already reports as "degraded".
         MapAdminStatsEndpoint(endpoints);
+
+        // S60: dead-letter inspection + re-drive. The dashboard (S58) shows only the dead-letter COUNT;
+        // these endpoints let an operator list the failed deliveries (recipient inbox, failure kind,
+        // detail, timestamp) and re-enqueue a stuck delivery once its peer is reachable again.
+        MapDeadLetterEndpoints(endpoints);
+    }
+
+    /// <summary>
+    /// Maps the S60 dead-letter admin endpoints:
+    /// <c>GET /local/v1/admin/dead-letters</c> — list the held dead-lettered deliveries (newest first);
+    /// <c>POST /local/v1/admin/dead-letters/{index}/replay</c> — re-drive the delivery at that position
+    /// by re-enqueuing its original job and clearing the entry. Both require the <c>Admin</c> role.
+    /// Extracted (like <see cref="MapAdminStatsEndpoint"/>) so the operator-facing read path is testable
+    /// in isolation (no auth, no full host); dependencies are resolved through a single
+    /// <see cref="IServiceProvider"/> parameter to avoid the minimal API inferring one as a body.
+    /// </summary>
+    public static void MapDeadLetterEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/local/v1/admin/dead-letters", async (
+            IServiceProvider sp,
+            CancellationToken ct) =>
+        {
+            var deadLetters = sp.GetRequiredService<IDeliveryDeadLetterStore>();
+            var entries = await deadLetters.ListAsync(ct);
+            var items = entries
+                .Select(e => new
+                {
+                    InboxIri = e.InboxIri.Value,
+                    ActivityType = e.Activity?.Type,
+                    ActorIri = e.ActorIri?.Value,
+                    Attempts = e.Attempts,
+                    FailureKind = e.FailureKind.ToString(),
+                    FailureDetail = e.FailureDetail,
+                    DeadLetteredAtUtc = e.DeadLetteredAtUtc,
+                })
+                .ToList();
+            return Results.Json(new { count = items.Count, items });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        endpoints.MapPost("/local/v1/admin/dead-letters/{index:int}/replay", async (
+            int index,
+            IServiceProvider sp,
+            CancellationToken ct) =>
+        {
+            var deadLetters = sp.GetRequiredService<IDeliveryDeadLetterStore>();
+            var queue = sp.GetRequiredService<IDeliveryQueue>();
+            var entries = await deadLetters.ListAsync(ct);
+            if (index < 0 || index >= entries.Count)
+            {
+                return Results.NotFound(new { error = "No dead letter at that position." });
+            }
+
+            var entry = entries[index];
+            // Re-drive the original delivery (attempts reset to 0) and clear the entry so the replayed
+            // delivery is not shown as a lingering dead letter (if it fails again it is re-recorded fresh).
+            await queue.EnqueueAsync(entry.ToJob(), ct);
+            await deadLetters.RemoveAsync(entry, ct);
+            return Results.Ok(new { success = true, inboxIri = entry.InboxIri.Value, remaining = deadLetters.Count });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
     }
 
     /// <summary>

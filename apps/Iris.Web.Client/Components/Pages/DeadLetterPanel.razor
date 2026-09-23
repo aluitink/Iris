@@ -1,0 +1,162 @@
+@using System.Net.Http
+@using System.Text.Json
+
+<div class="card" style="margin-top: 1rem;">
+    <h2 style="margin-top: 0;">Dead-lettered deliveries</h2>
+    <p class="muted">
+        Deliveries that exhausted their retry budget. Once the receiving peer is reachable again, replay
+        re-enqueues the original delivery (attempts reset) and clears the entry.
+    </p>
+
+    @if (LoadError is not null)
+    {
+        <div class="error" role="alert">@LoadError</div>
+    }
+    else if (Loading)
+    {
+        <span class="muted">Loading dead letters…</span>
+    }
+    else if (Entries is null || Entries.Count == 0)
+    {
+        <p class="muted">No dead letters.</p>
+    }
+    else
+    {
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Recipient inbox</th>
+                    <th>Activity</th>
+                    <th>Failure</th>
+                    <th>Dead-lettered</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @for (var i = 0; i < Entries.Count; i++)
+                {
+                    var index = i;
+                    var entry = Entries[index];
+                    <tr>
+                        <td class="mono" title="@entry.InboxIri">@Truncate(entry.InboxIri, 48)</td>
+                        <td>@entry.ActivityType</td>
+                        <td>
+                            <span class="badge badge--warn">@entry.FailureKind</span>
+                            @if (!string.IsNullOrEmpty(entry.FailureDetail))
+                            {
+                                <div class="muted small" title="@entry.FailureDetail">@Truncate(entry.FailureDetail, 80)</div>
+                            }
+                        </td>
+                        <td>@entry.DeadLetteredAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>
+                            <button class="btn btn--small" type="button"
+                                    disabled="@Replaying"
+                                    @onclick="() => ReplayAsync(index)">@Replaying ? "…" : "Replay"</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (ReplayMessage is not null)
+        {
+            <div class="replay-message" role="status">@ReplayMessage</div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public HttpClient Http { get; set; } = default!;
+    [Parameter] public EventCallback Reloaded { get; set; }
+
+    private readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
+    private List<DeadLetterEntry>? Entries;
+    private string? LoadError;
+    private bool Loading;
+    private bool Replaying;
+    private string? ReplayMessage;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+        LoadError = null;
+        ReplayMessage = null;
+        try
+        {
+            var response = await Http.GetAsync("/local/v1/admin/dead-letters");
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = (int)response.StatusCode is 401 or 403
+                    ? "Access denied (admin only)."
+                    : "Could not load dead letters.";
+                return;
+            }
+            var payload = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(payload);
+            var items = new List<DeadLetterEntry>();
+            if (doc.RootElement.TryGetProperty("items", out var itemsEl))
+            {
+                foreach (var el in itemsEl.EnumerateArray())
+                {
+                    items.Add(new DeadLetterEntry(
+                        el.TryGetProperty("inboxIri", out var inbox) ? inbox.GetString() ?? string.Empty : string.Empty,
+                        el.TryGetProperty("activityType", out var atype) ? atype.GetString() : null,
+                        el.TryGetProperty("failureKind", out var kind) ? kind.GetString() ?? string.Empty : string.Empty,
+                        el.TryGetProperty("failureDetail", out var detail) ? detail.GetString() : null,
+                        el.TryGetProperty("deadLetteredAtUtc", out var d) ? d.GetDateTimeOffset() : DateTimeOffset.UtcNow));
+                }
+            }
+
+            Entries = items;
+        }
+        catch
+        {
+            LoadError = "Could not load dead letters.";
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task ReplayAsync(int index)
+    {
+        Replaying = true;
+        ReplayMessage = null;
+        try
+        {
+            var response = await Http.PostAsync($"/local/v1/admin/dead-letters/{index}/replay", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var payload = await response.Content.ReadAsStringAsync();
+                var doc = JsonDocument.Parse(payload);
+                var remaining = doc.RootElement.TryGetProperty("remaining", out var r) ? r.GetInt32() : 0;
+                ReplayMessage = $"Re-enqueued delivery for re-drive. {remaining} dead letter(s) remaining.";
+                // Refresh the list (the replayed entry was cleared server-side) and let the parent re-read
+                // the stats card so the dead-letter count updates.
+                await LoadAsync();
+                await Reloaded.InvokeAsync();
+            }
+            else
+            {
+                ReplayMessage = "Replay failed — the dead letter may have been cleared or re-driven already.";
+                await LoadAsync();
+            }
+        }
+        catch
+        {
+            ReplayMessage = "Replay failed (network or server error).";
+        }
+        finally
+        {
+            Replaying = false;
+        }
+    }
+
+    private static string Truncate(string value, int max) =>
+        string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= max ? value : value[..max] + "…");
+
+    private sealed record DeadLetterEntry(string InboxIri, string? ActivityType, string FailureKind, string? FailureDetail, DateTimeOffset DeadLetteredAtUtc);
+}
