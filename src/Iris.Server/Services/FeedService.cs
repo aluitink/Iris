@@ -487,7 +487,14 @@ public sealed class FeedService : IFollowFeedService
         {
             foreach (var entry in toEntries)
             {
-                if (entry.ResolveObjectIri() is { } iri && !iri.IsPublicAudience() && !iri.IsFollowersCollection())
+                if (entry.ResolveObjectIri() is { } iri
+                    && !iri.IsPublicAudience()
+                    && !iri.IsFollowersCollection()
+                    // S50: a community (Group) in `to` is a broadcast recipient (the community's
+                    // followers), not a single addressed actor. A top-level cross-post to a remote
+                    // community (a Page, 138.11) carries the community in `to`; without this exemption
+                    // the fallback misclassifies it as a directed reply and the home timeline drops it.
+                    && !iri.IsCommunityActorIri())
                 {
                     return true;
                 }

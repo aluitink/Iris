@@ -1145,6 +1145,22 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reports whether an IRI is a <em>community</em> actor (a <c>Group</c>): an IRI whose path carries a
+    /// <c>/c/</c> segment, the community-path convention in Iris (<c>…/ap/v1/c/name</c>), Lemmy
+    /// (<c>…/c/name</c>), and Pleroma. A community in a <c>to</c>/<c>cc</c> audience is a broadcast
+    /// recipient (the community's followers), never a single addressed actor — so a top-level post
+    /// addressed to a community (a cross-post) must not be mistaken for a directed reply (S50).
+    /// </summary>
+    /// <param name="iri">The IRI to test. May be the default value.</param>
+    /// <returns><see langword="true"/> when the IRI's path contains a <c>/c/</c> segment.</returns>
+    public static bool IsCommunityActorIri(this Iri iri)
+    {
+        const string segment = "/c/";
+        var value = iri.Value;
+        return value.Contains(segment, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// A case-insensitive, ordinal comparer for <see cref="Iri"/> (audience de-duplication in
     /// <see cref="GetAudienceIris"/>).
     /// </summary>

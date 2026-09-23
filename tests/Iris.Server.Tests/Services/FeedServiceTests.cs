@@ -1748,7 +1748,12 @@ public sealed class FeedServiceTests
 
             // A top-level cross-post to a remote (non-Iris, e.g. Lemmy) community carries a Page
             // (138.11). The author's local-outbox publish path records it in alice's outbox; the home
-            // feed's own-outbox filter must admit it (Page is content, like a Note).
+            // feed must surface it. The Page's wire shape (PostToRemoteCommunityAsync) addresses the
+            // remote community in `to` (the cross-post target) plus Public, is attributed to both the
+            // author and the community, and cc's the community's followers — so the home feed must both
+            // admit the Page as own content (IsOwnContentItem) AND not misread the community `to`
+            // audience as a directed reply (IsFollowReply).
+            var communityIri = "https://b.test/ap/v1/c/lemmy";
             var pageIri = $"https://{LocalHost}/notes/a-crosspost";
             persistence.Activities.AddToOutboxAsync(alice, new Create
             {
@@ -1756,8 +1761,8 @@ public sealed class FeedServiceTests
                 Actor = [new Link { Href = new Uri(alice.Value) }],
                 To =
                 [
+                    new Link { Href = new Uri(communityIri) },
                     new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") },
-                    new Link { Href = new Uri("https://b.test/ap/v1/c/lemmy") },
                 ],
                 Object =
                 [
@@ -1765,7 +1770,17 @@ public sealed class FeedServiceTests
                     {
                         Id = pageIri,
                         Content = ["a cross-posted top-level post (Page)"],
-                        AttributedTo = [new Link { Href = new Uri(alice.Value) }],
+                        AttributedTo =
+                        [
+                            new Link { Href = new Uri(alice.Value) },
+                            new Link { Href = new Uri(communityIri) },
+                        ],
+                        To =
+                        [
+                            new Link { Href = new Uri(communityIri) },
+                            new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") },
+                        ],
+                        Cc = [new Link { Href = new Uri($"{communityIri}/followers") }],
                     },
                 ],
             }).GetAwaiter().GetResult();
