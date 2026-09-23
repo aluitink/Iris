@@ -18,9 +18,9 @@ S62 | NEW | - | reply's to/cc omits parent author: no notify + no cross-instance
 
 ## OPEN-QA
 
-S60 | OPEN-QA | dev1 | dead letters: admin list/replay (store RemoveAsync + GET/POST /local/v1/admin/dead-letters[/{i}/replay] RequireRole(Admin) + DeadLetterPanel on /admin; 6 tests green; route+auth live 302, replay 400 distinct from SPA fallback)
-
 ## CLOSED
+
+S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live on qa 302/400 distinct from SPA fallback; TestServer covers list shape+replay+404; authed body blocked by bootstrap env, see S61)
 
 S59 | CLOSED | dev2 | signable-actor metric counts remote actors (PASS: local-only 15/15 live on qa; remote excluded; endpoint + health consistent)
 
