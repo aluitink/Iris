@@ -16,7 +16,7 @@ S69 | NEW | qa | cross-instance direct note not federated to recipient (remote I
 S68 | NEW | qa | Poll federation: remote home feed misses poll (not stored locally, AP IRI 404); search finds it via index; no vote UI on remote (FAIL: live replyauth->s68qa; poll 404 locally, absent from home, search+proxy work)
 S67 | NEW | qa | cross-instance mention local path + no notification; remote search misses federated mention (FAIL: live s58qa->s56qa; mention post missing from s56qa home + no mention notification)
 S66 | NEW | qa | federated boost count shows 0 on receiving instance (Shares tab + notification correct, only count wrong) (REPRODUCED: origin boost=1, remote home boost=2)
-S65 | NEW | qa | federated posts from followed remote users not in home feed (accessible via IRI) (FAIL: live s58qa->s56qa; s56qa post still missing from s58qa home)
+S65 | NEW | qa | federated posts from followed remote users not in home feed (accessible via IRI) (FAIL prior s58qa->s56qa; re-test replyauth->s68qa NOT reproduced: public Note appears in s68qa home after refresh; likely follow-propagation timing)
 S64 | NEW | qa | community Article post not appearing in community feed (post visible on author profile) (REPRODUCED: Article in outbox, missing from community feed)
 S63 | NEW | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 
