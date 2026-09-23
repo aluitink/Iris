@@ -105,10 +105,10 @@
         _blockIri = null;
         _flagIri = null;
 
-        // The blocks/mutes state comes from the UiContext's per-circuit moderation cache: the first
-        // card on a page walks the signed-in user's /blocks + /mutes collections once, and every
-        // other card (N-1 of them) is an O(1) lookup instead of 2N redundant collection reads.
-        (IsBlocked, IsMuted) = await Ui.GetModerationStateAsync(targetIri);
+        // The blocks/mutes/flags state comes from the UiContext's per-circuit moderation cache: the
+        // first card on a page walks the signed-in user's /blocks + /mutes + /flags collections once,
+        // and every other card (N-1 of them) is an O(1) lookup instead of 3N redundant collection reads.
+        (IsBlocked, IsMuted, IsReported) = await Ui.GetModerationStateAsync(targetIri);
     }
 
     private async Task BlockAsync()
@@ -220,6 +220,7 @@
             {
                 _flagIri = result.MintedId;
                 IsReported = true;
+                Ui.InvalidateModeration();
             }
         }
         finally

@@ -29,7 +29,7 @@ public sealed class UiContext
     /// time the sets were walked. Returned by <see cref="GetModerationSetsAsync"/>; the
     /// <see cref="GetModerationStateAsync"/> convenience wraps it in per-target booleans.
     /// </summary>
-    public sealed record ModerationEntry(HashSet<string> BlockedSet, HashSet<string> MutedSet, DateTime At);
+    public sealed record ModerationEntry(HashSet<string> BlockedSet, HashSet<string> MutedSet, HashSet<string> FlaggedSet, DateTime At);
     private sealed record ActorEntry(IObject Doc, DateTime At);
     private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
     private sealed record LemmyScoreEntry(LemmyPostScore? Score, DateTime At);
@@ -229,17 +229,18 @@ public sealed class UiContext
     /// re-creates a card) hit the cache. Returns (false, false) when signed out or the client is
     /// unavailable.
     /// </summary>
-    public async Task<(bool IsBlocked, bool IsMuted)> GetModerationStateAsync(Iri targetIri)
+    public async Task<(bool IsBlocked, bool IsMuted, bool IsFlagged)> GetModerationStateAsync(Iri targetIri)
     {
         if (_session.ActorId is not { } me)
         {
-            return (false, false);
+            return (false, false, false);
         }
 
         var entry = await GetModerationSetsAsync();
         return (
             entry.BlockedSet.Contains(targetIri.Value),
-            entry.MutedSet.Contains(targetIri.Value));
+            entry.MutedSet.Contains(targetIri.Value),
+            entry.FlaggedSet.Contains(targetIri.Value));
     }
 
     /// <summary>
@@ -254,7 +255,7 @@ public sealed class UiContext
     {
         if (_session.ActorId is not { } me)
         {
-            return new ModerationEntry([], [], DateTime.UtcNow);
+            return new ModerationEntry([], [], [], DateTime.UtcNow);
         }
 
         if (_moderation.TryGetValue(me.Value, out var cached)
@@ -267,7 +268,7 @@ public sealed class UiContext
         {
             // No client (signed out / key still loading): report empty. Not cached — a later call
             // with a client can still walk.
-            return new ModerationEntry([], [], DateTime.UtcNow);
+            return new ModerationEntry([], [], [], DateTime.UtcNow);
         }
 
         var fetchTask = _moderationInFlight.GetOrAdd(me.Value, _ => WalkModerationAsync(client, me));
@@ -294,6 +295,7 @@ public sealed class UiContext
     {
         var blocked = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var muted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var flagged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         try
         {
@@ -312,13 +314,21 @@ public sealed class UiContext
                     muted.Add(iri.Value);
                 }
             }
+
+            await foreach (var item in client.GetFlagsAsync(me))
+            {
+                if (ItemIri(item) is { } iri)
+                {
+                    flagged.Add(iri.Value);
+                }
+            }
         }
         catch
         {
             // Non-fatal: return the sets derived so far.
         }
 
-        return new ModerationEntry(blocked, muted, DateTime.UtcNow);
+        return new ModerationEntry(blocked, muted, flagged, DateTime.UtcNow);
     }
 
     /// <summary>
