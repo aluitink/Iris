@@ -172,12 +172,25 @@ public sealed class ActorCountRefreshService : BackgroundService
 
                 var iri = new Iri(id);
 
-                var postsTask = CountPostsAsync(_persistence, iri, ct);
-                var followersTask = _persistence.Follows.GetFollowersAsync(iri, ct);
-                var followingTask = _persistence.Follows.GetFollowingAsync(iri, ct);
-                var posts = await postsTask.ConfigureAwait(false);
-                var followers = await followersTask.ConfigureAwait(false);
-                var following = await followingTask.ConfigureAwait(false);
+                var posts = await CountPostsAsync(_persistence, iri, ct).ConfigureAwait(false);
+
+                // A community (Group) stores membership under EdgeKind.CommunityFollower / CommunityFollow
+                // (ICommunityStore), not the actor-follow edges (EdgeKind.Follow) that IFollowStore reads.
+                // Reading the Follow store for a Group yields a count that ignores actual membership, so the
+                // community document's followersCount/followingCount counters disagree with the /followers
+                // collection. Use the community store for Groups (S71).
+                IReadOnlyCollection<Iri> followers;
+                IReadOnlyCollection<Iri> following;
+                if (actor is Group)
+                {
+                    followers = await _persistence.Communities.GetFollowersAsync(iri, ct).ConfigureAwait(false);
+                    following = await _persistence.Communities.GetFollowsAsync(iri, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    followers = await _persistence.Follows.GetFollowersAsync(iri, ct).ConfigureAwait(false);
+                    following = await _persistence.Follows.GetFollowingAsync(iri, ct).ConfigureAwait(false);
+                }
 
                 if (WriteCountsIfChanged(actor, ns, posts, followers.Count, following.Count))
                 {
