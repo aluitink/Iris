@@ -11,12 +11,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S69 | OPEN | pa | direct note not federated via UI /outbox (no Direct-recipient leg in OutboxPublishHandler; cross-post leg drops local + transforms Note→Article)
-S68 | OPEN | - | poll not stored locally on remote (IRI 404; no vote UI)
 S66 | OPEN | - | federated boost count wrong on receiving instance
 
 ## NEW
 
 ## CLOSED
+
+S68 | CLOSED | qa | poll not stored locally on remote (IRI 404; no vote UI) — PASS: attributedTo rewrite fix verified live on qa stack
 
 S67 | CLOSED | qa | cross-instance mention: notify + search by mention (PASS: live qa-iris-a/b)
 S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
