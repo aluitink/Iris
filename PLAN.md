@@ -16,11 +16,11 @@ S62 | NEW | - | reply's to/cc omits parent author: no notify + no cross-instance
 
 ## OPEN-QA
 
-S61 | OPEN-QA | dev1 | admin bootstrap reads wrong env key; no admin in any env (blocks admin QA)
-
 ## CLOSED
 
-S60 | CLOSED | qa | dead letters: admin list/replay (PASS: live 302/400 on qa; blocked by S61)
+S61 | CLOSED | qa | admin bootstrap reads APP_ADMIN__* env (config fallback) (PASS)
+
+S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live; bodies via TestServer)
 
 S59 | CLOSED | dev2 | signable-actor metric counted remote actors (PASS: local-only; remote excluded)
 
