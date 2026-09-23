@@ -10,7 +10,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 
 ## Work (in your worktree, branch dev1 or dev2)
 
-1. `git fetch origin && git merge main` — never work on a stale base.
+1. Sync base: `git merge main` in your worktree (root main is the base; worktrees share the repo). Never work on a stale base.
 2. Reproduce: run the failing behavior against your dev stack (playwright) or a failing test.
 3. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
 4. Add or update one test that fails without the fix.
@@ -18,9 +18,9 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 
 ## Merge
 
-1. Commit: `fix(<area>): S## — <one line>`. Put QA evidence (repro steps, before/after) in the commit body.
-2. Push, merge to main from root: `git merge dev1 --no-ff` (or dev2).
-3. In PLAN.md set the item to `OPEN-QA`, owner stays your worktree.
+1. In PLAN.md (in your worktree) set the item to `OPEN-QA`, owner your worktree.
+2. Commit: `fix(<area>): S## — <one line>`. Put evidence (repro steps, before/after) in the commit body.
+3. Merge to main from root: `git merge <branch> --no-ff`.
 4. Deploy your dev stack from the merged build so QA sees the same code.
 
 ## Do not
