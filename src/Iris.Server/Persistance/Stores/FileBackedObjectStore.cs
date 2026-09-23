@@ -134,7 +134,7 @@ public sealed class FileBackedObjectStore : IObjectStore, IDisposable
                 .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as IObject)
                 .Where(o => o is not null && o is not Tombstone && o is not Actor)
                 .Select(o => o!)
-                .Where(o => !hasQuery || ContainsInStrings(o.Content, normalized!) || ContainsInStrings(o.Name, normalized!))
+                .Where(o => !hasQuery || MatchesContentNameOrTags(o, normalized!))
                 .OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal)
                 .Skip(offset)
                 .Take(limit)
@@ -153,8 +153,47 @@ public sealed class FileBackedObjectStore : IObjectStore, IDisposable
             return DocumentMap(s).Values
                 .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as IObject)
                 .Count(o => o is not null && o is not Tombstone && o is not Actor
-                    && (!hasQuery || ContainsInStrings(o.Content, normalized!) || ContainsInStrings(o.Name, normalized!)));
+                    && (!hasQuery || MatchesContentNameOrTags(o, normalized!)));
         }, ct);
+
+    /// <summary>
+    /// Returns true when any value in the object's multi-valued <c>content</c>/<c>name</c> contains
+    /// <paramref name="query"/> as a case-insensitive substring, or when the object's <c>tag</c> array
+    /// contains a mention or hashtag matching the query (S67).
+    /// </summary>
+    private static bool MatchesContentNameOrTags(IObject obj, string query)
+    {
+        if (ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query))
+        {
+            return true;
+        }
+
+        var tags = obj.Tag;
+        if (tags is null)
+        {
+            return false;
+        }
+
+        foreach (var tag in tags)
+        {
+            if (tag is ILink link)
+            {
+                if (link.Href is { } href && href.ToString().Contains(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            else if (tag is IObject tagObj)
+            {
+                if (ContainsInStrings(tagObj.Name, query))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Returns true when any value in the multi-valued <c>content</c>/<c>name</c> property contains

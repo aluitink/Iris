@@ -232,6 +232,40 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 }
             }
 
+            // S67 (mention → local inbox): when the post's tag[] mentions a local actor (and that actor
+            // is not the recipient), record the Create in the mentioned actor's inbox so they see a
+            // notification. The tag normalizer (156) has already run by this point (pre-store in
+            // StoreEmbeddedObjectAsync), so the tag[] carries resolved mention IRIs. Only local
+            // mentions are targeted (a remote mention is the remote instance's responsibility). A
+            // mention that the recipient has blocked is skipped (F-07).
+            if (embedded is KristofferStrube.ActivityStreams.IObject mentionObj
+                && embedded.GetMentionIris() is { Count: > 0 } mentionIris)
+            {
+                foreach (var mentionedIri in mentionIris)
+                {
+                    if (mentionedIri == recipient)
+                    {
+                        continue;
+                    }
+
+                    if (!await _localActors.IsLocalActorAsync(mentionedIri, ct).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    if (await _persistence.Moderation
+                            .IsBlockedAsync(mentionedIri, recipient, ct)
+                            .ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    await _persistence.Activities
+                        .AddToInboxAsync(mentionedIri, activity, ct)
+                        .ConfigureAwait(false);
+                }
+            }
+
             // S62 (reply → parent author): when the post is a reply (the embedded object's inReplyTo is
             // set), the parent note's author is the primary recipient — the replier's followers do not
             // include the parent's author (the parent's author is on another instance, not a follower of

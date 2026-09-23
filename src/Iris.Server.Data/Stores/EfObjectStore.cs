@@ -82,12 +82,19 @@ public sealed class EfObjectStore : IObjectStore
 
         // Update the tsvector column via raw SQL (SearchVector is [NotMapped] — EF Core does not
         // support string → tsvector mapping). The 'simple' text search configuration does no
-        // stemming or stopword removal.
+        // stemming or stopword removal. Weight D indexes tag[] mention IRIs and hashtag names (S67).
         await db.Database.ExecuteSqlRawAsync(
             @"UPDATE ""Objects"" SET ""SearchVector"" =
                 setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'content')::text, '')), 'A') ||
                 setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'name')::text, '')), 'B') ||
-                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'summary')::text, '')), 'C')
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'summary')::text, '')), 'C') ||
+                setweight(to_tsvector('simple', COALESCE(
+                    (SELECT string_agg(
+                        CASE WHEN (t ->> 'type') ~* 'mention' THEN COALESCE(t ->> 'href', '')
+                             ELSE COALESCE(t ->> 'name', '') END, ' ')
+                     FROM jsonb_array_elements(COALESCE(""Document"" -> 'tag', '[]'::jsonb)) AS t
+                     WHERE (t ->> 'type') ~* 'mention' OR (t ->> 'type') ~* 'hashtag' OR (t ->> 'href') IS NOT NULL
+                    ), '')), 'D')
               WHERE ""Id"" = {0}", new object[] { iri }, ct).ConfigureAwait(false);
     }
 

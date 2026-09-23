@@ -105,11 +105,47 @@ public sealed class InMemoryObjectStore : IObjectStore
     /// <summary>
     /// Returns true when any value in the object's multi-valued <c>content</c>/<c>name</c> contains
     /// <paramref name="query"/> as a case-insensitive substring (the same matching the global search
-    /// service applies to the content pass).
+    /// service applies to the content pass), or when the object's <c>tag</c> array contains a mention
+    /// or hashtag matching the query (S67: a note that mentions someone via a tag is findable by
+    /// searching the mention's handle or the hashtag's name).
     /// </summary>
     private static bool MatchesContentOrName(IObject obj, string query)
     {
-        return ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query);
+        if (ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query))
+        {
+            return true;
+        }
+
+        return MatchesTags(obj, query);
+    }
+
+    private static bool MatchesTags(IObject obj, string query)
+    {
+        var tags = obj.Tag;
+        if (tags is null)
+        {
+            return false;
+        }
+
+        foreach (var tag in tags)
+        {
+            if (tag is ILink link)
+            {
+                if (link.Href is { } href && href.ToString().Contains(query, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            else if (tag is IObject tagObj)
+            {
+                if (ContainsInStrings(tagObj.Name, query))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static bool ContainsInStrings(IEnumerable<string>? values, string query)
