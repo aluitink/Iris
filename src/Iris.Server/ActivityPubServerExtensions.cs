@@ -4412,6 +4412,35 @@ public static class ActivityPubServerExtensions
             createActivity.Object = rewrittenItems;
         }
 
+        // S68: the same dial-base mismatch on the ATTRIBUTED-TO side. A Create's embedded object
+        // carries its author in attributedTo (a Link to the author actor); when the client dialed
+        // via the host-published base, that reference carries the dial base, but the instance stores
+        // its local actors under the advertised base. The exact-IRI ListByActorAsync lookup in the
+        // home feed (FeedService.GetDeliveredContentAsync) then misses the stored object, so the
+        // federated post never appears in the follower's home feed — no poll UI, no note card.
+        // Rewrite the attributedTo reference to the advertised base (store-checked, host-guarded,
+        // local /ap/v1/… paths only — see RewriteAttributedToToAdvertisedBaseAsync) so the home
+        // feed's ListByActorAsync query matches. Runs AFTER MintActivityIds (the embedded object's
+        // id is minted there) so the object is stored under the canonical attributedTo reference.
+        if (activity is Create s68Create && s68Create.Object is { } s68CreateObjects)
+        {
+            var s68Rewritten = new List<IObjectOrLink>();
+            foreach (var item in s68CreateObjects)
+            {
+                if (item is IObject s68Embedded
+                    && await s68Embedded.RewriteAttributedToToAdvertisedBaseAsync(
+                        baseUrl, context.Request.Host.Value ?? string.Empty, ct).ConfigureAwait(false) is { } s68Fixed)
+                {
+                    s68Rewritten.Add(s68Fixed);
+                }
+                else
+                {
+                    s68Rewritten.Add(item);
+                }
+            }
+            s68Create.Object = s68Rewritten;
+        }
+
         // S43: resolve the reply's parent author ONCE before the audience rewrite and the 136.7
         // delivery, so both share the same result (the remote fetch is non-deterministic — an
         // independent fetch in each site can fail in one and succeed in the other).

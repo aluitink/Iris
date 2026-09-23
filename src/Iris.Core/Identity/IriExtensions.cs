@@ -1591,4 +1591,123 @@ public static class ReplyIriNormalization
         var rewrittenJson = System.Text.Encoding.UTF8.GetString(writerStream.ToArray());
         return ActivityJson.Deserialize<IObject>(rewrittenJson);
     }
+
+    /// <summary>
+    /// S68: rewrites the first <c>attributedTo</c> reference on an object from the dial-base IRI
+    /// (the host-published base the authoring client dialed) to the advertised-base IRI (the
+    /// instance's canonical public base), when the reference is a local actor/community IRI and
+    /// the host is local. The ActivityStreams library's deserialized objects do not persist property
+    /// setter changes, so the rewrite is done via a JSON round-trip (serialize, replace the
+    /// <c>attributedTo</c> value, deserialize back).
+    /// </summary>
+    /// <remarks>
+    /// This is the attributedTo analogue of <see cref="RewriteInReplyToToAdvertisedBaseAsync"/>.
+    /// Without it, a federated Create whose embedded object carries a dial-base <c>attributedTo</c>
+    /// is stored on the receiving instance with the dial-base IRI in the <c>AttributedTo</c>
+    /// relational column, but the home feed's <c>ListByActorAsync</c> query uses the advertised-base
+    /// IRI (from the follow edge), so the object is invisible to the follower's home feed.
+    /// </remarks>
+    /// <param name="obj">The object to rewrite (may be null).</param>
+    /// <param name="baseUrl">The instance's advertised base URI.</param>
+    /// <param name="requestHost">The request's host (the dial base).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The rewritten object, or null if no rewrite was needed.</returns>
+    public static async Task<IObject?> RewriteAttributedToToAdvertisedBaseAsync(
+        this IObject? obj,
+        string baseUrl,
+        string requestHost,
+        CancellationToken ct)
+    {
+        var first = obj?.AttributedTo?.FirstOrDefault();
+        if (first is not { } attrRef)
+        {
+            return null;
+        }
+
+        var attrIri = attrRef.ResolveObjectIri();
+        if (attrIri is not { } attr)
+        {
+            return null;
+        }
+
+        // A local actor/community lives under the instance's ActivityPub route prefix (/ap/v1/…).
+        // Anything else (a bare IRI, a remote path, a non-AP reference) is a genuinely foreign
+        // author — never rewrite it.
+        const string routePrefix = "/ap/v1/";
+        var path = attr.Value;
+        if (!path.Contains(routePrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var attrUri = attr.Uri;
+        if (!attrUri.IsAbsoluteUri
+            || (attrUri.Scheme != Uri.UriSchemeHttp && attrUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return null;
+        }
+
+        // The canonical (advertised-base) form of the same local path.
+        var canonicalValue = $"{baseUrl.TrimEnd('/')}{attrUri.PathAndQuery}";
+        if (canonicalValue == attr.Value)
+        {
+            return null;
+        }
+
+        // Guard: the author's host must be local (the advertised base's host, the request's host —
+        // the dial base — or a loopback host). A genuinely foreign host (a different instance's
+        // public hostname) is left untouched even when its path contains /ap/v1/… (a remote
+        // instance whose route prefix coincides with this instance's).
+        var baseHostOnly = new Uri(baseUrl).DnsSafeHost;
+        var requestHostOnly = requestHost.Contains(':')
+            ? requestHost[..requestHost.LastIndexOf(':')]
+            : requestHost;
+        var attrHostOnly = attrUri.DnsSafeHost;
+        var isLocalHost = attrHostOnly.Equals(baseHostOnly, StringComparison.OrdinalIgnoreCase)
+            || attrHostOnly.Equals(requestHostOnly, StringComparison.OrdinalIgnoreCase)
+            || attrHostOnly.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || attrHostOnly.Equals("127.0.0.1", StringComparison.Ordinal);
+        if (!isLocalHost)
+        {
+            return null;
+        }
+
+        // Rewrite via JSON round-trip: serialize the object, replace the attributedTo value,
+        // deserialize back. The ActivityStreams library's deserialized objects do not persist
+        // property setter changes (the getter returns a fresh copy from the original
+        // deserialization), so a new instance with the modified JSON is the only reliable way
+        // to produce an object whose AttributedTo getter returns the rewritten value.
+        var json = ActivityJson.Serialize(obj!);
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        if (!root.TryGetProperty("attributedTo", out _))
+        {
+            return null;
+        }
+
+        using var writerStream = new System.IO.MemoryStream();
+        using (var writer = new Utf8JsonWriter(writerStream))
+        {
+            writer.WriteStartObject();
+            foreach (var prop in root.EnumerateObject())
+            {
+                if (prop.Name == "attributedTo")
+                {
+                    writer.WritePropertyName("attributedTo");
+                    writer.WriteStartArray();
+                    writer.WriteStringValue(canonicalValue);
+                    writer.WriteEndArray();
+                }
+                else
+                {
+                    prop.WriteTo(writer);
+                }
+            }
+            writer.WriteEndObject();
+        }
+
+        var rewrittenJson = System.Text.Encoding.UTF8.GetString(writerStream.ToArray());
+        return ActivityJson.Deserialize<IObject>(rewrittenJson);
+    }
 }
