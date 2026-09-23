@@ -526,4 +526,36 @@ public static class TestSeeder
             Object = [note],
         }).GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// Appends an <see cref="Announce"/> activity (whose object is an embedded <see cref="Create"/>,
+    /// itself wrapping a <see cref="Note"/>) to the actor's outbox — the Lemmy relay envelope shape
+    /// (138.20) that remote community outbox items arrive in. S53: the community feed renders these
+    /// (via the backfill's envelope unwrap), but the community search must match content nested two
+    /// levels down.
+    /// </summary>
+    public static void AddAnnouncedCreateActivity(
+        InMemoryPersistenceProvider persistence, Iri actorIri, string activityId, string content,
+        IEnumerable<Iri>? attributedTo = null)
+    {
+        var note = new Note { Id = $"{activityId}#note", Content = [content] };
+        if (attributedTo is not null)
+        {
+            note.AttributedTo = attributedTo.Select(iri => new Link { Href = new Uri(iri.Value) }).ToList();
+        }
+
+        var create = new Create
+        {
+            Id = $"{activityId}#create",
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [note],
+        };
+
+        persistence.Activities.AddToOutboxAsync(actorIri, new Announce
+        {
+            Id = activityId,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [create],
+        }).GetAwaiter().GetResult();
+    }
 }

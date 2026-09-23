@@ -266,6 +266,33 @@ public sealed class CommunitySearchIntegrationTests : IAsyncLifetime
         Assert.Equal("garden post", queryValue);
     }
 
+    // --- S53: search matches content nested in the Lemmy relay envelope --------------
+
+    [Fact]
+    public async Task Search_MatchesContent_NestedInAnnouncedCreate()
+    {
+        // S53 repro: a member's outbox carries an Announce of an embedded Create of a Note (the
+        // Lemmy relay envelope, 138.20). The community feed renders the post (the backfill unwraps
+        // the envelope), but the community search's in-memory match only looks one level into the
+        // activity (the Create), never the Note — so the post is invisible to search (0 results).
+        // "quantum" occurs only in the nested note's content.
+        var communityIri = TestSeeder.SeedCommunity(_persistence, AHost, Community);
+        var carolIri = TestSeeder.SeedPerson(_persistence, AHost, "carol");
+        TestSeeder.AddMember(_persistence, communityIri, carolIri);
+        TestSeeder.AddAnnouncedCreateActivity(
+            _persistence, carolIri, $"{carolIri.Value}/activities/announce-1",
+            "notes on quantum coherence", new[] { communityIri });
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?q=quantum&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Single(items);
+        Assert.Equal($"https://{AHost}/ap/v1/u/carol/activities/announce-1", items[0]);
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
     // --- Edge cases -----------------------------------------------------------------
 
     [Fact]
