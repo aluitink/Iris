@@ -104,4 +104,46 @@ public static class CollectionPageFactory
             : collection.Items is { } items
                 ? items.ToList()
                 : [];
+
+    /// <summary>
+    /// Resolves the IRI of the FIRST page of a fetched collection document — the same rule the
+    /// client's <c>IActivityPubClient.GetCollectionAsync</c> uses to start its page walk:
+    /// <list type="bullet">
+    /// <item>An <see cref="OrderedCollectionPage"/> is its own page (the <paramref name="collectionIri"/>).</item>
+    /// <item>A <see cref="Collection"/> with a <c>first</c> link yields that link's IRI (the
+    /// canonical Mastodon shape: a bare <c>OrderedCollection</c> envelope carrying
+    /// <c>first</c> = <c>{collection}?page=true</c> and no items of its own).</item>
+    /// <item>A collection that carries its items directly and has no <c>first</c> (Lemmy's outbox
+    /// shape) is its own first page (the <paramref name="collectionIri"/>).</item>
+    /// </list>
+    /// Returns <see langword="null"/> when the document is not a collection or has no resolvable
+    /// first page.
+    /// </summary>
+    /// <param name="collection">The fetched collection document.</param>
+    /// <param name="collectionIri">The IRI the document was fetched at (used when the document is
+    /// its own first page).</param>
+    public static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionIri)
+    {
+        // If the fetched object is itself a page, use it directly.
+        if (collection is OrderedCollectionPage)
+        {
+            return collectionIri;
+        }
+
+        // Otherwise follow the collection's `first` link to reach the first page.
+        if (collection is Collection { First: { } first })
+        {
+            return first.ResolveCollectionIri();
+        }
+
+        // A collection that carries its items directly (an OrderedCollection with orderedItems, or a
+        // Collection with items) and has no `first` link: the collection's own IRI is the first page.
+        if (collection is Collection col &&
+            (col.OrderedItems is { } oi && oi.Any() || col.Items is { } ci && ci.Any()))
+        {
+            return collectionIri;
+        }
+
+        return null;
+    }
 }

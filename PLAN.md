@@ -16,7 +16,7 @@ S55 | OPEN-QA | dev1 | post edit UI stale (CONFIRMED Pass 343: feed serves stale
 
 ## NEW
 
-S56 | NEW | - | remote actor profile shows Posts (0) though their posts appear in the timeline
+S56 | OPEN-QA | dev2 | remote actor profile shows Posts (0) though their posts appear in the timeline
 
 ## CLOSED
 
