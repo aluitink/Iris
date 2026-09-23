@@ -1736,6 +1736,53 @@ public sealed class FeedServiceTests
         Assert.Contains($"https://{LocalHost}/notes/b-1", ids);
     }
 
+    // --- S50 repro: home feed omits the author's own cross-post (a Page) ------------------
+
+    [Fact]
+    public async Task Feed_OwnCrossPostPage_SurfacesInHomeFeed()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            SeedActor(persistence, alice, "Alice");
+
+            // A top-level cross-post to a remote (non-Iris, e.g. Lemmy) community carries a Page
+            // (138.11). The author's local-outbox publish path records it in alice's outbox; the home
+            // feed's own-outbox filter must admit it (Page is content, like a Note).
+            var pageIri = $"https://{LocalHost}/notes/a-crosspost";
+            persistence.Activities.AddToOutboxAsync(alice, new Create
+            {
+                Id = pageIri,
+                Actor = [new Link { Href = new Uri(alice.Value) }],
+                To =
+                [
+                    new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") },
+                    new Link { Href = new Uri("https://b.test/ap/v1/c/lemmy") },
+                ],
+                Object =
+                [
+                    new Page
+                    {
+                        Id = pageIri,
+                        Content = ["a cross-posted top-level post (Page)"],
+                        AttributedTo = [new Link { Href = new Uri(alice.Value) }],
+                    },
+                ],
+            }).GetAwaiter().GetResult();
+
+            // A plain Note post (the control): it must also surface, proving the filter still works.
+            AddPost(persistence, alice, "a-note", "a plain note post");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice);
+
+        // The author's own cross-post (a Page) must surface in the home feed (S50).
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-crosspost");
+        // The author's own Note post (the control) must still surface.
+        Assert.Contains(feed, f => IdOf(f) == $"https://{LocalHost}/notes/a-note");
+    }
+
     [Fact]
     public async Task Feed_OwnPostBuries_UnderCapOfActorDocNoise_StillKeepsOwnCreate()
     {
