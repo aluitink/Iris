@@ -232,6 +232,30 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 }
             }
 
+            // S62 (reply → parent author): when the post is a reply (the embedded object's inReplyTo is
+            // set), the parent note's author is the primary recipient — the replier's followers do not
+            // include the parent's author (the parent's author is on another instance, not a follower of
+            // the replier). Deliver the Create to the parent author's inbox (cross-instance, signed as
+            // the replier) so the parent author is notified and can fetch the reply. A local parent
+            // author sees the reply via the parent note's /replies collection (no cross-instance
+            // delivery needed). A parent author who has blocked the replier does not want the replier's
+            // content — skip the delivery. The parent author is resolved from the stored parent note's
+            // attributedTo (best-effort: an unresolvable parent author simply does not add a delivery —
+            // the follower fan-out above still applies).
+            if (embedded is KristofferStrube.ActivityStreams.IObject replyObj
+                && replyObj.GetParentIri() is { } parentIri
+                && await _persistence.Objects.TryGetObjectAsync(parentIri, out var parentObj, ct).ConfigureAwait(false)
+                && parentObj?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } parentAuthorIri
+                && parentAuthorIri != recipient
+                && !await _localActors.IsLocalActorAsync(parentAuthorIri, ct).ConfigureAwait(false)
+                && !await _persistence.Moderation.IsBlockedAsync(parentAuthorIri, recipient, ct).ConfigureAwait(false)
+                && activity.Actor?.FirstOrDefault()?.ResolveObjectIri() is { } replierIri)
+            {
+                await _delivery
+                    .DeliverToActorAsync(parentAuthorIri, activity, replierIri, ct)
+                    .ConfigureAwait(false);
+            }
+
             // F-06 (relay fan-out): deliver the post to each relay the author has subscribed to (a
             // `star`-subscribed fan-out server, AP §5.1.3), signed as the author. A relay is a remote
             // fan-out server — always cross-instance — so no local-actor / block check is needed: the

@@ -393,6 +393,68 @@ public sealed class CreateActivityHandlerTests
         Assert.True(await persistence.Replies.HasReplyAsync(parentNote, replyIri));
     }
 
+    // --- S62: reply → remote parent author delivery -------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_ReplyToRemoteParent_DeliversToParentAuthorInbox()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson); // bob (local) is the recipient
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        // The parent note is authored by a REMOTE actor (alice on a.domain.local).
+        var parentNoteIri = new Iri("https://a.domain.local/ap/v1/objects/parent-123");
+        var parentNote = new Note
+        {
+            Id = parentNoteIri.Value,
+            Content = ["a post on the remote instance"],
+            AttributedTo = [new Link { Href = new Uri(RemotePerson.Value) }],
+        };
+        await persistence.Objects.PutObjectAsync(parentNote);
+
+        // A remote actor (erin) replies to the parent note. The Create arrives in bob's (local) inbox.
+        var remoteReplier = new Iri("https://c.domain.local/ap/v1/u/erin");
+        var create = BuildCreate(remoteReplier, inReplyTo: parentNoteIri.Value);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // S62: the reply is delivered to the parent author's (alice's) inbox (cross-instance).
+        var parentAuthorDelivery = delivery.Delivered.FirstOrDefault(d => d.InboxIri == RemotePerson.InboxOf());
+        Assert.NotNull(parentAuthorDelivery);
+        Assert.Same(create, parentAuthorDelivery!.Activity);
+        Assert.Equal(remoteReplier, parentAuthorDelivery.ActorIri); // signed as the replier
+    }
+
+    [Fact]
+    public async Task HandleAsync_ReplyToLocalParent_SkipsParentAuthorDelivery()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson); // bob (local) is the recipient
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        // The parent note is authored by a LOCAL actor (frank on b.domain.local).
+        await SeedLocalActorAsync(persistence, LocalFollower); // frank (local)
+        var parentNoteIri = new Iri("https://b.domain.local/ap/v1/objects/parent-456");
+        var parentNote = new Note
+        {
+            Id = parentNoteIri.Value,
+            Content = ["a post on the local instance"],
+            AttributedTo = [new Link { Href = new Uri(LocalFollower.Value) }],
+        };
+        await persistence.Objects.PutObjectAsync(parentNote);
+
+        // A remote actor (erin) replies to the parent note. The Create arrives in bob's (local) inbox.
+        var remoteReplier = new Iri("https://c.domain.local/ap/v1/u/erin");
+        var create = BuildCreate(remoteReplier, inReplyTo: parentNoteIri.Value);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // A local parent author sees the reply via their /replies feed — no cross-instance delivery.
+        Assert.Empty(delivery.Delivered);
+    }
+
     // --- Likes/shares preservation (994 complete fix investigation) ----------------------
 
     [Fact]

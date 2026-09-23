@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S62 | OPEN | - | reply's to/cc omits parent author: no notify + no cross-instance delivery
-
 ## NEW
 
 ## OPEN-QA
+
+S62 | OPEN-QA | dev2 | reply's to/cc omits parent author: no notify + no cross-instance delivery
 
 ## CLOSED
 
