@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S63 | OPEN | - | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 S64 | OPEN | - | community Article post not in community feed (REPRODUCED)
 
 ## NEW
@@ -21,6 +20,8 @@ S67 | NEW | qa | cross-instance mention: local path, no notify; search misses (R
 S66 | NEW | qa | federated boost count wrong on receiving instance (REPRODUCED)
 
 ## OPEN-QA
+
+S63 | OPEN-QA | dev1 | prod /ap/v1/health degraded: 13 dead letters + 40/4547 actors unresolvable
 
 ## CLOSED
 
