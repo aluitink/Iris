@@ -13,9 +13,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 
 S50 | OPEN-QA | dev2 | home feed omits author's own cross-post Page (138.11) — feed filter now admits Page
-S57 | OPEN-QA | dev2 | cross-post to local community dropped by shared-inbox (route to community inbox; accept community as recipient)
 
 ## CLOSED
+
+S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: S57 test + 22/22 fed tests green; fix on qa)
 
 S54 | CLOSED | dev1 | input buttons disabled while typing (oninput binding)
 S52 | CLOSED | dev1 | community post ignored post type (Article/Poll)
