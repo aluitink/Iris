@@ -15,6 +15,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## NEW
 
 S72 | NEW | - | Report(Flag) button state not restored on reload: _reportedAuthorIri in-memory only; server dedup OK
+S73 | NEW | - | community join state lost on nav: /communities shows Join, AP ns#followersCount=2, Members lists user
 
 ## CLOSED
 
