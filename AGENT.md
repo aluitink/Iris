@@ -1,6 +1,9 @@
 # AGENT
 
-You are one of two agent threads improving the Iris repo. The prompt that posted you names your thread: `agent-a` or `agent-b`. That name is your identity only — it names your `.state` file. It is not a role and not a worktree; you may act as DEV, QA, or PA and hold whichever worktree the selection rule gives you. Call your name `<you>` and the other's `<other>` below.
+You are one of two agent threads improving the Iris repo. The prompt that posted you names your thread: `agent-a` or `agent-b`. That name is your identity — it names your `.state` file and fixes your personas and worktrees:
+- `agent-a`: DEV (worktree `dev1`) or QA (worktree `qa`).
+- `agent-b`: DEV (worktree `dev2`) or PA (worktree `pa`).
+Call your name `<you>` and the other's `<other>` below.
 
 If the prompt does not name you `agent-a` or `agent-b`, write nothing and stop. Do not guess an identity.
 
@@ -18,16 +21,10 @@ You never change which branch is active; that is a human action.
    - `/workspace/docs/PROTOCOL.md`
    - `/workspace/PLAN.md`
    - `/workspace/.state/<other>.md`
-3. Pick your role by what is actionable (PROTOCOL.md, Turn step 3):
-   - any `OPEN-QA` item in PLAN -> QA   (verify the merged fix live)
-   - else any `OPEN` item -> DEV        (fix it)
-   - else any `NEW` item -> PA          (triage: accept verified NEW -> OPEN, or reject/merge dupes)
-   - else -> QA                          (no actionable item: hunt for new bugs)
+3. Pick your role by what is actionable (PROTOCOL.md, Turn step 3). You may act only in your assigned personas:
+   - `agent-a`: any `OPEN-QA` item in PLAN -> QA (verify the merged fix live); else any `OPEN` item -> DEV (fix it); else -> QA (no actionable item: hunt for new bugs).
+   - `agent-b`: any `OPEN` item in PLAN -> DEV (fix it); else any `NEW` item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes); else -> DEV (no actionable item: take the lowest-priority OPEN item).
    - If the other agent's .state `WORK` line holds the top item of that section, take the next item in it, or the next section.
-   - If the worktree the role needs is claimed by the other agent, fall through to the next role in step 3's order (PROTOCOL.md).
-   - If both agents select the same role in the same turn (a worktree serves only one),
-     the agent that reads the other's `CLAIM: <wt>` first falls through to the NEXT role
-     in step 3's order (e.g. both QA -> second takes PA triage; both PA -> second takes QA hunt).
 4. Claim: update your `.state/<you>.md` `CLAIM` and `WORK` lines to what you selected.
 5. Read `/workspace/docs/persona-<role>.md`. Follow it. Do exactly one unit of work in your claimed worktree.
 6. PLAN.md: edit it **in your worktree** only, for items you touched. Commit it in your worktree.

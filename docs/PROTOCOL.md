@@ -2,16 +2,18 @@
 
 Two agent threads run a loop: `agent-a` and `agent-b`. Each turn, the loop prompt
 points the agent at /workspace/AGENT.md, which points at this file.
-Agents act as DEV, QA, or PA. An agent may hold any worktree per turn.
-Thread name is identity only; it never fixes a role or a worktree.
+Agents act as DEV, QA, or PA. Each thread is pinned to specific personas and worktrees:
+`agent-a` is DEV (`dev1`) or QA (`qa`); `agent-b` is DEV (`dev2`) or PA (`pa`).
+A thread never acts in a persona or worktree outside its pin.
 
 ## Roles
 
-| role | worktree | branch | stack | merges |
-|------|----------|--------|-------|--------|
-| DEV  | dev1 or dev2 | dev1 / dev2 | dev env | after `dotnet test` green |
-| QA   | qa         | qa        | qa env  | every turn |
-| PA   | pa         | pa        | unclaimed dev env (redeployed) | every non-idle turn |
+| role | agent | worktree | branch | stack | merges |
+|------|-------|----------|--------|-------|--------|
+| DEV  | agent-a | dev1 | dev1 | dev env | after `dotnet test` green |
+| DEV  | agent-b | dev2 | dev2 | dev env | after `dotnet test` green |
+| QA   | agent-a | qa     | qa   | qa env  | every turn |
+| PA   | agent-b | pa     | pa   | unclaimed dev env (redeployed) | every non-idle turn |
 
 The loop operates on `ACTIVE_BRANCH` from /workspace/LOOP-CONFIG (call it `<active>`).
 All `main` in this file means `<active>`. Humans set it; agents never do.
@@ -21,20 +23,18 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
 1. State gate: rewrite `.state/<you>.md` FIRST (format below). `WORK: idle` if role not yet selected.
    No worktree, test, or PLAN.md access before this file exists on disk.
 2. Read: `LOOP-CONFIG`, `PLAN.md`, `.state/<other>.md`.
-3. Pick role by what is actionable (most time-critical first):
-   - any OPEN-QA item -> QA   (verify the merged fix live)
-   - else any OPEN item -> DEV (fix it)
-   - else any NEW item -> PA   (triage: accept verified NEW -> OPEN, or reject/merge dupes)
-   - else -> QA                (no actionable item: hunt for new bugs on the qa stack)
-   - Both agents selecting the same role in the same turn: the worktree serves only one.
-     The agent that reads the other's `CLAIM: <wt>` first falls through to the NEXT role
-     in this list's order. (e.g. both pick QA -> second takes PA triage; both pick PA
-     -> second takes QA hunt.) PA is not limited to empty-PLAN turns.
-4. Acquire the worktree the role needs:
-   - QA -> `qa`. DEV -> `dev1` else `dev2`. PA -> `pa`.
-   - Take it if the other agent's `.state` does not claim it.
-   - If claimed: DEV takes the other dev worktree; QA and PA have no fallback.
-   - If no worktree is available for the role, fall through to the next role in step 3's order.
+3. Pick role by what is actionable, within your pin (agent-a: DEV|QA; agent-b: DEV|PA):
+   - agent-a: any OPEN-QA item -> QA (verify the merged fix live);
+     else any OPEN item -> DEV (fix it);
+     else -> QA (no actionable item: hunt for new bugs on the qa stack).
+   - agent-b: any OPEN item -> DEV (fix it);
+     else any NEW item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes);
+     else -> DEV (no actionable item: take the lowest-priority OPEN item).
+   PA is not limited to empty-PLAN turns. Both agents may be DEV in the same turn:
+   they hold different dev worktrees, so there is no collision.
+4. Your role's worktree is fixed by the pin:
+   - agent-a: DEV -> `dev1`, QA -> `qa`. agent-b: DEV -> `dev2`, PA -> `pa`.
+   - Write your `CLAIM` for it in your `.state` file (Claims section below still applies to the PLAN item you take).
    - If no role is selectable, write an idle `.state` file and stop. Idle is a valid turn.
 5. Update `.state/<you>.md` `CLAIM` and `WORK` lines to your selection.
 6. Do ONE unit of work (docs/persona-<role>.md) in your claimed worktree.
@@ -47,22 +47,20 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
 
 - `.state/` is gitignored and lives on the shared filesystem at `/workspace/.state/`. It is the only
   same-turn coordination channel. Visibility is read-time: you see what is on disk when you read.
-- A worktree is claimed by writing `CLAIM: <worktree>` in your `.state` file. Every claim write also
-  stamps `TS: <unix-epoch-seconds>` (current wall-clock) so freshness is measurable.
-- Before claiming, read the other `.state` file. Classify its claim on the worktree you want:
-  - **Fresh** (`now - TS < 15 min`): the other agent is actively holding it. Do NOT take it;
-    fall through to the next role in step 3's order.
-  - **Stale** (`now - TS >= 60 min`, or `TS` missing/unparseable on a non-idle claim): the holder is
-    gone. You may take it; write your own fresh `TS` and note `TOOK: <wt>` in your `.state` file.
-  - Between 15 and 60 min: treat as fresh (do not take); the holder may still be mid-turn.
+- Worktrees are pinned: `agent-a` holds `dev1` or `qa`, `agent-b` holds `dev2` or `pa`.
+  Worktrees never cross, so no worktree arbitration is needed.
+- Write `CLAIM: <worktree>` in your `.state` file every turn you hold it. Every claim write also
+  stamps `TS: <unix-epoch-seconds>` (current wall-clock) so the other agent can tell whether
+  you are active this turn.
 - If the other `.state` file is missing or empty, the other agent is absent: no claims of theirs exist.
   Do not wait. Do not look for work outside PLAN.md.
-- Narrow the race: re-read the other `.state` file IMMEDIATELY before writing your own claim. If it now
-  holds a FRESH claim on the worktree you want, fall through before writing. This shrinks the collision
-  window to the read->write gap. Residual same-instant race (both in the gap): last writer wins on disk;
-  the loser sees the fresh `TS` on its next read and falls through that turn. No compensation needed.
-- Claiming a PLAN item = writing its id on the `WORK` line. Never take an id in the other's `WORK` line.
-- Both agents must never edit the same PLAN.md item line in the same turn. If unsure, skip the item.
+- Claiming a PLAN item = writing its id on the `WORK` line. Before claiming, read the other `.state`
+  file: never take an id in the other's `WORK` line.
+- Narrow the race: re-read the other `.state` file IMMEDIATELY before writing your own `WORK` line.
+  If the item you want is now in their `WORK` line, take the next item. Residual same-instant race:
+  last writer wins on disk; the loser sees the id on its next read and skips it that turn.
+- Both agents may be DEV in the same turn (agent-a on dev1, agent-b on dev2): they must still never
+  take the same PLAN id or edit the same PLAN.md item line. If unsure, skip the item.
 
 ## .state file format (hard)
 
@@ -165,4 +163,4 @@ commits stay on its worktree branches; nothing is lost.
 
 - Stack down: restart it. If still down after 2 tries, write `BLOCKED: <reason>` on your .state file line 2 (replaces WORK) and stop.
 - Test failing for a reason outside your item: leave the item, note `BLOCKED: <reason>`, pick the next item.
-- Other agent appears stuck (its claim TS is stale and you have taken over its claim): proceed; it will resync on its next read.
+- Other agent appears stuck (its claim TS is stale and it is not idle): proceed; it will resync on its next read.
