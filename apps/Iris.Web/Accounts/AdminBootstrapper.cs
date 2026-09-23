@@ -16,10 +16,13 @@ namespace Iris.Web.Accounts;
 /// </summary>
 /// <remarks>
 /// This avoids the chicken-and-egg "how do I get my first admin" problem without a separate CLI. The
-/// config keys are <c>App:Admin:*</c> (an <c>Iris.Web</c>-only concern — not <c>Iris:*</c>, which is
-/// reserved for <c>AddActivityPubServer</c>'s bound options). The deployment doc notes these should be
-/// unset (or rotated out of <c>.env</c>) after the first successful startup, since they otherwise stay
-/// readable in the environment.
+/// credentials come from the <c>APP_ADMIN__USERNAME</c> / <c>APP_ADMIN__PASSWORD</c> environment
+/// variables (the standard .NET double-underscore form of the <c>App:Admin:Username</c> /
+/// <c>App:Admin:Password</c> config keys, which are honoured as a fallback so appsettings.json still
+/// works). The <c>App:Admin:*</c> keys are an <c>Iris.Web</c>-only concern — not <c>Iris:*</c>, which
+/// is reserved for <c>AddActivityPubServer</c>'s bound options. The deployment doc notes these should
+/// be unset (or rotated out of <c>.env</c>) after the first successful startup, since they otherwise
+/// stay readable in the environment.
 /// </remarks>
 public sealed class AdminBootstrapper
 {
@@ -53,8 +56,17 @@ public sealed class AdminBootstrapper
     /// <inheritdoc/>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var username = _configuration[Section + ":Username"];
-        var password = _configuration[Section + ":Password"];
+        // The credentials are supplied as the APP_ADMIN__USERNAME / APP_ADMIN__PASSWORD env vars (the
+        // standard .NET double-underscore form of App:Admin:Username / :Password). Read them straight
+        // from the process environment and fall back to the IConfiguration keys (so appsettings.json
+        // still works) — this is immune to the host's env->config key mapping, which does not reliably
+        // surface the double-underscore form as the App:Admin:Username path key.
+        var username =
+            Environment.GetEnvironmentVariable("APP_ADMIN__USERNAME")
+            ?? _configuration[Section + ":Username"];
+        var password =
+            Environment.GetEnvironmentVariable("APP_ADMIN__PASSWORD")
+            ?? _configuration[Section + ":Password"];
 
         // No bootstrap configured — nothing to do (the operator sets the first admin by hand, or a
         // single-user deployment simply has no admin).

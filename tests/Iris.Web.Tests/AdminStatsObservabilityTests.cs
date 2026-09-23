@@ -8,14 +8,17 @@ using Iris.Server;
 using Iris.Server.Data.Accounts;
 using Iris.Server.Delivery;
 using Iris.Server.Stores;
+using Iris.Web.Accounts;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Iris.Web.Tests;
@@ -195,6 +198,55 @@ public sealed class AdminStatsObservabilityTests
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task AdminBootstrap_ReadsCredentialsFromAppAdminEnvVars()
+    {
+        // S61: the bootstrap admin's credentials are supplied as APP_ADMIN__USERNAME / APP_ADMIN__PASSWORD
+        // (the standard .NET double-underscore form of App:Admin:Username / :Password). The host's
+        // env->config mapping does not reliably surface the double-underscore form as the App:Admin:Username
+        // path key, so the bootstrapper must read the process environment directly (with the IConfiguration
+        // keys as a fallback). This test sets ONLY the env vars (no App:Admin:* config keys) and asserts the
+        // real AdminBootstrapper still provisions an admin.
+        var set = new HashSet<string>();
+        set.Add("APP_ADMIN__USERNAME");
+        set.Add("APP_ADMIN__PASSWORD");
+        var previousUsername = Environment.GetEnvironmentVariable("APP_ADMIN__USERNAME");
+        var previousPassword = Environment.GetEnvironmentVariable("APP_ADMIN__PASSWORD");
+        try
+        {
+            Environment.SetEnvironmentVariable("APP_ADMIN__USERNAME", "envadmin");
+            Environment.SetEnvironmentVariable("APP_ADMIN__PASSWORD", "envpass-12345");
+
+            var store = new RecordingUserAccountStore();
+            var bootstrapper = new AdminBootstrapper(
+                new ServiceCollection()
+                    .AddSingleton<IUserAccountStore>(store)
+                    .AddSingleton<IKeyStore>(new InMemoryKeyStore())
+                    .AddSingleton<IKeyProvider>(new StubKeyProvider([]))
+                    .AddSingleton<ActorProvisioner>(new ActorProvisioner(
+                        new StubPersistence([], []),
+                        new InMemoryKeyStore(),
+                        new StubKeyProvider([]),
+                        new Iri("https://me.test")))
+                    .AddSingleton<PasswordHasher>(new PasswordHasher())
+                    .BuildServiceProvider(),
+                new ConfigurationBuilder().Build(), // no App:Admin:* keys -> env vars must drive bootstrap
+                new Iri("https://me.test"),
+                NullLogger<AdminBootstrapper>.Instance);
+
+            await bootstrapper.StartAsync(CancellationToken.None);
+
+            Assert.Single(store.Created);
+            Assert.Equal("envadmin", store.Created[0].Username);
+            Assert.Equal(UserRole.Admin, store.Created[0].Role);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("APP_ADMIN__USERNAME", previousUsername);
+            Environment.SetEnvironmentVariable("APP_ADMIN__PASSWORD", previousPassword);
+        }
+    }
+
     private static IHost BuildHost(
         IUserAccountStore accounts,
         IPersistenceProvider persistence,
@@ -299,6 +351,43 @@ public sealed class AdminStatsObservabilityTests
             Task.FromResult<UserAccount?>(null);
 
         public Task CreateAsync(UserAccount account, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task UpdatePasswordHashAsync(Guid id, string newHash, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task UpdateNotificationsReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task<bool> AnyAdminExistsAsync(CancellationToken ct = default) => Task.FromResult(false);
+
+        public Task<int> CountAsync(CancellationToken ct = default) => Task.FromResult(0);
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default) => Task.FromResult(false);
+
+        public Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task UpdateRoleAsync(Guid id, UserRole role, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingUserAccountStore : IUserAccountStore
+    {
+        public List<UserAccount> Created { get; } = [];
+
+        public Task<IReadOnlyCollection<UserAccount>> GetAllAsync(CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyCollection<UserAccount>>([]);
+
+        public Task<UserAccount?> FindByUsernameAsync(string username, CancellationToken ct = default) =>
+            Task.FromResult<UserAccount?>(null);
+
+        public Task<UserAccount?> FindByIdAsync(Guid id, CancellationToken ct = default) =>
+            Task.FromResult<UserAccount?>(null);
+
+        public Task CreateAsync(UserAccount account, CancellationToken ct = default)
+        {
+            Created.Add(account);
+            return Task.CompletedTask;
+        }
 
         public Task UpdatePasswordHashAsync(Guid id, string newHash, CancellationToken ct = default) =>
             Task.CompletedTask;
