@@ -130,4 +130,29 @@ public class MentionLinkifyTests
         Assert.Contains(">@ii-a2</a>", result);
         Assert.Contains("#qatag</a>", result);
     }
+
+    [Fact]
+    public void Linkify_DefaultIriMention_DoesNotThrowAndLeavesTokenPlain()
+    {
+        // S76: a mention whose actor IRI is the default value (no underlying Uri) must not crash
+        // Linkify. Before the Iri null-safety fix, mention.Iri.Value threw NullReferenceException here.
+        var html = "hello @ii world";
+        var result = MentionLinkify.Linkify(html, [new MentionLinkify.Mention("@ii", default)], null);
+
+        // The empty-IRI mention is skipped; the token stays plain text.
+        Assert.DoesNotContain("<a class=\"mention\"", result);
+        Assert.Contains("@ii", result);
+    }
+
+    [Fact]
+    public void LinkifyPlain_DefaultIriMention_DoesNotThrow()
+    {
+        // S76: a declared mention IRI that is the default value must not crash LinkifyPlain (which
+        // reads mentionIris[i].Value through HandleOfIri).
+        var plain = "hello @ii world";
+        var result = MentionLinkify.LinkifyPlain(plain, "https://a.luit.ink", [default], null);
+
+        Assert.DoesNotContain("<a class=\"mention\"", result);
+        Assert.Contains("@ii", result);
+    }
 }

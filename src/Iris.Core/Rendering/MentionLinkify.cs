@@ -85,6 +85,14 @@ public static partial class MentionLinkify
         {
             foreach (var mention in mentions!)
             {
+                // A mention whose actor IRI is the default value (no underlying Uri) carries an empty
+                // Value and is skipped — LinkToken is a no-op for an empty href anyway, and this keeps
+                // the default-IRI case explicit (S76).
+                if (string.IsNullOrEmpty(mention.Iri.Value))
+                {
+                    continue;
+                }
+
                 working = LinkToken(working, mention.Display, mention.Iri.Value, "mention");
             }
         }
