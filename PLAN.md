@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S64 | OPEN | - | community Article post not in community feed (REPRODUCED)
+S64 | OPEN-QA | dev1 | community Article post not in community feed (REPRODUCED)
 
 ## NEW
 
