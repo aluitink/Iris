@@ -205,6 +205,34 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAs
         Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Follows.GetFollowersAsync(_bobActorIri));
     }
 
+    // --- S73: a person's follow of a local community records the person's own follow edge ----
+
+    [Fact]
+    public async Task PersonFollowOfLocalCommunity_RecordsPersonFollowingEdge()
+    {
+        var communityIri = TestSeeder.SeedCommunity(_aPersistence, AHost, "iris");
+
+        var follow = BuildFollow(_aliceActorIri, communityIri);
+        using var followRequest = SignedRequest(_aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
+        using var followResponse = await _aHttp.SendAsync(followRequest);
+        Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
+
+        // The community's followers set lists alice (the membership edge).
+        Assert.Contains(_aliceActorIri, await _aPersistence.Communities.GetFollowersAsync(communityIri));
+
+        // The community's follows set lists alice (the federation edge).
+        Assert.Contains(_aliceActorIri, await _aPersistence.Communities.GetFollowsAsync(communityIri));
+
+        // S73: the person's own follow store records the edge (the person's `following` collection
+        // lists the community), so the UI can read the join state on page load.
+        Assert.True(
+            await _aPersistence.Follows.IsFollowingAsync(_aliceActorIri, communityIri),
+            "A should record the person's follow edge (alice → community) in the person follow store.");
+        Assert.Contains(
+            communityIri,
+            await _aPersistence.Follows.GetFollowingAsync(_aliceActorIri));
+    }
+
     // --- Helpers --------------------------------------------------------------------------
 
     /// <summary>

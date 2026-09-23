@@ -5486,13 +5486,16 @@ public static class ActivityPubServerExtensions
 
         if (isCommunityTarget)
         {
-            // A follow of a local community records the community's follows + followers sets (the inverse
-            // of FollowActivityHandler's community branch, F-24) instead of a person-follow edge (the
-            // stores are disjoint). A follow of a local community is a join (members are followers —
-            // change 221). When the community manually approves members, the membership (followers) edge
-            // is withheld and a pending join request is recorded so the creator's requests tab lists it;
-            // the creator's Accept/Reject grants or drops the membership (RecordJoinDecisionLocalAsync).
-            // Otherwise the membership edge is recorded immediately (an auto-accepted join).
+            // A follow of a local community is a join (members are followers — change 221). The
+            // community's follows + followers sets (the inverse of FollowActivityHandler's community
+            // branch, F-24) record the membership; the person's own follow edge (IFollowStore) records
+            // the join in the person's `following` collection so the UI (FollowButton / Communities
+            // Following tab) can read it on page load. Without the person edge the join state is lost
+            // on navigation: the server's /following collection is empty even though the community's
+            // /followers lists the user (S73).
+            await persistence.Follows
+                .RecordFollowAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
 
             if (await IsManuallyApprovingMembersAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
