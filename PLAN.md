@@ -15,6 +15,8 @@ S66 | OPEN | - | federated boost count wrong on receiving instance
 
 ## NEW
 
+S70 | NEW | qa | note edit not federated: stale UI on origin + no Update to remote (live qa-iris-a→b)
+
 ## CLOSED
 
 S68 | CLOSED | qa | poll not stored locally on remote (IRI 404; no vote UI) — PASS: attributedTo rewrite fix verified live on qa stack
