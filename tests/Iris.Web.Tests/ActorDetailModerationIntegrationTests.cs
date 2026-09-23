@@ -155,6 +155,31 @@ public sealed class ActorDetailModerationIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ReportStateRestoredOnFlagsCollectionRead()
+    {
+        var target = new Iri($"{Base}/ap/v1/u/bob");
+        var client = BuildSignedClient(_actorIri, _actorKey);
+
+        var flagResult = await client.FlagAsync(_actorIri, target);
+        Assert.True(flagResult.IsSuccess, $"Flag should succeed, got HTTP {(int)flagResult.StatusCode}: {flagResult.Body}");
+
+        var flagIris = new List<string>();
+        await foreach (var item in client.GetFlagsAsync(_actorIri))
+        {
+            if (item is KristofferStrube.ActivityStreams.Link link && link.Href is { } href)
+            {
+                flagIris.Add(href.AbsoluteUri);
+            }
+            else if (item is KristofferStrube.ActivityStreams.IObject { Id: { Length: > 0 } id })
+            {
+                flagIris.Add(id);
+            }
+        }
+
+        Assert.Contains(flagIris, f => f.Contains("/u/bob"));
+    }
+
+    [Fact]
     public async Task UnblockOnActorDetail_RemovesEdge()
     {
         var target = new Iri($"{Base}/ap/v1/u/bob");
