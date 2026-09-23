@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S72 | OPEN | - | Report button "Reported" state not restored on reload (in-memory only; dedup OK) — FAIL: live qa-iris-a reported s67bob, nav away/back, button shows "Report" (enabled) not "Reported ✓" (disabled)
+S72 | OPEN-QA | dev1 | Report button "Reported" state not restored on reload (in-memory only; dedup OK)
 S76 | OPEN | - | Prod instance - user andrew:Password1 -System.NullReferenceException: Arg_NullReferenceException at Iris.Core.Identity.Iri.get_Value() at Iris.Core.Rendering.MentionLinkify.Linkify(String html, IReadOnlyList`1 mentions, IReadOnlyList`1 hashtags) at Iris.Core.Rendering.MentionLinkify.LinkifyPlain(String plainText, String instanceOrigin, IReadOnlyList`1 mentionIris, IReadOnlyList`1 hashtags) at Iris.Web.Client.Components.ObjectView.RenderObjectContent(IObject obj, String content) at Iris.Web.Client.Components.ObjectView.get_ActivityContent()
 S77 | OPEN | - | Prod Instance - user andrew:Password1 - only sees users content in home stream - notifications is full of followed content.
 S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
