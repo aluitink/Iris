@@ -3,6 +3,7 @@ using System.Net;
 using Iris.Client.Auth;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Server;
 using Iris.Server.Data.Accounts;
 using Iris.Server.Delivery;
 using Iris.Server.Stores;
@@ -14,6 +15,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Web.Tests;
 
@@ -81,6 +83,42 @@ public sealed class AdminStatsObservabilityTests
         Assert.Contains("\"resolvableActors\":1", body);
     }
 
+    [Fact]
+    public async Task AdminStats_ExcludesRemoteActorsFromSignableCount()
+    {
+        // S59: ListActorsAsync returns cached remote actors too, but only LOCAL actors (on the instance
+        // base) are ever signed for. A remote actor must not inflate the denominator — the old bug
+        // reported e.g. 40/4542 because ~4500 remote actors had no key to resolve.
+        var keyProvider = new StubKeyProvider(new[] { "https://me.test/ap/v1/u/alice" });
+        var persistence = new StubPersistence(
+            actors:
+            [
+                Actor("https://me.test/ap/v1/u/alice"),
+                Actor("https://me.test/ap/v1/c/community"),
+                // Remote actors cached for the directory — never signed for, must be excluded.
+                Actor("https://mastodon.social/users/remote1"),
+                Actor("https://lemmy.world/u/remote2"),
+                Actor("https://lemmy.world/u/remote3"),
+            ],
+            objects: []);
+
+        using var host = BuildHost(
+            new StubUserAccountStore([]),
+            persistence,
+            keyProvider,
+            new StubDeadLetterStore(count: 0));
+        await host.StartAsync();
+
+        var response = await host.GetTestClient().GetAsync("/local/v1/admin/stats");
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        // Only the two local actors are counted (the three remote ones are excluded).
+        Assert.Contains("\"storedActors\":2", body);
+        Assert.Contains("\"resolvableActors\":1", body);
+        Assert.DoesNotContain("\"storedActors\":5", body);
+    }
+
     private static IHost BuildHost(
         IUserAccountStore accounts,
         IPersistenceProvider persistence,
@@ -99,6 +137,9 @@ public sealed class AdminStatsObservabilityTests
                     services.AddSingleton(persistence);
                     services.AddSingleton(keyProvider);
                     services.AddSingleton(deadLetters);
+                    // The instance base (S59): actors on this host are local; the rest are cached
+                    // remote actors and are excluded from the signable count.
+                    services.Configure<ActivityPubServerOptions>(o => o.BaseUri = new Iri("https://me.test"));
                 });
                 builder.Configure(app =>
                 {

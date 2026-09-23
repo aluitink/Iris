@@ -247,6 +247,58 @@ public sealed class DeploymentHardeningTests
     }
 
     [Fact]
+    public async Task Observability_RemoteActorsExcludedFromSignableCount()
+    {
+        // S59: ListActorsAsync also returns cached remote actors, which are never signed for. When an
+        // instance base is configured, only local actors (hosted on the base) are counted — the old
+        // behaviour counted remote actors and reported a misleading 40/4542.
+        var persistence = new InMemoryPersistenceProvider();
+        var keyStore = new InMemoryKeyStore();
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+
+        // Two local actors (on the base), of which one is resolvable.
+        var (_, alice, _) = TestSeeder.SeedPersonWithKey(persistence, "obs-test.local", "alice");
+        var (_, bob, _) = TestSeeder.SeedPersonWithKey(persistence, "obs-test.local", "bob");
+        var aliceKey = new Iri($"{alice.Value}#key-1");
+        if (persistence.Keys.TryGetKey(aliceKey, out var key) && key is not null)
+        {
+            keyStore.PutKey(key);
+            keyProvider.RegisterKey(alice, aliceKey);
+        }
+
+        // Three cached remote actors (different host) — must be excluded from the count.
+        await persistence.Actors.PutActorAsync(new KristofferStrube.ActivityStreams.Actor
+        {
+            Id = "https://mastodon.social/users/remote1",
+            Type = ["Person"],
+            PreferredUsername = "remote1",
+        });
+        await persistence.Actors.PutActorAsync(new KristofferStrube.ActivityStreams.Actor
+        {
+            Id = "https://lemmy.world/u/remote2",
+            Type = ["Person"],
+            PreferredUsername = "remote2",
+        });
+        await persistence.Actors.PutActorAsync(new KristofferStrube.ActivityStreams.Actor
+        {
+            Id = "https://lemmy.world/u/remote3",
+            Type = ["Person"],
+            PreferredUsername = "remote3",
+        });
+
+        var deadLetters = new InMemoryDeliveryDeadLetterStore();
+        var check = new InstanceObservabilityHealthCheck(
+            persistence, keyProvider, deadLetters, new Iri("https://obs-test.local"));
+
+        var result = await check.CheckHealthAsync(new Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext());
+
+        Assert.Equal(2, result.Data!["stored_actors"]);
+        Assert.Equal(1, result.Data!["resolvable_actors"]);
+        Assert.Equal(0, result.Data!["dead_letters"]);
+        Assert.Equal(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy, result.Status);
+    }
+
+    [Fact]
     public async Task Observability_AllActorsResolvable_NoDeadLetters_ReportsHealthyWithCounts()
     {
         // 3 stored actors, all 3 resolvable, 0 dead letters.

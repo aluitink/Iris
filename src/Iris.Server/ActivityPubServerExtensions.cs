@@ -699,9 +699,15 @@ public static class ActivityPubServerExtensions
         // IEnumerable<IHealthCheck> at the GET /ap/v1/health endpoint.
         services.AddSingleton<IHealthCheck, PersistenceHealthCheck>();
         services.AddSingleton<IHealthCheck, DeliveryWorkerHealthCheck>();
-        // 83.2: federation observability — the resolvable-actor count (stored actors with a resolvable
-        // signing identity) + the delivery dead-letter count, surfaced on GET /ap/v1/health.
-        services.AddSingleton<IHealthCheck, InstanceObservabilityHealthCheck>();
+        // 83.2: federation observability — the resolvable-actor count (LOCAL actors with a resolvable
+        // signing identity) + the delivery dead-letter count, surfaced on GET /ap/v1/health. The
+        // instance base is passed so the count excludes cached remote actors (S59): only local actors
+        // are ever signed for, so counting remote actors inflated the denominator (e.g. 40/4542).
+        services.AddSingleton<IHealthCheck>(sp => new InstanceObservabilityHealthCheck(
+            sp.GetRequiredService<IPersistenceProvider>(),
+            sp.GetRequiredService<IKeyProvider>(),
+            sp.GetRequiredService<IDeliveryDeadLetterStore>(),
+            sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri));
 
         // 30.2: readiness gate. Ready once the instance actor's signing key is registered + resolvable
         // (a freshly-started instance is not ready until its key material is loaded). The GET /ap/v1/ready

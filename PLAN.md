@@ -10,9 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-## NEW
+S59 | OPEN | dev2 | signable-actor metric counts remote actors (misleading 40/4542; only local actors need keys)
 
-S59 | NEW | pa | signable-actor metric counts remote actors (misleading 40/4542; only local actors need keys)
+## NEW
 
 ## OPEN-QA
 

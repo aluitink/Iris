@@ -7,17 +7,21 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 namespace Iris.Server.Observability;
 
 /// <summary>
-/// A <see cref="IHealthCheck"/> that reports the instance's federation observability: how many stored
-/// actors have a resolvable signing identity (the key-store's resolvable-actor count) and the
-/// delivery dead-letter count.
+/// A <see cref="IHealthCheck"/> that reports the instance's federation observability: how many
+/// <em>local</em> actors have a resolvable signing identity (the key-store's resolvable-actor count)
+/// and the delivery dead-letter count.
 /// </summary>
 /// <remarks>
-/// The resolvable-actor count is the number of actors stored by this instance (local actors +
-/// communities, per <see cref="IActorStore.ListActorsAsync"/>) whose signing identity resolves through
+/// The resolvable-actor count is the number of <em>local</em> actors (hosted on the instance base,
+/// per <see cref="IActorStore.ListActorsAsync"/>) whose signing identity resolves through
 /// <see cref="IKeyProvider.TryGetIdentity(Iri, out IIdentity?)"/> — i.e. the actors the instance can
-/// currently sign federation as. An actor without a registered key (a fresh community, or an actor
-/// whose key has not been loaded yet) is counted as stored-but-not-resolvable, so the operator can
-/// see a gap between "actors on disk" and "actors we can sign as."
+/// currently sign federation as. <see cref="IActorStore.ListActorsAsync"/> also returns cached
+/// <em>remote</em> actors (persisted for the directory), but those are never signed for, so they are
+/// excluded from the denominator — counting them made the figure look catastrophically low (e.g.
+/// 40/4542) when the real local signable rate was near 100%. An actor without a registered key (a
+/// fresh community, or an actor whose key has not been loaded yet) is counted as stored-but-not-
+/// resolvable, so the operator can see a gap between "local actors on disk" and "actors we can sign
+/// as."
 ///
 /// The dead-letter count is the number of outbound deliveries that exhausted their retry budget and
 /// were parked in the dead-letter store (see <see cref="IDeliveryDeadLetterStore"/>). A non-zero
@@ -38,6 +42,7 @@ public sealed class InstanceObservabilityHealthCheck : IHealthCheck
     private readonly IPersistenceProvider _persistence;
     private readonly IKeyProvider _keyProvider;
     private readonly IDeliveryDeadLetterStore _deadLetters;
+    private readonly string? _instanceBasePrefix;
 
     /// <summary>
     /// Initializes a new <see cref="InstanceObservabilityHealthCheck"/>.
@@ -46,14 +51,35 @@ public sealed class InstanceObservabilityHealthCheck : IHealthCheck
     /// store lists the stored actors).</param>
     /// <param name="keyProvider">The key provider (resolves each actor's signing identity).</param>
     /// <param name="deadLetters">The delivery dead-letter store (the failed-delivery backlog).</param>
+    /// <param name="instanceBase">
+    /// The instance's base IRI (e.g. <c>https://iris.example</c>). When set, only actors hosted on this
+    /// base (local actors) are counted; cached remote actors are excluded. When null, every stored
+    /// actor is counted (legacy behaviour, used in tests that do not configure a base).
+    /// </param>
     public InstanceObservabilityHealthCheck(
         IPersistenceProvider persistence,
         IKeyProvider keyProvider,
-        IDeliveryDeadLetterStore deadLetters)
+        IDeliveryDeadLetterStore deadLetters,
+        Iri? instanceBase = null)
     {
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         _keyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
         _deadLetters = deadLetters ?? throw new ArgumentNullException(nameof(deadLetters));
+        _instanceBasePrefix = instanceBase is { } baseIri ? baseIri.Value.TrimEnd('/') : null;
+    }
+
+    /// <summary>
+    /// Returns whether the actor IRI is hosted on the instance base (a local actor). When no base is
+    /// configured, every actor is considered local (legacy behaviour).
+    /// </summary>
+    private bool IsLocalActor(Iri actorIri)
+    {
+        if (_instanceBasePrefix is null)
+        {
+            return true;
+        }
+
+        return actorIri.Value.StartsWith(_instanceBasePrefix, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc/>
@@ -65,13 +91,21 @@ public sealed class InstanceObservabilityHealthCheck : IHealthCheck
         int resolvable = 0;
 
         var actors = await _persistence.Actors.ListActorsAsync(ct).ConfigureAwait(false);
-        stored = actors.Count;
 
         foreach (var actor in actors)
         {
             if (actor.Id is { Length: > 0 } id)
             {
                 var actorIri = new Iri(id);
+
+                // S59: count only local actors — cached remote actors are never signed for, so they
+                // would inflate the denominator and make the signable rate look far worse than it is.
+                if (!IsLocalActor(actorIri))
+                {
+                    continue;
+                }
+
+                stored++;
                 if (_keyProvider.TryGetIdentity(actorIri, out _))
                 {
                     resolvable++;

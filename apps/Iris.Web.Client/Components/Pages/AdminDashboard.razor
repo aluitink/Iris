@@ -35,7 +35,7 @@ else
         </div>
         <div class="card stat-card">
             <div class="stat-value @SignableValueClass">@(Stats.ResolvableActors ?? 0)/@(Stats.StoredActors ?? 0)</div>
-            <div class="stat-label">Signable / stored actors</div>
+            <div class="stat-label">Signable / local actors</div>
         </div>
     </div>
 
@@ -49,7 +49,7 @@ else
             }
             @if ((Stats.StoredActors ?? 0) > (Stats.ResolvableActors ?? 0))
             {
-                <span> @(Stats.StoredActors - Stats.ResolvableActors) stored actor(s) have no resolvable signing identity.</span>
+                <span> @(Stats.StoredActors - Stats.ResolvableActors) local actor(s) have no resolvable signing identity.</span>
             }
             <span class="muted"> See <code>/ap/v1/health</code>.</span>
         </div>

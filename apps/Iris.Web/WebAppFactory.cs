@@ -1469,6 +1469,8 @@ public static class WebAppFactory
             var persistence = sp.GetRequiredService<IPersistenceProvider>();
             var keyProvider = sp.GetRequiredService<IKeyProvider>();
             var deadLetters = sp.GetRequiredService<IDeliveryDeadLetterStore>();
+            var baseUri = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri;
+            var basePrefix = baseUri is { } b ? b.Value.TrimEnd('/') : null;
 
             var allAccounts = await accounts.GetAllAsync(ct);
             var userCount = allAccounts.Count;
@@ -1488,16 +1490,30 @@ public static class WebAppFactory
             var allObjects = await persistence.Objects.ListObjectsAsync(ct);
             var postCount = allObjects.Count(o => o is not KristofferStrube.ActivityStreams.Tombstone);
 
-            // S58: the same two figures the /ap/v1/health observability check reports as "degraded" —
-            // how many stored actors the key provider can currently sign federation as, and the
-            // dead-letter backlog. Surfacing them in the admin dashboard is the operator-visible
-            // counterpart to the raw health endpoint.
+            // S58 + S59: the same two figures the /ap/v1/health observability check reports as
+            // "degraded" — how many LOCAL actors the key provider can currently sign federation as,
+            // and the dead-letter backlog. Only local actors (hosted on the instance base) are counted:
+            // ListActorsAsync also returns cached remote actors, which are never signed for, so counting
+            // them inflated the denominator (the misleading 40/4542). Surfacing them in the admin
+            // dashboard is the operator-visible counterpart to the raw health endpoint.
             var actors = await persistence.Actors.ListActorsAsync(ct);
-            int storedActors = actors.Count;
+            int storedActors = 0;
             int resolvableActors = 0;
             foreach (var actor in actors)
             {
-                if (actor.Id is { Length: > 0 } id && keyProvider.TryGetIdentity(new Iri(id), out _))
+                if (actor.Id is not { Length: > 0 } id)
+                {
+                    continue;
+                }
+
+                var actorIri = new Iri(id);
+                if (basePrefix is not null && !actorIri.Value.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                storedActors++;
+                if (keyProvider.TryGetIdentity(actorIri, out _))
                 {
                     resolvableActors++;
                 }
