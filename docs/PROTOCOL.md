@@ -1,7 +1,9 @@
 # PROTOCOL
 
-Two agent threads run a loop. Each turn, the same loop instruction (docs/LOOP.md) is re-posted.
-Agents act as DEV, QA, or PA. One agent may hold any worktree per turn.
+Two agent threads run a loop: `agent-a` and `agent-b`. Each turn, the loop prompt
+points the agent at /workspace/AGENT.md, which points at this file.
+Agents act as DEV, QA, or PA. An agent may hold any worktree per turn.
+Thread name is identity only; it never fixes a role or a worktree.
 
 ## Roles
 
@@ -13,23 +15,30 @@ Agents act as DEV, QA, or PA. One agent may hold any worktree per turn.
 
 ## Turn (exactly this, in order)
 
-1. Read: `.state/other-agent.md`, `.state/you.md`, `PLAN.md`.
-2. Pick role:
-   - PLAN has open NEW or OPEN-QA items -> QA
-   - else PLAN has open OPEN items -> DEV
+1. Read: `.state/<other>.md`, `.state/<you>.md`, `PLAN.md`.
+2. Pick role by PLAN state:
+   - any NEW or OPEN-QA item -> QA
+   - else any OPEN item -> DEV
    - else -> PA
-3. Do ONE unit of work for that role (docs/persona-<role>.md).
-4. Rewrite `.state/<you>.md` (full rewrite, never append).
-5. Update PLAN.md only for items you touched.
-6. Stop. No extra work, no extra writing.
+3. Acquire the worktree that role needs:
+   - QA needs `qa`. DEV needs `dev1` or `dev2` — prefer dev1, else dev2.
+   - Take it if the other agent's .state does not claim it.
+   - If it is claimed, DEV takes the other dev worktree; QA has no fallback.
+   - If the needed worktree is unavailable, skip this role and fall through to the next role in step 2's order. PA is always available.
+4. Do ONE unit of work for that role (docs/persona-<role>.md).
+5. Rewrite `.state/<you>.md` (full rewrite, never append).
+6. Update PLAN.md only for items you touched.
+7. Stop. No extra work, no extra writing.
 
 ## Claims (anti-overlap)
 
-- A worktree is claimed by writing `CLAIM: <worktree>` in your .state file.
-- Before claiming, read the other .state file. If that worktree is claimed, pick the other.
-- Claiming a PLAN item = writing its id on line 2 of your .state file. Never take an id claimed by the other.
-- A claim is valid only while it appears in the other agent's latest read. Stale claims (you have not seen the other's file change in 3 of your turns) may be taken over: note `TOOK: S##` in your .state file.
-- Both agents must never edit PLAN.md lines for the same item in the same turn. If unsure, skip the item this turn.
+- A worktree is claimed by writing `CLAIM: <worktree>` in your .state file, committed to the root repo.
+- Before claiming, read the other .state file. If that worktree is claimed there, do not take it.
+- Same-instant tie: if both agents claim the same worktree, the earlier git commit in the root repo wins. The later claimant releases, re-runs step 3, and takes the fallback.
+- Cold start (both .state files empty or missing): `agent-a` proceeds with normal selection; `agent-b` writes `CLAIM: none`, `WORK: idle`, `NEXT: wait for agent-a` and stops.
+- Claiming a PLAN item = writing its id on the `WORK` line of your .state file. Never take an id in the other's `WORK` line.
+- Stale claims: if the other agent's .state file has not changed in 3 of your turns and you are blocked on its claim, take it over and note `TOOK: S##` in your .state file.
+- Both agents must never edit the same PLAN.md item line in the same turn. If unsure, skip the item this turn.
 
 ## .state file format (hard)
 

@@ -1,6 +1,8 @@
 # AGENT
 
-You are one of two agent threads improving the Iris repo. Your thread is named in the prompt that posted you: `agent-a` or `agent-b`. The other thread is the other name. Call your name `<you>` and the other's `<other>` below.
+You are one of two agent threads improving the Iris repo. The prompt that posted you names your thread: `agent-a` or `agent-b`. That name is your identity only — it names your `.state` file and breaks cold-start ties. It is not a role and not a worktree; you may act as DEV, QA, or PA and hold whichever worktree the selection rule gives you. Call your name `<you>` and the other's `<other>` below.
+
+If the prompt does not name you `agent-a` or `agent-b`, write nothing and stop. Do not guess an identity.
 
 ## Every turn, in this order
 
