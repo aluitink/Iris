@@ -184,6 +184,21 @@ public sealed class CrossInstanceReplyThreadIntegrationTests : IDisposable
         Assert.Equal([replyIri.Value], items);
         Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
         Assert.Equal(parentIri.RepliesOf().Value, doc.RootElement.GetProperty("id").GetString());
+
+        // S62: a remote instance (Mastodon/Lemmy) reads the embedded NOTE's to/cc to decide delivery +
+        // notification, not the Create activity's audience. B's outbox publish must therefore name the
+        // parent's author (bob, resolved by fetching m1 over the wire) in the reply NOTE's to AND cc —
+        // otherwise a cross-instance reply neither reaches nor notifies the parent author on the parent's
+        // home instance. (Before S62 the note carried only to:#Public and no cc, so the parent author was
+        // absent from the note's audience even though the Create activity's `to` named it.)
+        var replyNote = Assert.IsType<Note>(stored);
+        var bobIri = $"https://{AHost}/ap/v1/u/{Bob}";
+        bool NamedIn(IEnumerable<IObjectOrLink>? audience)
+            => audience is not null &&
+                audience.Any(a => a is { } item &&
+                    string.Equals(item.ResolveObjectIri()?.Value, bobIri, StringComparison.OrdinalIgnoreCase));
+        Assert.True(NamedIn(replyNote.To), "the reply NOTE's `to` must include the parent's author (bob)");
+        Assert.True(NamedIn(replyNote.Cc), "the reply NOTE's `cc` must include the parent's author (bob)");
     }
 
     // --- Helpers ----------------------------------------------------------------------------
