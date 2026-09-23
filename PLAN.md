@@ -14,9 +14,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S59 | OPEN-QA | dev2 | signable-actor metric counts remote actors (misleading 40/4542; only local actors need keys)
-
 ## CLOSED
+
+S59 | CLOSED | dev2 | signable-actor metric counts remote actors (PASS: local-only 15/15 live on qa; remote excluded; endpoint + health consistent)
 
 S58 | CLOSED | dev1 | admin dashboard surfaces dead letters + signable-actor gap (PASS: endpoint fields + live /admin clean)
 
