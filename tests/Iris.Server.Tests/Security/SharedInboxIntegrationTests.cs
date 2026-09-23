@@ -470,6 +470,63 @@ public sealed class SharedInboxIntegrationTests : IDisposable
         Assert.Contains("a note by bob (edited)", refreshedContent);
     }
 
+    // --- S57: a Create addressed to a LOCAL community (a cross-post to a peered community on this
+    // --- instance) delivered to B's shared inbox must route to the community's inbox. Without this, the
+    // --- shared inbox sees only the author's local followers (none, for a remote author) and drops the
+    // --- activity ("no local recipient") — leaving the community feed empty and the object doc 404 on
+    // --- this instance (the S50 end-to-end cross-instance community post was blocked on this). The
+    // --- community is in the separate community store, not the actor store, so the routing must check
+    // --- the community store (IsLocalActorAsync is false for a community). The community's
+    // --- CreateActivityHandler then stores the object (served by IRI) and records it in the local
+    // --- members' outboxes (the community feed surface).
+
+    [Fact]
+    public async Task Create_AddressedToLocalCommunity_DeliveredToSharedInbox_RoutesToCommunityAndStoresObject()
+    {
+        // A local community on B (a peered community, e.g. a Lemmy community mirrored on this instance),
+        // with a local member (bob) whose outbox is the community feed surface.
+        var communityIri = TestSeeder.SeedCommunity(_bPersistence, BHost, "crosspost");
+        await _bPersistence.Communities.AddFollowerAsync(communityIri, BobActorIri);
+
+        // alice (remote, hosted by A) cross-posts to the community: a Create whose embedded Note is
+        // addressed (To) to the local community IRI. The note's IRI is on A (alice's instance) — the
+        // cross-post's home. Deliver it to B's shared inbox over the wire (B resolves alice's key from
+        // A's actor doc). The shared inbox must route the Create to the community's inbox.
+        var noteIri = $"https://{AHost}/ap/v1/u/{Alice}/notes/{Guid.NewGuid():N}";
+        var createIri = $"https://{AHost}/activities/create-{Guid.NewGuid():N}";
+        var note = new Note
+        {
+            Id = noteIri,
+            Content = ["a cross-post to the community"],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            To = [new Link { Href = new Uri(communityIri.Value) }],
+        };
+        var create = new Create
+        {
+            Id = createIri,
+            Actor = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(AliceActorIri.Value) }],
+            Object = [note],
+        };
+
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobSharedInboxIri, create);
+        Assert.Equal(202, statusCode.StatusCode);
+
+        // B stored the embedded object under its IRI (the community's CreateActivityHandler ran) — a
+        // dropped delivery ("no local recipient") would leave the object 404 on B (the S57 defect).
+        Assert.True(
+            await _bPersistence.Objects.TryGetObjectAsync(new Iri(noteIri), out var stored),
+            "A cross-post Create addressed to a local community delivered to the shared inbox should be " +
+            "stored (routed to the community's inbox), not dropped (S57).");
+        Assert.NotNull(stored);
+
+        // B recorded the cross-post in the community's local member (bob) outbox — the community feed
+        // surface. A dropped delivery would leave bob's outbox empty (the community feed empty).
+        var outbox = await _bPersistence.Activities.GetOutboxAsync(BobActorIri);
+        Assert.Contains(outbox, a => a.ResolveObjectIri() is { } iri && iri.Value == createIri);
+    }
+
     // --- A Create whose author is not local is accepted and dropped (not this instance's concern) ---
 
     [Fact]
