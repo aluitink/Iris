@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Net;
+using System.Threading.Channels;
 using Iris.Client.Auth;
 using Iris.Core;
 using Iris.Core.Identity;
@@ -119,6 +120,81 @@ public sealed class AdminStatsObservabilityTests
         Assert.DoesNotContain("\"storedActors\":5", body);
     }
 
+    [Fact]
+    public async Task DeadLetters_ListReturnsFailedDeliveries()
+    {
+        // S60: the operator-facing list shows each dead-lettered delivery (recipient inbox, failure
+        // kind/detail, timestamp) so a downed peer can be identified.
+        var deadLetters = new StubDeadLetterStore(entries:
+        [
+            new DeadLetterEntry(
+                new Iri("https://down-peer.test/inbox"),
+                new Create { Object = [new Note { Id = "https://me.test/ap/v1/notes/1" }] },
+                new Iri("https://me.test/ap/v1/u/alice"),
+                3,
+                DeadLetterFailureKind.TransportError,
+                "Connection refused",
+                new DateTimeOffset(2026, 9, 22, 10, 0, 0, TimeSpan.Zero)),
+        ]);
+
+        using var host = BuildDeadLetterHost(deadLetters, new StubDeliveryQueue());
+        await host.StartAsync();
+
+        var response = await host.GetTestClient().GetAsync("/local/v1/admin/dead-letters");
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Contains("\"count\":1", body);
+        Assert.Contains("https://down-peer.test/inbox", body);
+        Assert.Contains("TransportError", body);
+        Assert.Contains("Connection refused", body);
+    }
+
+    [Fact]
+    public async Task DeadLetters_ReplayReEnqueuesAndRemoves()
+    {
+        // S60: replaying a dead letter re-enqueues the original job (attempts reset) and clears the
+        // entry, so a recovered peer receives the delivery and the list reflects the drop.
+        var entry = new DeadLetterEntry(
+            new Iri("https://down-peer.test/inbox"),
+            new Create { Object = [new Note { Id = "https://me.test/ap/v1/notes/1" }] },
+            new Iri("https://me.test/ap/v1/u/alice"),
+            3,
+            DeadLetterFailureKind.TransportError,
+            "Connection refused",
+            new DateTimeOffset(2026, 9, 22, 10, 0, 0, TimeSpan.Zero));
+        var deadLetters = new StubDeadLetterStore(entries: [entry]);
+        var queue = new StubDeliveryQueue();
+
+        using var host = BuildDeadLetterHost(deadLetters, queue);
+        await host.StartAsync();
+
+        var response = await host.GetTestClient().PostAsync("/local/v1/admin/dead-letters/0/replay", null);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+
+        // The replayed job is back on the queue (attempts reset to 0) and the entry was cleared.
+        var replayed = await queue.WaitForJobAsync();
+        Assert.NotNull(replayed);
+        Assert.Equal("https://down-peer.test/inbox", replayed!.InboxIri.Value);
+        Assert.Equal(0, replayed.Attempts);
+        Assert.Equal(0, deadLetters.Count);
+        Assert.Contains("\"success\":true", body);
+        Assert.Contains("\"remaining\":0", body);
+    }
+
+    [Fact]
+    public async Task DeadLetters_ReplayOutOfRange_ReturnsNotFound()
+    {
+        var deadLetters = new StubDeadLetterStore(entries: []);
+        using var host = BuildDeadLetterHost(deadLetters, new StubDeliveryQueue());
+        await host.StartAsync();
+
+        var response = await host.GetTestClient().PostAsync("/local/v1/admin/dead-letters/5/replay", null);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     private static IHost BuildHost(
         IUserAccountStore accounts,
         IPersistenceProvider persistence,
@@ -147,6 +223,40 @@ public sealed class AdminStatsObservabilityTests
                     app.UseEndpoints(endpoints =>
                     {
                         WebAppFactory.MapAdminStatsEndpoint(endpoints);
+                    });
+                });
+            })
+            .Build();
+
+    private static IHost BuildDeadLetterHost(
+        IDeliveryDeadLetterStore deadLetters,
+        IDeliveryQueue queue) =>
+        Host.CreateDefaultBuilder()
+            .ConfigureLogging(l => l.ClearProviders())
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseTestServer();
+                builder.ConfigureServices(services =>
+                {
+                    services.AddRouting();
+                    services.AddControllers();
+                    services.AddSingleton(deadLetters);
+                    services.AddSingleton(queue);
+                    // The dead-letter endpoints carry RequireRole("Admin"). The test host has no iris.auth
+                    // cookie, so a permissive result handler always passes authorization — the test
+                    // exercises the endpoint logic (list + replay), while role enforcement itself is the
+                    // real app's concern (covered by the RequireRole metadata, verified in the live stack).
+                    services.AddAuthorization();
+                    services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler,
+                        PermissiveResultHandler>();
+                });
+                builder.Configure(app =>
+                {
+                    app.UseRouting();
+                    app.UseAuthorization();
+                    app.UseEndpoints(endpoints =>
+                    {
+                        WebAppFactory.MapDeadLetterEndpoints(endpoints);
                     });
                 });
             })
@@ -276,13 +386,76 @@ public sealed class AdminStatsObservabilityTests
             Task.FromResult(objects.Count);
     }
 
-    private sealed class StubDeadLetterStore(int count) : IDeliveryDeadLetterStore
+    private sealed class StubDeadLetterStore(
+        IReadOnlyList<DeadLetterEntry>? entries = null,
+        int count = 0) : IDeliveryDeadLetterStore
     {
-        public Task AddAsync(DeadLetterEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        private List<DeadLetterEntry> _entries = new(entries ?? []);
 
-        public int Count => count;
+        public int Count => _entries.Count + count;
+
+        public Task AddAsync(DeadLetterEntry entry, CancellationToken ct = default)
+        {
+            _entries.Add(entry);
+            return Task.CompletedTask;
+        }
 
         public Task<IReadOnlyList<DeadLetterEntry>> ListAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<DeadLetterEntry>>(new List<DeadLetterEntry>());
+            Task.FromResult<IReadOnlyList<DeadLetterEntry>>(_entries);
+
+        public Task RemoveAsync(DeadLetterEntry entry, CancellationToken ct = default)
+        {
+            _entries.RemoveAll(e => e == entry);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class PermissiveResultHandler :
+        Microsoft.AspNetCore.Authorization.IAuthorizationMiddlewareResultHandler
+    {
+        public Task HandleAsync(
+            Microsoft.AspNetCore.Http.RequestDelegate next,
+            Microsoft.AspNetCore.Http.HttpContext context,
+            Microsoft.AspNetCore.Authorization.AuthorizationPolicy policy,
+            Microsoft.AspNetCore.Authorization.Policy.PolicyAuthorizationResult result)
+        {
+            // Always allow: the test host has no iris.auth cookie, and the S60 test target is the
+            // list/replay endpoint logic (role enforcement is the real app's RequireRole concern,
+            // verified on the live stack). Invoke the endpoint pipeline so the handler runs.
+            return next(context);
+        }
+    }
+
+    private sealed class StubDeliveryQueue : IDeliveryQueue
+    {
+        private readonly Channel<DeliveryJob> _channel = Channel.CreateUnbounded<DeliveryJob>();
+        private int _count;
+
+        public int Count => _count;
+
+        public Task EnqueueAsync(DeliveryJob job, CancellationToken ct = default)
+        {
+            _count++;
+            return _channel.Writer.WriteAsync(job, ct).AsTask();
+        }
+
+        public async Task<DeliveryJob?> TryDequeueAsync(CancellationToken ct = default)
+        {
+            _count--;
+            DeliveryJob? job = await _channel.Reader.ReadAsync(ct);
+            return job;
+        }
+
+        public Task CompleteAsync(CancellationToken ct = default)
+        {
+            _channel.Writer.Complete();
+            return Task.CompletedTask;
+        }
+
+        public async Task<DeliveryJob?> WaitForJobAsync()
+        {
+            DeliveryJob? job = await _channel.Reader.ReadAsync(CancellationToken.None);
+            return job;
+        }
     }
 }

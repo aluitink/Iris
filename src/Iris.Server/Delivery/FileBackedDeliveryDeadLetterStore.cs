@@ -40,8 +40,9 @@ public sealed class FileBackedDeliveryDeadLetterStore : IDeliveryDeadLetterStore
 
     private readonly string _journalPath;
     private readonly int _capacity;
-    private readonly ConcurrentQueue<DeadLetterEntry> _entries = new();
+    private readonly ConcurrentDictionary<long, DeadLetterEntry> _entries = new();
     private readonly SemaphoreSlim _journalLock = new(1, 1);
+    private long _sequence;
 
     /// <summary>
     /// Initializes a new file-backed dead-letter store that journals to <paramref name="journalPath"/>
@@ -88,10 +89,11 @@ public sealed class FileBackedDeliveryDeadLetterStore : IDeliveryDeadLetterStore
         // to the in-memory bounded view (evicting the oldest beyond the capacity).
         await JournalAsync(entry, ct).ConfigureAwait(false);
 
-        _entries.Enqueue(entry);
-        while (_entries.Count > _capacity && _entries.TryDequeue(out _))
+        _entries[_sequence++] = entry;
+        while (_entries.Count > _capacity)
         {
-            // evict the oldest (in-memory view only; the file is the full log)
+            var oldest = _entries.MinBy(kv => kv.Key);
+            _entries.TryRemove(oldest.Key, out _);
         }
     }
 
@@ -99,9 +101,26 @@ public sealed class FileBackedDeliveryDeadLetterStore : IDeliveryDeadLetterStore
     public Task<IReadOnlyList<DeadLetterEntry>> ListAsync(CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        // Newest first: the ConcurrentQueue is FIFO, so reverse (the same order as the in-memory store).
+        // Present entries newest-first (the same order as the in-memory store).
         return Task.FromResult<IReadOnlyList<DeadLetterEntry>>(
-            _entries.Reverse().ToList());
+            _entries.Values.OrderByDescending(e => e.DeadLetteredAtUtc).ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task RemoveAsync(DeadLetterEntry entry, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ct.ThrowIfCancellationRequested();
+        foreach (var kv in _entries)
+        {
+            if (kv.Value == entry)
+            {
+                _entries.TryRemove(kv.Key, out _);
+                break;
+            }
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -126,14 +145,15 @@ public sealed class FileBackedDeliveryDeadLetterStore : IDeliveryDeadLetterStore
             var entry = TryParseEntry(line);
             if (entry is not null)
             {
-                _entries.Enqueue(entry);
+                _entries[_sequence++] = entry;
             }
         }
 
         // Apply the capacity bound to the restored set (drop the oldest beyond the capacity).
-        while (_entries.Count > _capacity && _entries.TryDequeue(out _))
+        while (_entries.Count > _capacity)
         {
-            // evict the oldest
+            var oldest = _entries.MinBy(kv => kv.Key);
+            _entries.TryRemove(oldest.Key, out _);
         }
     }
 

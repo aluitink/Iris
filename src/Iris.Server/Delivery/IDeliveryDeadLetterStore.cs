@@ -35,4 +35,14 @@ public interface IDeliveryDeadLetterStore
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A task that completes with the held entries (newest first; possibly empty).</returns>
     public Task<IReadOnlyList<DeadLetterEntry>> ListAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the given dead-lettered entry from the store (S60: an operator re-driving a delivery via
+    /// <see cref="DeadLetterEntry.ToJob"/> clears it so the replayed delivery is not shown — and, if it
+    /// fails again, is re-recorded fresh — as a lingering dead letter).
+    /// </summary>
+    /// <param name="entry">The entry to remove (matched by reference/equality).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A task that completes when the entry has been removed (or is absent).</returns>
+    public Task RemoveAsync(DeadLetterEntry entry, CancellationToken ct = default);
 }

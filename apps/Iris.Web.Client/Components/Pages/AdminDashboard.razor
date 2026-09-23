@@ -84,6 +84,13 @@ else
             </table>
         }
     </div>
+
+    @* S60: dead-letter inspection + re-drive. Shown only when there is a backlog (the stat card already
+       shows the count; this lists the failed deliveries and lets an admin re-enqueue a stuck one). *@
+    @if ((Stats?.DeadLetterCount ?? 0) > 0)
+    {
+        <DeadLetterPanel Http="_http!" Reloaded="LoadStatsAsync" />
+    }
 }
 
 @code {
