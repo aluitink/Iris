@@ -14,9 +14,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S62 | OPEN-QA | dev2 | reply's to/cc omits parent author: no notify + no cross-instance delivery
-
 ## CLOSED
+
+S62 | CLOSED | qa | reply to remote parent now notifies parent author (PASS: live s56qa->s58qa)
 
 S61 | CLOSED | qa | admin bootstrap reads APP_ADMIN__* env (config fallback) (PASS)
 
