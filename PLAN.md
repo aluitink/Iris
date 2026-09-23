@@ -11,7 +11,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S72 | OPEN-QA | dev2 | Report button "Reported" state not restored on reload (in-memory only; dedup OK)
-S73 | OPEN-QA | dev1 | community join state lost on nav: fix records edge but misses collection-page cache invalidation
 S76 | OPEN | - | Prod instance - user andrew:Password1 -System.NullReferenceException: Arg_NullReferenceException at Iris.Core.Identity.Iri.get_Value() at Iris.Core.Rendering.MentionLinkify.Linkify(String html, IReadOnlyList`1 mentions, IReadOnlyList`1 hashtags) at Iris.Core.Rendering.MentionLinkify.LinkifyPlain(String plainText, String instanceOrigin, IReadOnlyList`1 mentionIris, IReadOnlyList`1 hashtags) at Iris.Web.Client.Components.ObjectView.RenderObjectContent(IObject obj, String content) at Iris.Web.Client.Components.ObjectView.get_ActivityContent()
 S77 | OPEN | - | Prod Instance - user andrew:Password1 - only sees users content in home stream - notifications is full of followed content.
 S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
@@ -20,6 +19,7 @@ S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items r
 
 ## CLOSED
 
+S73 | CLOSED | qa | community join state lost on nav — PASS: live qa-iris-a join 3 communities, navigate away/back, all show Leave
 S71 | CLOSED | qa | community ns#followersCount reads Follow not CommunityFollower; AP doc 1 vs 5 — PASS: live qa-iris-a AP doc ns#followersCount=5, /followers=5, UI Members(5)
 S66 | CLOSED | qa | federated boost count wrong on receiving instance — NOT REPRODUCED: qa live B-boost of A note shows ns#sharedCount=1 on home A (count correct; likely misread of top-level vs ns# key)
 S70 | CLOSED | qa | note edit not federated: shared inbox dropped Update (owner remote) + audience was collection (fix: fan out to local followers + merge followers into cc) — PASS: 12/12 shared inbox tests + live dev1 verification
@@ -52,5 +52,4 @@ S49 | CLOSED | dev1 | community feed empty after posting (creator not a follower
 S47 | CLOSED | dev1 | community edit form silent stale submission
 S53 | CLOSED | dev2 | community-scoped search returned 0 (Pass 345: search + feed return content)
 S55 | CLOSED | dev1 | post edit UI stale (Pass 344: fresh nav + save render current note content)
-S44 | CLOSED | dev1 | post More-options Mute no-op
 S56 | CLOSED | dev2 | anonymous remote actor showed Posts (0) (Pass: anon proxy follow renders post)
