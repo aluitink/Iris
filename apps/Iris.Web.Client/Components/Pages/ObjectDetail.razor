@@ -265,6 +265,20 @@ else if (ObjectDoc is null)
     private string EditContent { get; set; } = string.Empty;
     private string? EditError { get; set; }
 
+    // The content-object IRI a successful edit just resolved ObjectDoc to (the note's IRI). While set,
+    // OnParametersSetAsync must not re-fetch by the page's (stale) ACTIVITY IRI — that would replace the
+    // fresh note with the frozen Create's original embedded content (the "post edit UI stale" bug, S55).
+    // Blazor re-invokes OnParametersSetAsync on EVERY render (including the intermediate renders while
+    // the post-edit re-fetch is still awaiting), so a plain bool flag is unreliable; this token is reset
+    // only by a genuine load of a DIFFERENT object.
+    private string? JustEditedContentId { get; set; }
+
+    // True while SaveEditAsync is awaiting the update round-trip + the post-edit re-fetch. A render
+    // triggered by Editing=true fires OnParametersSetAsync CONCURRENTLY with SaveEditAsync; without this
+    // guard that concurrent re-fetch reads the note BEFORE the server commits the update and clobbers the
+    // fresh re-fetch with pre-edit content (S55). Cleared in SaveEditAsync's finally.
+    private bool EditSaveInFlight { get; set; }
+
     private string? EngagementText
     {
         get
@@ -536,12 +550,56 @@ else if (ObjectDoc is null)
             return;
         }
 
+        // S55: after a successful edit, ObjectDoc is the fresh note (fetched by the note's IRI). The
+        // page's activity IRI (e.g. /creates/{id}) serves the frozen Create's original embedded
+        // content, so a re-fetch by the activity IRI would clobber the fresh note with stale data.
+        // Keep the freshly-fetched note and skip the re-fetch until a different object is requested.
+        // (ObjectDoc.Id is the note's IRI, not the activity IRI, so the guard above does not cover it.)
+        if (JustEditedContentId is { Length: > 0 } editedId
+            && ObjectDoc is { Id: { Length: > 0 } docId }
+            && docId == editedId)
+        {
+            return;
+        }
+
+        // S55: an edit save is in flight (SaveEditAsync is awaiting the update + re-fetch). A render
+        // from Editing=true re-enters here concurrently; re-fetching now would read the note BEFORE the
+        // update commits and clobber the fresh re-fetch with pre-edit content. Skip until the save
+        // finishes (it performs its own fresh re-fetch).
+        if (EditSaveInFlight)
+        {
+            return;
+        }
+
         try
         {
             var obj = await client.GetObjectAsync(iri, CancellationToken.None);
             if (obj is not null)
             {
+                // S55: when the page is addressed by an ACTIVITY IRI (e.g. /creates/{id}) and the
+                // served document is that activity (a Create/Update wrapper), the embedded content
+                // object is the source of truth — the activity's embedded object is a frozen snapshot
+                // taken at creation time and does NOT reflect later edits (the server updates the
+                // stored note, not the stored activity). Resolve to the live content object by its
+                // IRI so the page renders the current content (and stays correct across reloads).
+                // The page's collection walks and reply/like/boost reads already key off the content
+                // IRI, so this only changes which document is rendered.
+                if (obj is Activity activityDoc
+                    && activityDoc.Object is { } embedded
+                    && embedded.FirstOrDefault() is IObject contentObj
+                    && contentObj.Id is { Length: > 0 } contentId
+                    && Iri.TryParse(contentId, out var contentIri2))
+                {
+                    var live = await client.GetObjectFreshAsync(contentIri2, CancellationToken.None);
+                    if (live is not null)
+                    {
+                        obj = live;
+                    }
+                }
+
                 ObjectDoc = obj;
+                // A genuine (re)load of the object supersedes any post-edit state.
+                JustEditedContentId = null;
             }
             else
             {
@@ -962,6 +1020,7 @@ else if (ObjectDoc is null)
         }
 
         Editing = true;
+        EditSaveInFlight = true;
         EditError = null;
         try
         {
@@ -980,9 +1039,14 @@ else if (ObjectDoc is null)
             var result = await client.UpdateNoteAsync(me, updated);
             if (result.IsSuccess)
             {
-                // Re-fetch to render the server's refreshed copy (the stored object is now updated).
+                // Re-fetch the NOTE's IRI (the content object), bypassing the actor cache, so the
+                // server's refreshed copy is rendered immediately. The page's activity IRI
+                // (/creates/{id}) serves the frozen Create's original embedded content, so it must NOT
+                // be used for the post-edit read. JustEdited keeps OnParametersSetAsync from clobbering
+                // this fresh note with a stale activity-IRI re-fetch (S55).
                 var iri = new Iri(id);
-                ObjectDoc = await client.GetObjectAsync(iri, CancellationToken.None);
+                ObjectDoc = await client.GetObjectFreshAsync(iri, CancellationToken.None);
+                JustEditedContentId = id;
                 IsEdit = false;
             }
             else
@@ -997,6 +1061,7 @@ else if (ObjectDoc is null)
         finally
         {
             Editing = false;
+            EditSaveInFlight = false;
         }
     }
 

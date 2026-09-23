@@ -2449,6 +2449,9 @@ public sealed class FeedServiceTests
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
             => Task.FromResult(documents.TryGetValue(objectId, out var doc) ? doc : null);
 
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => GetObjectAsync(objectId, ct);
+
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(null);
 
@@ -2786,6 +2789,7 @@ public sealed class FeedServiceTests
         }
 
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default) => Task.FromResult<IObject?>(null);
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default) => Task.FromResult<IObject?>(null);
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default) => Task.FromResult<Actor?>(null);
         public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default) => Task.FromResult<NodeInfo?>(null);
         public Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));

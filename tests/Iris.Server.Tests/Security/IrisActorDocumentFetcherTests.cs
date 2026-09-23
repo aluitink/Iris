@@ -286,6 +286,10 @@ public class IrisActorDocumentFetcherTests
         }
 
         /// <inheritdoc/>
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => GetObjectAsync(objectId, ct);
+
+        /// <inheritdoc/>
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(_actor);
 

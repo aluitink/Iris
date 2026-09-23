@@ -29,6 +29,17 @@ public interface IActivityPubClient : IDisposable
     public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default);
 
     /// <summary>
+    /// Fetches an object by IRI, bypassing the client-side actor cache so that the
+    /// server's current state is returned. Use after a write (Update/Delete) that
+    /// may have changed the object; a plain <see cref="GetObjectAsync"/> could serve
+    /// a stale cached copy and hide the write from the UI.
+    /// </summary>
+    /// <param name="objectId">The IRI of the object to fetch.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The deserialized object, or null if the request failed or the body was empty.</returns>
+    public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
     /// Fetches an actor by IRI, signed with the <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/>
     /// profile.
     /// </summary>

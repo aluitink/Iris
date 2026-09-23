@@ -25,6 +25,9 @@ public class PagedCollectionTests
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => throw new NotSupportedException();
 

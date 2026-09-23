@@ -33,8 +33,11 @@ COPY . .
 # present and SKIPS the rebuild, copying the OLD artifacts — so the new code never reaches the
 # browser (WASM _framework) or the server (Iris.Server.dll, etc.). Clean EVERY project's bin/ +
 # obj/ (all src/ projects + both apps/ projects + the Client publish/) so a full Release rebuild
-# regenerates everything from the (new) source: the server DLLs AND the WASM _framework.
-RUN find src apps -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} + && rm -rf apps/Iris.Web.Client/publish && dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
+# regenerates everything from the (new) source: the server DLLs AND the WASM _framework. The Client
+# publish/ dir is the WASM BuildAndCopyClient skip-marker (Iris.Web.csproj republishes only when
+# publish/wwwroot/_framework/blazor.webassembly.js is ABSENT) — without removing it the WASM publish
+# is skipped and the browser keeps the stale _framework.
+RUN find src apps -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} + && rm -rf apps/Iris.Web.Client/publish && rm -rf apps/Iris.Web/wwwroot/_framework && dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 # .NET's SslStream negotiates Kerberos (GSSAPI) by default on outbound HTTPS, which loads

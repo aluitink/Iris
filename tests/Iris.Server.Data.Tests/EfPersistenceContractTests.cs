@@ -383,6 +383,9 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
             => Task.FromResult<IObject?>(null);
 
+        public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+            => Task.FromResult<IObject?>(null);
+
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(null);
 

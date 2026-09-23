@@ -12,7 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S50 | OPEN-QA | dev2 | cross-instance community post uses documents/ IRI -> 404 on remote
 S53 | OPEN | - | community-scoped search returns 0 (in-memory feed substring match; remote 404)
-S55 | OPEN | - | post edit UI stale (CONFIRMED Pass 343: feed serves stale embedded Create after Update; delete clean)
+S55 | OPEN-QA | dev1 | post edit UI stale + delete silent no-op
 
 ## NEW
 

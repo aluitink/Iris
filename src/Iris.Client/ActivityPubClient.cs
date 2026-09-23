@@ -124,6 +124,22 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return value;
     }
 
+    /// <inheritdoc/>
+    public Task<IObject?> GetObjectFreshAsync(Iri objectId, CancellationToken ct = default)
+    {
+        // The object-document endpoint is served Cache-Control: max-age=60, stale-while-revalidate=300,
+        // so a browser HTTP cache (WASM) replays the body it cached earlier in the session (e.g. the
+        // pre-edit content) for a same-IRI re-fetch — the server's refreshed copy is never read (S55).
+        // Append ?refresh=true (the Iris refresh-bypass marker, also honored for collection pages) so the
+        // request URL is a distinct cache key: the browser performs a real network fetch and the server
+        // re-serves the current document. Non-Iris servers ignore the query string, so it is harmless.
+        var uri = objectId.Value.Contains('?', StringComparison.Ordinal)
+            ? $"{objectId.Value}&refresh=true"
+            : $"{objectId.Value}?refresh=true";
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        return GetObjectAsync(request, ct);
+    }
+
     /// <summary>
     /// Fetches an object from the network (bypassing any actor cache) and deserializes it.
     /// </summary>
