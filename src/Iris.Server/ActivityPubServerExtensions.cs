@@ -6745,14 +6745,30 @@ public static class ActivityPubServerExtensions
                 // resolves the author in either case (a remote parent's author is fetched over the wire),
                 // so a cross-instance reply names its parent's author in the `to` audience.
                 Iri? parentAuthor = parentAuthorOverride;
+                var embedded = create.ExtractEmbeddedObject();
                 if (parentAuthor is null
-                    && create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri)
+                    && embedded?.GetParentIri() is { } parentIri)
                 {
                     parentAuthor = await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false);
                 }
                 if (parentAuthor is { } resolvedParent)
                 {
                     create.To = MergeAudience(create.To, [resolvedParent]);
+                    // S62: a remote instance (Mastodon/Lemmy) reads the embedded NOTE's to/cc to decide
+                    // delivery + notification, not the Create activity's audience. The parent note's author
+                    // must therefore also be named in the NOTE's audience, or a cross-instance reply neither
+                    // reaches nor notifies the parent author. The activity-level `to` above (136.7) is kept
+                    // for Iris receivers that read it; the note-level audience is what peers honor.
+                    if (embedded is KristofferStrube.ActivityStreams.Object embeddedAo)
+                    {
+                        // Ensure the public sentinel is preserved (a public reply must stay public — the
+                        // visibility gate treats a named-audience object without #Public as non-public and
+                        // 404s it for non-recipients). MergeAudience keeps any existing #Public; add it when
+                        // absent so a reply to a public note remains publicly readable.
+                        var publicIri = new Iri("as:Public");
+                        embeddedAo.To = MergeAudience(embeddedAo.To, [resolvedParent, publicIri]);
+                        embeddedAo.Cc = MergeAudience(embeddedAo.Cc, [resolvedParent]);
+                    }
                 }
                 break;
 

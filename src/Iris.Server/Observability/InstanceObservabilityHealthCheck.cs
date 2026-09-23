@@ -23,15 +23,22 @@ namespace Iris.Server.Observability;
 /// resolvable, so the operator can see a gap between "local actors on disk" and "actors we can sign
 /// as."
 ///
+/// <para>
+/// S63: the <c>stored</c> count includes communities and other non-signing actor types that do not
+/// need a key. The description now reports the gap explicitly ("N local actor(s) without a resolvable
+/// signing identity") and the <c>signable_actors</c> data field surfaces the resolvable count for
+/// operators who want to scrape just the signable figure without parsing the description.
+/// </para>
+///
 /// The dead-letter count is the number of outbound deliveries that exhausted their retry budget and
 /// were parked in the dead-letter store (see <see cref="IDeliveryDeadLetterStore"/>). A non-zero
 /// count is a signal that some peers are unreachable or rejecting; it is reported as
 /// <see cref="HealthStatus.Degraded"/> (the instance is otherwise healthy, but a backlog of failed
 /// deliveries is accumulating) and <see cref="HealthStatus.Healthy"/> when zero.
 ///
-/// Both figures are surfaced in <see cref="HealthCheckResult.Data"/> (<c>resolvable_actors</c>,
-/// <c>stored_actors</c>, <c>dead_letters</c>) so an orchestrator or dashboard can scrape them from the
-/// instance's <c>GET /ap/v1/health</c> endpoint.
+/// All figures are surfaced in <see cref="HealthCheckResult.Data"/> (<c>stored_actors</c>,
+/// <c>resolvable_actors</c>, <c>signable_actors</c>, <c>dead_letters</c>) so an orchestrator or
+/// dashboard can scrape them from the instance's <c>GET /ap/v1/health</c> endpoint.
 ///
 /// It is registered as an <see cref="IHealthCheck"/> singleton (not via <c>AddHealthChecks</c>'s
 /// <c>AddCheck</c>) so the endpoint resolves it through <c>IEnumerable&lt;IHealthCheck&gt;</c> without
@@ -114,10 +121,12 @@ public sealed class InstanceObservabilityHealthCheck : IHealthCheck
         }
 
         int deadLetters = _deadLetters.Count;
+        int unresolvable = stored - resolvable;
         var data = new Dictionary<string, object>
         {
             ["stored_actors"] = stored,
             ["resolvable_actors"] = resolvable,
+            ["signable_actors"] = resolvable,
             ["dead_letters"] = deadLetters,
         };
 
@@ -126,12 +135,12 @@ public sealed class InstanceObservabilityHealthCheck : IHealthCheck
             return new HealthCheckResult(
                 HealthStatus.Degraded,
                 $"{deadLetters} outbound delivery(ies) dead-lettered; " +
-                    $"{resolvable}/{stored} stored actor(s) have a resolvable signing identity.",
+                    $"{resolvable}/{stored} local actor(s) signable, {unresolvable} without a resolvable signing identity.",
                 data: data);
         }
 
         return HealthCheckResult.Healthy(
-            $"{resolvable}/{stored} stored actor(s) have a resolvable signing identity; no dead letters.",
+            $"{resolvable}/{stored} local actor(s) signable, {unresolvable} without a resolvable signing identity; no dead letters.",
             data);
     }
 }

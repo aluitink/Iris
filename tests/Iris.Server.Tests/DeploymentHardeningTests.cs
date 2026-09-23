@@ -324,7 +324,10 @@ public sealed class DeploymentHardeningTests
         Assert.Equal(Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy, result.Status);
         Assert.Equal(5, result.Data!["stored_actors"]);
         Assert.Equal(2, result.Data!["resolvable_actors"]);
+        Assert.Equal(2, result.Data!["signable_actors"]);
         Assert.Equal(0, result.Data!["dead_letters"]);
+        Assert.Contains("signable", result.Description);
+        Assert.Contains("without a resolvable signing identity", result.Description);
     }
 
     [Fact]
