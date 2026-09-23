@@ -6,10 +6,11 @@ Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
 
 1. PLAN.md OPEN-QA items exist -> verify the top one.
 2. None exist -> hunt: exercise the qa stack (playwright) on core flows (post, edit, delete, search, federation to Lemmy/Mastodon interop stacks).
+   Use only the qa env's public FQDNs (docs/ENVIRONMENTS.md).
 
 ## Verify OPEN-QA
 
-1. Check the qa stack runs the merged build (commit id in your stack matches main HEAD). If not, rebuild it first.
+1. Check the qa stack is built from the qa worktree at main HEAD. If not, rebuild it (docs/ENVIRONMENTS.md, Stack ops).
 2. Follow the fix's repro from its commit body.
 3. Pass -> PLAN: item to CLOSED. Fail -> item back to OPEN, owner `-`.
 4. Verdict + evidence (steps, observed, expected, build id) go in a commit on the qa branch:

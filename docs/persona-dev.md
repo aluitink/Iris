@@ -11,10 +11,11 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 ## Work (in your worktree, branch dev1 or dev2)
 
 1. Sync base: `git merge main` in your worktree (root main is the base; worktrees share the repo). Never work on a stale base.
-2. Reproduce: run the failing behavior against your dev stack (playwright) or a failing test.
-3. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
-4. Add or update one test that fails without the fix.
-5. `dotnet test` in the worktree. All green or stop.
+2. Make sure your stack is up and built from your worktree (docs/ENVIRONMENTS.md, Stack ops). Rebuild if it does not match your branch HEAD.
+3. Reproduce: run the failing behavior against your dev stack via its public FQDN (playwright) or a failing test.
+4. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
+5. Add or update one test that fails without the fix.
+6. `dotnet test` in the worktree. All green or stop.
 
 ## Merge
 

@@ -109,8 +109,10 @@ QA finds bug -> `NEW`. PA accepts (or dev claims) -> `OPEN`. Dev fixes in worktr
 ## Environments
 
 - dev1, dev2, qa, pa worktrees: `/workspace/.worktrees/<name>`, branches of the same name.
-- dev1 stack, dev2 stack, qa stack: public, isolated, built from their worktrees.
-- prod: built from root (main). PA may inspect prod via playwright. Never deploy to prod from an agent.
+- Stacks (dev1, dev2, qa) are built from their worktrees. prod is built from root (main).
+- URLs, ports, and role->environment binding: docs/ENVIRONMENTS.md. Read it when you need to dial
+  a stack. Dial public FQDNs only — never localhost, container names, or host ports.
+- An agent dials only its bound environment (plus prod for PA). Cross-environment dials are forbidden.
 - Merges: worktree branch -> main (root) per the role's merge rule in the Roles table.
   Root moves only by merge. Agents never commit in root except the merge command itself.
 
