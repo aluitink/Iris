@@ -12,6 +12,8 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## NEW
 
+S71 | NEW | qa | community (Group) ns#followersCount AP counter wrong: ActorCountRefreshService computes it from the actor Follow store (EdgeKind.Follow) instead of community membership (EdgeKind.CommunityFollower); qa-iris-a community ii-a8-community shows ns#followersCount=1 in AP doc while /followers collection + UI "Members" show 5 (ii-b1, qa-s55-v344, replyauth, s64qa2, s66b). Repro: B actor joins A community; collection totalItems=5 but AP doc counter=1.
+
 ## CLOSED
 
 S66 | CLOSED | qa | federated boost count wrong on receiving instance — NOT REPRODUCED: qa live B-boost of A note shows ns#sharedCount=1 on home A (count correct; likely misread of top-level vs ns# key)
