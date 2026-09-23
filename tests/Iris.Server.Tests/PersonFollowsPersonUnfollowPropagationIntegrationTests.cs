@@ -212,6 +212,15 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAs
     {
         var communityIri = TestSeeder.SeedCommunity(_aPersistence, AHost, "iris");
 
+        // Populate the collection page cache by reading alice's (empty) following collection first.
+        // Without invalidation on the join, the cached empty page would be served after the join.
+        using (var warmUpRequest = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/u/{Alice}/following"))
+        {
+            warmUpRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
+            using var warmUpResponse = await _aHttp.SendAsync(warmUpRequest);
+            Assert.Equal(HttpStatusCode.OK, warmUpResponse.StatusCode);
+        }
+
         var follow = BuildFollow(_aliceActorIri, communityIri);
         using var followRequest = SignedRequest(_aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
         using var followResponse = await _aHttp.SendAsync(followRequest);
@@ -231,6 +240,19 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAs
         Assert.Contains(
             communityIri,
             await _aPersistence.Follows.GetFollowingAsync(_aliceActorIri));
+
+        // S73: the join must invalidate the collection page cache so the next non-?refresh read of
+        // alice's /following reflects the new edge (not the stale pre-join empty page).
+        using (var verifyRequest = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/u/{Alice}/following"))
+        {
+            verifyRequest.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
+            using var verifyResponse = await _aHttp.SendAsync(verifyRequest);
+            Assert.Equal(HttpStatusCode.OK, verifyResponse.StatusCode);
+            var json = await verifyResponse.Content.ReadAsStringAsync();
+            Assert.True(
+                json.Contains(communityIri.Value),
+                $"The /following collection (served from the response cache) must list the community after the join. Got: {json}");
+        }
     }
 
     // --- Helpers --------------------------------------------------------------------------

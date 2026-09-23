@@ -4739,7 +4739,7 @@ public static class ActivityPubServerExtensions
                 Iri? recipientIri;
                 if (activity is Follow follow)
                 {
-                    (Iri? Target, bool IsNewFollow)? followResult = await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false);
+                    (Iri? Target, bool IsNewFollow)? followResult = await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, collectionCache, followFeed, ct).ConfigureAwait(false);
                     recipientIri = followResult?.Target;
                     isNewFollow = followResult?.IsNewFollow ?? true;
                 }
@@ -5465,6 +5465,8 @@ public static class ActivityPubServerExtensions
         ILocalActorResolver localActors,
         Iri followerIri,
         Follow follow,
+        LocalCollectionPageCache? collectionCache,
+        IFollowFeedService? followFeed,
         CancellationToken ct)
     {
         var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
@@ -5508,6 +5510,15 @@ public static class ActivityPubServerExtensions
             {
                 await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
             }
+
+            // S73: the person follow edge above changes the follower's `following` collection and
+            // home feed. The collection is served through the local collection-page response cache
+            // (60s TTL), so without invalidation the stale pre-join page (empty) is served until the
+            // TTL lapses — the Communities page's Following tab and the FollowButton re-render as
+            // "Join" after navigation. Mirror the explicit-Follow invalidation (OutboxPublishHandler).
+            InvalidateLocalCollectionPage(collectionCache, followerIri, "following");
+            InvalidateLocalCollectionPage(collectionCache, targetIri.Value, "followers");
+            followFeed?.InvalidateActorFeedCache(followerIri, ct);
         }
         else if (!alreadyFollowing && await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
         {
@@ -10431,10 +10442,10 @@ public static class ActivityPubServerExtensions
     /// <param name="ownerIri">The owning actor's or community's IRI.</param>
     /// <param name="collectionName">The collection's name segment (e.g. <c>outbox</c>, <c>blocks</c>).</param>
     private static void InvalidateLocalCollectionPage(
-        LocalCollectionPageCache collectionCache,
+        LocalCollectionPageCache? collectionCache,
         Iri ownerIri,
         string collectionName)
-        => collectionCache.Invalidate(new Iri($"{ownerIri.Value}/{collectionName}"));
+        => collectionCache?.Invalidate(new Iri($"{ownerIri.Value}/{collectionName}"));
 
     /// <summary>
     /// Serves an actor's followed feed (home timeline, F-14) as a paged collection for
