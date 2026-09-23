@@ -4,8 +4,9 @@ Reference. Read when you need URLs or ports. All agent traffic uses the public F
 never localhost, never container names, never host ports directly. TLS terminates on the external
 reverse proxy; every FQDN is https on 443.
 
-Rule: an agent dials only its own environment's FQDNs (plus prod, for PA). Cross-environment
-dials give false results: a dev1 browser hitting a qa FQDN tests qa's build, not dev1's.
+Rule: an agent dials only its own environment's FQDNs. Cross-environment dials give false
+results: a dev1 browser hitting a qa FQDN tests qa's build, not dev1's. PA is the exception:
+it may dial prod read-only and one unclaimed dev environment (binding table below).
 
 ## dev1 (DEV, worktree dev1)
 
@@ -50,13 +51,14 @@ Built from root's active branch (LOOP-CONFIG). Any agent may dial prod read-only
 |---|---|
 | DEV | dev1 or dev2 — the one matching its claimed worktree. Never the other dev env. |
 | QA | qa. Live verification counts only on the qa stack. |
-| PA | prod, or any unused dev/qa environment for exploration. Check both .state files first; use an env whose worktree is unclaimed. Never use the env of the worktree you are not holding. |
+| PA | one unclaimed dev environment (dev1 or dev2), redeployed from its worktree so it is fresh. Check both .state files first; never use an env whose worktree is claimed. Prod is read-only reference (stale: not deployed often), not the exploration target. |
 
 ## Stack ops
 
 Stacks are built from worktrees, never from root. The compose file builds with
 `context: ${REPO_ROOT}`, and each env's `.env` sets `REPO_ROOT` to the owning worktree
-(dev1 env -> `.worktrees/dev1`, qa env -> `.worktrees/qa`). Run from root:
+(dev1 env -> `.worktrees/dev1`, dev2 env -> `.worktrees/dev2`, qa env -> `.worktrees/qa`).
+Run from root:
 
 ```
 docker compose -f environments/stack/docker-compose.yml --env-file environments/<env>/.env -p <env> up -d --build

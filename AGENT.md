@@ -18,12 +18,16 @@ You never change which branch is active; that is a human action.
    - `/workspace/docs/PROTOCOL.md`
    - `/workspace/PLAN.md`
    - `/workspace/.state/<other>.md`
-3. Pick your role (PROTOCOL.md, Turn):
-   - any `NEW` or `OPEN-QA` item in PLAN -> QA
-   - else any `OPEN` item -> DEV
-   - else -> PA
+3. Pick your role by what is actionable (PROTOCOL.md, Turn step 3):
+   - any `OPEN-QA` item in PLAN -> QA   (verify the merged fix live)
+   - else any `OPEN` item -> DEV        (fix it)
+   - else any `NEW` item -> PA          (triage: accept verified NEW -> OPEN, or reject/merge dupes)
+   - else -> QA                          (no actionable item: hunt for new bugs)
    - If the other agent's .state `WORK` line holds the top item of that section, take the next item in it, or the next section.
-   - If the worktree the role needs is claimed by the other agent, fall through to the next role (PROTOCOL.md, Turn step 3).
+   - If the worktree the role needs is claimed by the other agent, fall through to the next role in step 3's order (PROTOCOL.md).
+   - If both agents select the same role in the same turn (a worktree serves only one),
+     the agent that reads the other's `CLAIM: <wt>` first falls through to the NEXT role
+     in step 3's order (e.g. both QA -> second takes PA triage; both PA -> second takes QA hunt).
 4. Claim: update your `.state/<you>.md` `CLAIM` and `WORK` lines to what you selected.
 5. Read `/workspace/docs/persona-<role>.md`. Follow it. Do exactly one unit of work in your claimed worktree.
 6. PLAN.md: edit it **in your worktree** only, for items you touched. Commit it in your worktree.
