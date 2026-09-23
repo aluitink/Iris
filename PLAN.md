@@ -10,8 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S64 | OPEN-QA | dev1 | community Article post not in community feed (REPRODUCED)
-
 ## NEW
 
 S69 | NEW | qa | direct note not federated (path-dependent: some paths repro, some not)
@@ -22,6 +20,8 @@ S66 | NEW | qa | federated boost count wrong on receiving instance (REPRODUCED)
 ## OPEN-QA
 
 ## CLOSED
+
+S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
 
 S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PASS: live qa-iris-a)
 
