@@ -1714,6 +1714,12 @@ ul.object-list li {
     min-width: var(--space-2);
 }
 
+.engagement-copied {
+    font-size: var(--font-size-xs);
+    color: var(--accent);
+    font-weight: 600;
+}
+
 .engagement-count-link {
     text-decoration: none;
 }
