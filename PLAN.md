@@ -13,10 +13,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S125 | OPEN | - | Home: signed-in Local tab shows instance public timeline (now authless-only)
+S125 | OPEN | agent-a | Home: signed-in Local tab shows instance public timeline (now authless-only)
 S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
+S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
 ## CLOSED
 
 S124 | CLOSED | qa | Feed flip after post — FALSE POSITIVE (stale WASM cache, same root cause as S122): live qa-iris-a (wasm t1q33tso4m) s116rcv follows s116snd, posts S124-TEST-POST-FROM-RCV; feed shows both s116rcv's post (newest) + s116snd's S118 post (1h ago), ordered by publish time; server logs confirm 4 items built (Create=4); 0 console errors
