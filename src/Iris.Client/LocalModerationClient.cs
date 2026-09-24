@@ -415,6 +415,78 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct)
         => LocalDeleteCommunityAsync(communityId, credentials, ct);
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> BookmarkAsync(Iri actorId, Iri objectIri, CancellationToken ct = default)
+        => LocalDecisionAsync(actorId, objectIri, path: "bookmarks", remove: false, removeQuery: "unbookmark", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnbookmarkAsync(Iri actorId, Iri objectIri, CancellationToken ct = default)
+        => LocalDecisionAsync(actorId, objectIri, path: "bookmarks", remove: true, removeQuery: "unbookmark", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetBookmarksAsync(Iri actorId, CancellationToken ct = default)
+        => LocalGetAsync(actorId, path: "bookmarks", credentials: null, ct);
+
+    /// <summary>
+    /// Performs a local GET request (e.g. listing bookmarks):
+    /// <c>GET /local/v1/u/{handle}/{path}</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalGetAsync(
+        Iri actorId,
+        string path,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var configured = _localAuth;
+        HttpMessageHandler handler;
+        bool ownsHandler;
+        if (credentials is not null && configured is null)
+        {
+            handler = new LocalAuthHandler(credentials, new HttpClientHandler());
+            ownsHandler = true;
+        }
+        else if (credentials is not null)
+        {
+            handler = new LocalAuthHandler(credentials, configured!);
+            ownsHandler = false;
+        }
+        else if (configured is not null)
+        {
+            handler = configured;
+            ownsHandler = false;
+        }
+        else if (_passthrough is not null)
+        {
+            handler = _passthrough;
+            ownsHandler = false;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Local moderation requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+        }
+
+        var actor = actorId.Value;
+        var actorSegmentStart = Math.Max(actor.IndexOf("/" + LocalModerationConstants.ActorSegment + "/", StringComparison.Ordinal),
+            actor.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal));
+        if (actorSegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for actor IRI '{actorId}' (expected a path containing /u/ or /c/).");
+        }
+        var actorSegment = actor[actorSegmentStart..];
+        var host = new Uri(actorId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri($"{host}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}/{path}");
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
     /// <summary>
     /// Performs a local, owner-gated DELETE for community deletion:
     /// <c>DELETE /local/v1/c/{name}</c>.

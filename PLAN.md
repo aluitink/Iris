@@ -11,10 +11,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 
 S110 | OPEN-QA | dev2 | Home feed made one /flags call per ObjectView (N posts = N calls) to restore Report state — FIXED: ObjectView now uses UiContext.GetModerationStateAsync (cached per-circuit, 2min TTL) instead of a direct GetFlagsAsync per object. Live dev2: 2 posts = 1 flags call (was 2). No new iris extension property needed. QA: open home feed with N posts, count /flags network calls — should be 1, not N.
+S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection — FIXED (S111): added IBookmarkStore (in-memory + file-backed + EF Core over Edges table, new EdgeKind.Bookmark=19, no migration), server endpoints POST/GET /local/v1/u/{handle}/bookmarks, client BookmarkAsync/UnbookmarkAsync/GetBookmarksAsync, EngagementBar bookmark button (toggle), Profile Bookmarks tab (lazy-load list). QA: click bookmark on a post (icon fills), reload page, bookmark persists; Profile > Bookmarks tab lists bookmarked posts; unbookmark removes it.
 
 ## OPEN
 
-S111 | OPEN | - | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab
 S112 | OPEN | - | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav
 S113 | OPEN | - | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button
 ## CLOSED

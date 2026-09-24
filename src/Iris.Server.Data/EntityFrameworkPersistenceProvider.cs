@@ -11,6 +11,7 @@ namespace Iris.Server.Data;
 public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
 {
     private readonly EdgeStore _edges;
+    private readonly IBookmarkStore _bookmarks;
 
     /// <summary>
     /// Initializes the provider over its stores.
@@ -30,6 +31,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
     /// <param name="keys">The key store. Must not be null.</param>
     /// <param name="media">The media store. Must not be null.</param>
     /// <param name="edges">The shared edge store (owned by the provider; not exposed publicly). Must not be null.</param>
+    /// <param name="bookmarks">The bookmark store. Must not be null.</param>
     public EntityFrameworkPersistenceProvider(
         IActorStore actors,
         IActivityStore activities,
@@ -45,7 +47,8 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
         ICommunityStore communities,
         IKeyStore keys,
         IMediaStore media,
-        EdgeStore edges)
+        EdgeStore edges,
+        IBookmarkStore bookmarks)
     {
         Actors = actors ?? throw new ArgumentNullException(nameof(actors));
         Activities = activities ?? throw new ArgumentNullException(nameof(activities));
@@ -62,6 +65,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
         Keys = keys ?? throw new ArgumentNullException(nameof(keys));
         Media = media ?? throw new ArgumentNullException(nameof(media));
         _edges = edges ?? throw new ArgumentNullException(nameof(edges));
+        _bookmarks = bookmarks ?? throw new ArgumentNullException(nameof(bookmarks));
     }
 
     /// <inheritdoc/>
@@ -105,4 +109,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public IMediaStore Media { get; }
+
+    /// <inheritdoc/>
+    public IBookmarkStore Bookmarks => _bookmarks;
 }

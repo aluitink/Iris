@@ -34,6 +34,17 @@
             </svg>
             <span class="engagement-count">@_boostCount</span>
         </button>
+        <button type="button"
+                class="engagement-btn @(_bookmarked ? "engagement-btn--active" : "")"
+                title="Bookmark"
+                aria-label="Bookmark"
+                aria-pressed="@(_bookmarked ? "true" : "false")"
+                disabled="@_busy"
+                @onclick="() => ToggleBookmarkAsync(iri)">
+            <svg viewBox="0 0 24 24" fill="@(_bookmarked ? "currentColor" : "none")" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+        </button>
         @if (Locked)
         {
             <span class="engagement-btn engagement-btn--disabled"
@@ -178,6 +189,7 @@
     private int _replyCount;
     private bool _liked;
     private bool _boosted;
+    private bool _bookmarked;
     private bool _busy;
     private bool _countsLoaded;
     private bool _showModeration;
@@ -478,6 +490,37 @@
                         _boostCount++;
                     }
                 }
+            }
+        }
+        catch
+        {
+            // Revert on failure.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleBookmarkAsync(Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.LocalModeration is not { } mod)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_bookmarked)
+            {
+                await mod.UnbookmarkAsync(me, iri);
+                _bookmarked = false;
+            }
+            else
+            {
+                await mod.BookmarkAsync(me, iri);
+                _bookmarked = true;
             }
         }
         catch

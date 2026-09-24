@@ -26,6 +26,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryCommunityStore _communities;
     private readonly IKeyStore _keys;
     private readonly IMediaStore _media;
+    private readonly IBookmarkStore _bookmarks;
 
     /// <summary>
     /// Initializes a new provider with fresh in-memory stores and a fresh in-memory key store.
@@ -35,7 +36,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
             new InMemoryLikeStore(), new InMemoryDislikeStore(), new InMemoryAnnounceStore(), new InMemoryReplyStore(),
             new InMemoryModerationStore(), new InMemoryRelayStore(), new InMemoryObjectStore(),
             new InMemoryCreateIndex(), new InMemoryCommunityStore(), new InMemoryKeyStore(),
-            new InMemoryMediaStore())
+            new InMemoryMediaStore(), new InMemoryBookmarkStore())
     {
     }
 
@@ -56,6 +57,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="communities">The community store.</param>
     /// <param name="keys">The key store.</param>
     /// <param name="media">The media store (Phase 20.4 (a)).</param>
+    /// <param name="bookmarks">The bookmark store (S111).</param>
     public InMemoryPersistenceProvider(
         InMemoryActorStore actors,
         InMemoryActivityStore activities,
@@ -70,7 +72,8 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryCreateIndex creates,
         InMemoryCommunityStore communities,
         IKeyStore keys,
-        IMediaStore media)
+        IMediaStore media,
+        IBookmarkStore bookmarks)
     {
         _actors = actors ?? throw new ArgumentNullException(nameof(actors));
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
@@ -86,6 +89,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
         _media = media ?? throw new ArgumentNullException(nameof(media));
+        _bookmarks = bookmarks ?? throw new ArgumentNullException(nameof(bookmarks));
 
         // Wire the deleted-actor filter (139.3-F2) into every in-memory edge store: read paths exclude
         // edges whose source was a *locally-stored-then-deleted* actor (the EF sibling applies the same
@@ -145,6 +149,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <inheritdoc/>
     public IMediaStore Media => _media;
 
+    /// <inheritdoc/>
+    public IBookmarkStore Bookmarks => _bookmarks;
+
     /// <summary>
     /// The concrete in-memory actor store (for seeding/tests).
     /// </summary>
@@ -179,6 +186,10 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         if (_media is InMemoryMediaStore concreteMedia)
         {
             concreteMedia.Clear();
+        }
+        if (_bookmarks is InMemoryBookmarkStore concreteBookmarks)
+        {
+            concreteBookmarks.Clear();
         }
     }
 }

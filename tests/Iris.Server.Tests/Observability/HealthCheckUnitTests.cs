@@ -375,6 +375,7 @@ public sealed class HealthCheckUnitTests
         public Iris.Server.Stores.ICommunityStore Communities => throw new NotSupportedException();
         public IKeyStore Keys => throw new NotSupportedException();
         public Iris.Server.Stores.IMediaStore Media => throw new NotSupportedException();
+        public IBookmarkStore Bookmarks => throw new NotSupportedException();
         public Iris.Server.Stores.IDislikeStore Dislikes => null!;
     }
 

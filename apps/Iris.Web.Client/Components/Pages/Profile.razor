@@ -59,6 +59,7 @@ else
         <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers</a>
         <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
         <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        <a href="#bookmarks" id="tab-bookmarks" role="tab" aria-selected="@(ActiveTab == "bookmarks")" aria-controls="panel-bookmarks" class="tab @(ActiveTab == "bookmarks" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("bookmarks")'>Bookmarks</a>
         @if (ApprovesFollowers)
         {
             <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(FollowRequestCount is { } frc && frc > 0 ? $" ({frc})" : string.Empty)</a>
@@ -161,6 +162,27 @@ else
             }
         </div>
     }
+    else if (ActiveTab == "bookmarks")
+    {
+        <div role="tabpanel" id="panel-bookmarks" aria-labelledby="tab-bookmarks">
+            @if (BookmarksLoading)
+            {
+                <p class="muted">Loading bookmarks…</p>
+            }
+            else if (BookmarksError is not null)
+            {
+                <div class="error" role="alert">@BookmarksError</div>
+            }
+            else if (BookmarkIris is { Count: 0 })
+            {
+                <p class="muted">You haven't bookmarked any posts yet. Click the bookmark icon on a post to save it for later.</p>
+            }
+            else
+            {
+                <p class="muted" style="margin-bottom: 0.5rem;">@(BookmarkIris.Count) bookmarked post@(BookmarkIris.Count > 1 ? "s" : string.Empty)</p>
+            }
+        </div>
+    }
     else if (ActiveTab == "requests")
     {
         <div class="card" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
@@ -230,6 +252,11 @@ else
     private bool _originalApproveFollowers;
     private bool _pendingEdit;
     private string ActiveTab { get; set; } = "posts";
+
+    // Bookmarks (S111)
+    private bool BookmarksLoading;
+    private string? BookmarksError;
+    private IReadOnlyList<Iri> BookmarkIris = [];
 
     private Actor? ActorObj => ActorDoc as Actor;
 
@@ -409,6 +436,11 @@ else
         {
             _ = LoadFollowedCommunitiesAsync();
         }
+
+        if (tab == "bookmarks" && BookmarkIris.Count == 0 && !BookmarksLoading && BookmarksError is null)
+        {
+            _ = LoadBookmarksAsync();
+        }
     }
 
     private List<string>? FollowRequestActors { get; set; }
@@ -535,6 +567,41 @@ else
             .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ToList();
         StateHasChanged();
+    }
+
+    private async Task LoadBookmarksAsync()
+    {
+        if (Session.LocalModeration is not { } mod || Session.ActorId is not { } actorId)
+        {
+            return;
+        }
+
+        BookmarksLoading = true;
+        BookmarksError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await mod.GetBookmarksAsync(actorId);
+            if (!result.IsSuccess)
+            {
+                BookmarksError = "Failed to load bookmarks.";
+            }
+            else
+            {
+                var iriValues = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body ?? "[]");
+                BookmarkIris = iriValues?.Select(s => new Iri(s)).ToList() ?? [];
+            }
+        }
+        catch (Exception ex)
+        {
+            BookmarksError = $"Failed to load bookmarks: {ex.Message}";
+        }
+        finally
+        {
+            BookmarksLoading = false;
+            StateHasChanged();
+        }
     }
 
     private async Task LoadFollowRequestsAsync()

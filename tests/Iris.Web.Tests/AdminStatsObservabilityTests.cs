@@ -425,6 +425,7 @@ public sealed class AdminStatsObservabilityTests
         public ICommunityStore Communities => throw new NotSupportedException();
         public IKeyStore Keys => throw new NotSupportedException();
         public IMediaStore Media => throw new NotSupportedException();
+        public IBookmarkStore Bookmarks => throw new NotSupportedException();
     }
 
     private sealed class StubActorStore(IReadOnlyList<Actor> actors) : IActorStore
