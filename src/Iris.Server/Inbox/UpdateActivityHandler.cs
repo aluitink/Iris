@@ -238,6 +238,12 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
                 community.Icon = icon.Any() ? icon : null;
             }
 
+            // S103: banner (AS `image`) — same merge semantics as the community icon above.
+            if (updatedGroup.Image is { } image)
+            {
+                community.Image = image.Any() ? image : null;
+            }
+
             if (updatedGroup.Endpoints is not null)
             {
                 community.Endpoints = updatedGroup.Endpoints;
@@ -305,6 +311,14 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         if (updated.Icon is { } icon)
         {
             stored.Icon = icon.Any() ? icon : null;
+        }
+
+        // S103: the profile banner is the AS `image` property (Mastodon's banner). Same merge semantics
+        // as the icon: a non-empty image array sets the banner, an empty array clears it, a missing
+        // field leaves the stored banner unchanged.
+        if (updated.Image is { } image)
+        {
+            stored.Image = image.Any() ? image : null;
         }
 
         if (updated.Endpoints is not null)

@@ -44,6 +44,33 @@
             }
         </div>
 
+        <div class="form-group edit-profile-banner-group">
+            <span class="form-label">Banner</span>
+            <div class="edit-profile-banner-preview">
+                @if (_bannerPreviewIri is { Length: > 0 } bannerPreviewIri)
+                {
+                    <img src="@bannerPreviewIri" alt="banner preview" class="edit-profile-banner-img" loading="lazy" />
+                }
+            </div>
+            <div class="edit-profile-banner-actions">
+                <label for="edit-banner" class="btn" @(BannerBusy || Saving ? "disabled" : "")>
+                    @(_bannerUploading ? "Uploading…" : (_bannerIri is null ? "Choose banner" : "Change banner"))
+                    <InputFile id="edit-banner" OnChange="OnBannerChosen" OnFileRemoved="OnBannerRemoved"
+                               Accept="image/*" hidden />
+                </label>
+                @if (_bannerIri is not null)
+                {
+                    <button type="button" class="btn" @onclick="ResetBanner" disabled="@(BannerBusy || Saving)">
+                        Remove banner
+                    </button>
+                }
+            </div>
+            @if (_bannerUploadError is not null)
+            {
+                <div class="error" role="alert">@_bannerUploadError</div>
+            }
+        </div>
+
         <div class="form-group">
             <label for="edit-name">Display name</label>
             <input id="edit-name" type="text" @bind="_name" maxlength="100"
@@ -97,6 +124,13 @@
     [Parameter]
     public bool InitialApproveFollowers { get; set; }
 
+    /// <summary>
+    /// The actor's current banner IRI (the first <c>image</c>), or null when the actor has no banner.
+    /// Shown as the initial preview and submitted back unchanged when the user does not pick a new one.
+    /// </summary>
+    [Parameter]
+    public string? InitialBannerIri { get; set; }
+
     [Parameter]
     public bool Saving { get; set; }
 
@@ -118,11 +152,22 @@
     public Func<IBrowserFile, Task<MediaUploadResult?>> OnIconUpload { get; set; } = default!;
 
     /// <summary>
-    /// Submits the form. The <c>iconIri</c> is the IRI to set as the actor's <c>icon</c> (the uploaded
-    /// avatar, or the existing one when unchanged), or null when the user removed the avatar.
+    /// Uploads a chosen banner file and returns the upload result (the same-origin media IRI to set as
+    /// the actor's <c>image</c>). Invoked when the user picks a file; the resulting IRI is shown as the
+    /// preview and submitted with the profile. Returns null when the upload fails (the form shows an
+    /// error).
     /// </summary>
     [Parameter]
-    public Func<string, string, bool, string?, Task> OnSubmit { get; set; } = default!;
+    public Func<IBrowserFile, Task<MediaUploadResult?>> OnBannerUpload { get; set; } = default!;
+
+    /// <summary>
+    /// Submits the form. The <c>iconIri</c> is the IRI to set as the actor's <c>icon</c> (the uploaded
+    /// avatar, or the existing one when unchanged), or null when the user removed the avatar. The
+    /// <c>bannerIri</c> is the IRI to set as the actor's <c>image</c> (the uploaded banner, or the
+    /// existing one when unchanged), or null when the user removed the banner.
+    /// </summary>
+    [Parameter]
+    public Func<string, string, bool, string?, string?, Task> OnSubmit { get; set; } = default!;
 
     [Parameter]
     public EventCallback OnCancel { get; set; }
@@ -134,9 +179,16 @@
     private string? _iconPreviewIri;
     private string? _iconUploadError;
     private bool _iconUploading;
+    private string? _bannerIri;
+    private string? _bannerPreviewIri;
+    private string? _bannerUploadError;
+    private bool _bannerUploading;
 
     /// <summary>True while an avatar upload is in flight (disables the Save/Cancel buttons + the file input).</summary>
     private bool IconBusy => _iconUploading || Saving;
+
+    /// <summary>True while a banner upload is in flight (disables the Save/Cancel buttons + the file input).</summary>
+    private bool BannerBusy => _bannerUploading || Saving;
 
     protected override void OnParametersSet()
     {
@@ -151,6 +203,16 @@
         if (_iconPreviewIri is null)
         {
             _iconPreviewIri = InitialIconIri;
+        }
+
+        if (_bannerIri is null)
+        {
+            _bannerIri = InitialBannerIri;
+        }
+
+        if (_bannerPreviewIri is null)
+        {
+            _bannerPreviewIri = InitialBannerIri;
         }
     }
 
@@ -219,8 +281,73 @@
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Uploads the chosen banner file (via the <see cref="OnBannerUpload"/> callback) and, on success,
+    /// sets the returned media IRI as the banner-to-submit + the preview. On failure, shows an error and
+    /// leaves the existing banner unchanged. Mirrors <see cref="OnIconChosen"/>.
+    /// </summary>
+    private async Task OnBannerChosen(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null)
+        {
+            return;
+        }
+
+        _bannerUploadError = null;
+        _bannerUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await OnBannerUpload(file);
+            if (result is not null)
+            {
+                _bannerIri = result.MediaIri.Value;
+                _bannerPreviewIri = result.MediaIri.Value;
+            }
+            else
+            {
+                _bannerUploadError = "The banner could not be uploaded. Please try again.";
+            }
+        }
+        catch
+        {
+            _bannerUploadError = "The banner could not be uploaded. Please try again.";
+        }
+        finally
+        {
+            _bannerUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Clears the chosen banner file (the browser's built-in "remove" affordance) — resets the banner to
+    /// the existing one (or none) so the next submission keeps the current banner.
+    /// </summary>
+    private void OnBannerRemoved(InputFileChangeEventArgs e)
+    {
+        _bannerIri = InitialBannerIri;
+        _bannerPreviewIri = InitialBannerIri;
+        _bannerUploadError = null;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Removes the banner (the "Remove banner" button) — sets the banner-to-submit to null so the next
+    /// submission clears the actor's banner.
+    /// </summary>
+    private void ResetBanner()
+    {
+        _bannerIri = null;
+        _bannerPreviewIri = null;
+        _bannerUploadError = null;
+        StateHasChanged();
+    }
+
     private async Task HandleSubmitAsync()
     {
-        await OnSubmit(_name, _summary, _approveFollowers, _iconIri);
+        await OnSubmit(_name, _summary, _approveFollowers, _iconIri, _bannerIri);
     }
 }

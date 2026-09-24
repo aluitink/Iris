@@ -253,21 +253,30 @@ public sealed class UpdateActivityHandlerTests
         await SeedLocalActorAsync(persistence, LocalPerson);
         var sut = BuildHandler(persistence);
 
-        // The actor sends an Update with their own (updated) Person document.
+        // The actor sends an Update with their own (updated) Person document. S103: include the banner
+        // (the AS `image` property) to verify the profile edit merges it into the stored actor.
         var updatedActor = new Person
         {
             Id = LocalPerson.Value,
             PreferredUsername = "bob",
             Name = ["Bobby"],
             Summary = ["A test summary"],
+            Image = [new Link { Href = new Uri("https://dev2-iris-a.luit.ink/ap/v1/media/banner-123") }],
         };
         var update = BuildUpdate(LocalPerson, updatedActor);
         await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
 
-        // The stored actor now reflects the edit.
+        // The stored actor now reflects the edit (name, summary, and the S103 banner).
         Assert.True(await persistence.Actors.TryGetActorAsync(LocalPerson, out var stored));
         Assert.Equal(["Bobby"], stored!.Name);
         Assert.Equal(["A test summary"], stored.Summary);
+        var bannerIri = stored.Image?.FirstOrDefault() switch
+        {
+            IObject { Id: { } id } => id,
+            ILink { Href: { } href } => href.ToString(),
+            _ => null,
+        };
+        Assert.Equal("https://dev2-iris-a.luit.ink/ap/v1/media/banner-123", bannerIri);
     }
 
     [Fact]
