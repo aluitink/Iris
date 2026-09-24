@@ -5,6 +5,7 @@
 @using Iris.Web.Client.Accounts
 @using KristofferStrube.ActivityStreams
 @using System.Text.Json
+@implements IDisposable
 
 <PageTitle>Notifications · Iris</PageTitle>
 
@@ -98,10 +99,51 @@
         ("Mention", "Mentions"),
     ];
 
+    // S85 — the page must refresh its list while open, not only on a full reload. The badge polls the
+    // unread count every 60 s and raises UnreadCountChanged when it changes (and mark-all-read raises it
+    // too). Subscribing here lets a notification that arrives while this page is open re-fetch the list
+    // immediately instead of waiting for the user to navigate away and back. Mirrors NotificationBadge's
+    // subscribe/unsubscribe (the page is the other documented subscriber of this event).
+    protected override void OnInitialized()
+    {
+        NotificationService.UnreadCountChanged += OnUnreadCountChanged;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
         await LoadNotificationsAsync();
+    }
+
+    private void OnUnreadCountChanged()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        // The event is a synchronous Action; re-fetch the list fire-and-forget (the WASM UI thread is
+        // single-threaded, so the awaited work still runs on it). A transient error must not take down
+        // the page — the next poll or user action retries.
+        _ = RefreshOnUnreadChangeAsync();
+    }
+
+    private async Task RefreshOnUnreadChangeAsync()
+    {
+        try
+        {
+            await LoadNotificationsAsync();
+        }
+        catch
+        {
+            // Swallow a transient error (a 401 after logout, a network blip); the next poll or user
+            // action retries.
+        }
+    }
+
+    public void Dispose()
+    {
+        NotificationService.UnreadCountChanged -= OnUnreadCountChanged;
     }
 
     private async Task LoadNotificationsAsync()
