@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S104 | OPEN-QA | dev2 | Profile tabs — Replies tab empty for users whose replies sit past PagedCollection's 3-page top-up cap (read UNFILTERED outbox). FIXED: server ?type=reply outbox filter (ContentItems.IsContentReply) + client RepliesIri=outbox?type=reply; live dev2 s103banner posted+replied -> Replies tab shows the reply (In reply to original), ?type=reply totalItems=1 (excludes top post), Posts tab unchanged; 0 console errors, suite 0 failed
 ## OPEN
 
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
@@ -21,6 +20,7 @@ S109 | OPEN | - | When viewing on object in any object view feed stream (home/pr
 S110 | OPEN | - | Home feed is producing a lot of calls to /actor/flags repeatedly, do we need a new iris extension property to place on the object?
 ## CLOSED
 
+S104 | CLOSED | qa | Profile tabs — Replies tab empty for users whose replies sit past PagedCollection's 3-page top-up cap — PASS: live qa-iris-a (s101hunt2) Replies tab renders 2 replies w/ 'In reply to' context; server ?type=reply totalItems=2 (excludes 7 non-reply outbox items), first link carries ?type=reply (pagination preserves filter); ?type=content totalItems=4 unchanged; unfiltered=9; 0 console errors
 S103 | CLOSED | qa | Profile banner image upload — PASS: live qa-iris-a (s101hunt2) edit form has Banner section; upload PNG -> preview + Change/Remove banner; Save persists AS image to actor doc (/ap/v1/u/s101hunt2 image=media URL), header renders it, media served 200 image/png; full-reload re-entry shows saved preview + Remove; Remove+Save clears image (null/absent); 0 console errors
 S100 | CLOSED | qa | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — PASS: live qa-iris-a (s101hunt2) follow s50qa -> Lemmy site row 'iris-qa-iris-a.luit.' (len 20, fits varchar(20)), no 'value too long' in logs; reply to /post/1 landed (comment id 2, single copy, person resolved); residual 400 is Lemmy's own announce re-insert (community::announce::receive -> insert_received_activity) = Lemmy-side quirk, comment lands; 0 console errors
 S102 | CLOSED | qa | Home Communities tab showed Posts content (own posts) — PASS: live qa-iris-a (s101hunt2) own personal post S102QA-PERSONAL-4K7M shows in Posts tab (?source=people) but NOT in Communities tab (shows "No community posts yet" empty state, ?source=communities); network only ?source=people/?source=communities, no unfiltered /feed follow-up (server `first` link now carries ?source= -> client fast path); 0 console errors
@@ -45,4 +45,3 @@ S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris
 S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
 S79 | CLOSED | qa | actor postsCount misses Page + Question — PASS: live qa-iris-a postsCount=2 (Note+Question), actor page "Posts (2)", 0 console errors
 S80 | CLOSED | qa | actor page Posts omits Page cross-posts — PASS: live qa-iris-a new user post shows in actor page Posts tab, GET outbox?type=content 200, 0 console errors
-S78 | CLOSED | qa | Profile - Your posts empty (outbox ?type=content filter) — PASS: live qa-iris-a new user post shows in Your posts tab, GET outbox?type=content 200, 0 console errors
