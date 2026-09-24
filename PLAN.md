@@ -19,6 +19,7 @@ S106 | OPEN | - | Notifications page content causes feed to be too wide on mobil
 S107 | OPEN | - | Copied links for a post should generate a front end link instead of an Activity Pub object link
 S108 | OPEN | - | Profile - Your posts pages through a ton of content to find your post, Outbox should be objects the actor produced, posts/likes/boosts, feed is an iris extension view that joins followed content. The outbox should be lean and only contain objects the user posted.
 S109 | OPEN | - | When viewing on object in any object view feed stream (home/profile/likes/shares), I should be able to play a video without it redirecting to the object specific page. When I try to click play it sends acts as if I opened the object.
+S110 | OPEN | - | Home feed is producing a lot of calls to /actor/flags repeatedly, do we need a new iris extension property to place on the object?
 ## CLOSED
 
 S100 | CLOSED | qa | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — PASS: live qa-iris-a (s101hunt2) follow s50qa -> Lemmy site row 'iris-qa-iris-a.luit.' (len 20, fits varchar(20)), no 'value too long' in logs; reply to /post/1 landed (comment id 2, single copy, person resolved); residual 400 is Lemmy's own announce re-insert (community::announce::receive -> insert_received_activity) = Lemmy-side quirk, comment lands; 0 console errors
