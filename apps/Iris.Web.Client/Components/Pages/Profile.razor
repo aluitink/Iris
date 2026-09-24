@@ -180,6 +180,13 @@ else
             else
             {
                 <p class="muted" style="margin-bottom: 0.5rem;">@(BookmarkIris.Count) bookmarked post@(BookmarkIris.Count > 1 ? "s" : string.Empty)</p>
+                @foreach (var bookmarkIri in BookmarkIris ?? [])
+                {
+                    @if (BookmarkObjects.TryGetValue(bookmarkIri.Value, out var bookmarkObject))
+                    {
+                        <ObjectView Item="@bookmarkObject" ShowModeration="true" />
+                    }
+                }
             }
         </div>
     }
@@ -257,6 +264,11 @@ else
     private bool BookmarksLoading;
     private string? BookmarksError;
     private IReadOnlyList<Iri> BookmarkIris = [];
+    // The full documents for each bookmark IRI, keyed by IRI value (case-insensitive). The
+    // /bookmarks endpoint returns bare IRIs, so the tab fetches each bookmarked object's full
+    // document and renders it via ObjectView (mirrors the Likes tab's LikesResolver) — S111's
+    // "count only, no post cards" defect.
+    private Dictionary<string, IObjectOrLink> BookmarkObjects = new(StringComparer.OrdinalIgnoreCase);
 
     private Actor? ActorObj => ActorDoc as Actor;
 
@@ -586,12 +598,36 @@ else
             if (!result.IsSuccess)
             {
                 BookmarksError = "Failed to load bookmarks.";
+                return;
             }
-            else
+
+            var iriValues = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body ?? "[]");
+            var iris = iriValues?.Select(s => new Iri(s)).Where(i => i.Value is { Length: > 0 }).ToList() ?? [];
+            BookmarkIris = iris;
+
+            // S111: resolve each bookmark IRI to its full document so the tab can render the actual
+            // post cards (the endpoint returns bare IRIs). A failed fetch leaves the entry absent —
+            // the tab skips that entry (the IRI list above is the source of the count).
+            var objects = new Dictionary<string, IObjectOrLink>(StringComparer.OrdinalIgnoreCase);
+            if (Session.Client is { } client)
             {
-                var iriValues = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body ?? "[]");
-                BookmarkIris = iriValues?.Select(s => new Iri(s)).ToList() ?? [];
+                foreach (var iri in iris)
+                {
+                    try
+                    {
+                        var resolved = await client.GetObjectAsync(iri, CancellationToken.None);
+                        if (resolved is not null)
+                        {
+                            objects[iri.Value] = resolved;
+                        }
+                    }
+                    catch
+                    {
+                        // Non-fatal: skip an unreadable bookmark (the post may have been deleted).
+                    }
+                }
             }
+            BookmarkObjects = objects;
         }
         catch (Exception ex)
         {

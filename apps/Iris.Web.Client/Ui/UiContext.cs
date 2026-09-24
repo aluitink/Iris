@@ -34,6 +34,11 @@ public sealed class UiContext
     private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
     private sealed record LemmyScoreEntry(LemmyPostScore? Score, DateTime At);
     private sealed record ContentObjectEntry(IObject Doc, DateTime At);
+    /// <summary>
+    /// The signed-in user's cached bookmark IRIs (case-insensitive IRI values) with the time the
+    /// set was fetched. (S111)
+    /// </summary>
+    public sealed record BookmarkEntry(HashSet<string> Set, DateTime At);
 
     /// <summary>
     /// The result of walking a content object's <c>/likes</c> + <c>/shares</c> collections (72.1):
@@ -87,6 +92,13 @@ public sealed class UiContext
     // (N cards rendering at once, all hitting a cold cache) into a single pair of collection walks —
     // mirrors the _actorInFlight / _contentInFlight coalescing for actor / content-object fetches.
     private readonly ConcurrentDictionary<string, Task<ModerationEntry>> _moderationInFlight = new(StringComparer.OrdinalIgnoreCase);
+    // The signed-in user's bookmark IRIs (case-insensitive), keyed by the user's actor IRI value.
+    // A feed renders one EngagementBar per post, and each bar must know whether the post is
+    // bookmarked; without this cache, N bars would each fire a GET /bookmarks (N identical reads
+    // for the same data). Caching the full set on the per-circuit UiContext means the page's first
+    // bar pays the fetch and the rest (and any re-render that re-creates a bar) hit the cache. (S111)
+    private readonly ConcurrentDictionary<string, BookmarkEntry> _bookmarks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Task<BookmarkEntry>> _bookmarksInFlight = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IActorSessionAccessor _session;
     private readonly SemaphoreSlim _followingGate = new(1, 1);
@@ -830,6 +842,111 @@ public sealed class UiContext
     public void InvalidateEngagement(Iri objectIri)
     {
         _engagement.TryRemove(objectIri.Value, out _);
+    }
+
+    /// <summary>
+    /// Whether the signed-in actor has bookmarked <paramref name="objectIri"/>. Consults the
+    /// per-circuit bookmark-set cache; on a miss, fetches the user's <c>/bookmarks</c> once and
+    /// caches the full set for the TTL window. Subsequent checks for other objects are O(1)
+    /// lookups — the N feed cards each used to fire their own GET /bookmarks. (S111)
+    /// </summary>
+    public async Task<bool> IsBookmarkedAsync(Iri objectIri)
+    {
+        if (_session.ActorId is not { } me)
+        {
+            return false;
+        }
+
+        var entry = await GetBookmarkSetAsync();
+        return entry.Set.Contains(objectIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the signed-in actor's full bookmark IRI set (case-insensitive). Consults the
+    /// per-circuit bookmark cache; on a miss, fetches the user's bookmarks once and caches the set
+    /// for the TTL window. Concurrent callers are coalesced into a single fetch (the first caller
+    /// starts it and publishes its <see cref="Task"/>; later callers await the same task). Returns
+    /// an empty set when signed out, the client is unavailable, or the read fails. (S111)
+    /// </summary>
+    public async Task<BookmarkEntry> GetBookmarkSetAsync()
+    {
+        if (_session.ActorId is not { } me)
+        {
+            return new BookmarkEntry([], DateTime.UtcNow);
+        }
+
+        if (_bookmarks.TryGetValue(me.Value, out var cached)
+            && DateTime.UtcNow - cached.At < FollowingTtl)
+        {
+            return cached;
+        }
+
+        if (_session.LocalModeration is not { } mod)
+        {
+            // No local-moderation client (signed out / key still loading): report empty. Not
+            // cached — a later call with a client can still fetch.
+            return new BookmarkEntry([], DateTime.UtcNow);
+        }
+
+        var fetchTask = _bookmarksInFlight.GetOrAdd(me.Value, _ => FetchBookmarksAsync(mod, me));
+        try
+        {
+            var entry = await fetchTask;
+            _bookmarks[me.Value] = entry;
+            return entry;
+        }
+        finally
+        {
+            // Clear the in-flight marker so a later call (e.g. after InvalidateBookmarks) can re-fetch.
+            _bookmarksInFlight.TryRemove(me.Value, out _);
+        }
+    }
+
+    /// <summary>
+    /// Performs a single <c>GET /bookmarks</c> for the signed-in actor. Returns a
+    /// <see cref="BookmarkEntry"/>; on a read failure it returns the (possibly empty) set derived
+    /// so far rather than throwing (a failure is non-fatal — the buttons default to unbookmarked).
+    /// (S111)
+    /// </summary>
+    private static async Task<BookmarkEntry> FetchBookmarksAsync(ILocalModerationClient mod, Iri me)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var result = await mod.GetBookmarksAsync(me);
+            if (result.IsSuccess && result.Body is { Length: > 0 } body)
+            {
+                var iriValues = System.Text.Json.JsonSerializer.Deserialize<List<string>>(body);
+                if (iriValues is not null)
+                {
+                    foreach (var v in iriValues)
+                    {
+                        if (v is { Length: > 0 })
+                        {
+                            set.Add(v);
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: return the (possibly empty) set.
+        }
+
+        return new BookmarkEntry(set, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Invalidates the cached bookmark set for the signed-in actor (call after a bookmark /
+    /// unbookmark so the next <see cref="IsBookmarkedAsync"/> re-reads the server). (S111)
+    /// </summary>
+    public void InvalidateBookmarks()
+    {
+        if (_session.ActorId is { } me)
+        {
+            _bookmarks.TryRemove(me.Value, out _);
+        }
     }
 
     /// <summary>
