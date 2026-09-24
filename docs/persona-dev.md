@@ -15,7 +15,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 3. Reproduce: run the failing behavior against your dev stack via its public FQDN (playwright) or a failing test.
 4. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
 5. Add or update one test that fails without the fix.
-6. `dotnet test` in the worktree. All green or stop.
+6. Run the suite in the worktree, capturing full output per PROTOCOL.md "Running tests" (run once, tee to a file, parse the file — do not re-run with different filters). All green or stop.
 
 ## Merge
 

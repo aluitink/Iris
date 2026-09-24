@@ -160,6 +160,28 @@ commits stay on its worktree branches; nothing is lost.
   Do not leave untracked scratch files in a worktree; if a merge is blocked by one,
   delete it from the worktree and continue.
 
+## Running tests
+
+The full suite is slow. Run it ONCE and capture the complete output to a file; do not re-run the suite to
+re-check a single test or to change a filter — parse the captured file instead.
+
+```
+dotnet test --logger "console;verbosity=detailed" 2>&1 | tee /tmp/test-<you>-$(date +%Y%m%d-%H%M%S).txt
+```
+
+- `<you>` is your thread name (`agent-a` or `agent-b`), so each agent's runs are isolated from the
+  other's even when both are DEV in the same window. The timestamp means each run lands in its own file
+  and prior runs are never lost.
+- The exit code tells you pass/fail. The file holds every result: each test's name, status, and any
+  failure message or stack trace.
+- To find a specific test or failure, search your own latest file (e.g.
+  `grep -n "Failed\|Passed\|Skipped" /tmp/test-<you>-*.txt | tail`)
+  — do not re-run the suite with a different `--filter` or `--trait` just to see one thing.
+- The everyday fast run excludes the slow category: `dotnet test --trait "Category!=Slow"`. The full suite
+  (what the merge gate requires) is the plain `dotnet test` above.
+- A test failing for a reason outside your item: note `BLOCKED: <reason>` in your .state and pick the next item
+  (see Failure handling).
+
 ## Failure handling
 
 - Stack down: restart it. If still down after 2 tries, write `BLOCKED: <reason>` on your .state file line 2 (replaces WORK) and stop.

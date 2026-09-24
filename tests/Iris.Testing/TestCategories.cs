@@ -12,10 +12,10 @@ namespace Iris.Testing;
 /// they are materially slower than the rest of the suite.
 /// </para>
 /// <para>
-/// Usage: apply <c>[Trait(TestCategories.Category, TestCategories.Slow)]</c> to a slow test or class.
-/// The everyday "fast" run excludes them with
-/// <c>dotnet test --trait "Category!=Slow"</c>; the full suite is the plain <c>dotnet test</c>. See
-/// <c>docs/reference/TESTING.md</c> for the exact commands.
+    /// Usage: apply <c>[Trait(TestCategories.Category, TestCategories.Slow)]</c> to a slow test or class.
+    /// The everyday "fast" run excludes them with
+    /// <c>dotnet test --trait "Category!=Slow"</c>; the full suite is the plain <c>dotnet test</c>. See
+    /// PROTOCOL.md ("Running tests") for the exact commands.
 /// </para>
 /// </remarks>
 public static class TestCategories
