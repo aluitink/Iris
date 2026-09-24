@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S103 | OPEN-QA | dev2 | Profile banner image upload — FIXED (9e4e1402): EditProfileForm banner section + Profile sets AS image; server merges image (set/clear); live dev2 s103banner upload persisted + rendered, remove cleared; 0 console errors, suite 0 failed
 ## OPEN
 
 S104 | OPEN | - | Profile, not all tabs show proper content
@@ -18,6 +17,7 @@ S105 | OPEN | - | Home feed post is missing user posts, we should see posts and 
 S106 | OPEN | - | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
 ## CLOSED
 
+S103 | CLOSED | qa | Profile banner image upload — PASS: live qa-iris-a (s101hunt2) edit form has Banner section; upload PNG -> preview + Change/Remove banner; Save persists AS image to actor doc (/ap/v1/u/s101hunt2 image=media URL), header renders it, media served 200 image/png; full-reload re-entry shows saved preview + Remove; Remove+Save clears image (null/absent); 0 console errors
 S100 | CLOSED | qa | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — PASS: live qa-iris-a (s101hunt2) follow s50qa -> Lemmy site row 'iris-qa-iris-a.luit.' (len 20, fits varchar(20)), no 'value too long' in logs; reply to /post/1 landed (comment id 2, single copy, person resolved); residual 400 is Lemmy's own announce re-insert (community::announce::receive -> insert_received_activity) = Lemmy-side quirk, comment lands; 0 console errors
 S102 | CLOSED | qa | Home Communities tab showed Posts content (own posts) — PASS: live qa-iris-a (s101hunt2) own personal post S102QA-PERSONAL-4K7M shows in Posts tab (?source=people) but NOT in Communities tab (shows "No community posts yet" empty state, ?source=communities); network only ?source=people/?source=communities, no unfiltered /feed follow-up (server `first` link now carries ?source= -> client fast path); 0 console errors
 S99 | CLOSED | qa | No theme/dark-mode setting in Settings (no Appearance section) — PASS: live qa-iris-a (s95qa) Settings>Appearance tab present; Dark default (data-theme=null, ls dark); switch Light -> data-theme="light" + ls light + PUT {theme:"light"} + GET round-trips + DB NotificationPrefsJson {"Theme":"light"}; hard reload -> early-paint light (no dark flash), Light radio pre-checked from server; revert Dark -> data-theme removed + DB {"Theme":"dark"}; 0 console errors
@@ -42,4 +42,3 @@ S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.Conte
 S79 | CLOSED | qa | actor postsCount misses Page + Question — PASS: live qa-iris-a postsCount=2 (Note+Question), actor page "Posts (2)", 0 console errors
 S80 | CLOSED | qa | actor page Posts omits Page cross-posts — PASS: live qa-iris-a new user post shows in actor page Posts tab, GET outbox?type=content 200, 0 console errors
 S78 | CLOSED | qa | Profile - Your posts empty (outbox ?type=content filter) — PASS: live qa-iris-a new user post shows in Your posts tab, GET outbox?type=content 200, 0 console errors
-S77 | CLOSED | qa | home feed only showed own content (sort-by-date fix before MaxItems cap) — PASS: live qa-iris-a home feed shows own + followed content sorted newest-first, no console errors, 1483/1483 tests green
