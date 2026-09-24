@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S84 | OPEN-QA | dev2 | Profile Following tab stale after follow: refresh panel on FollowChanged
 S85 | OPEN | - | Notifications page never refreshes while open: reload on UnreadCountChanged
 
 ## NEW
@@ -22,6 +21,7 @@ S87 | NEW | - | Profile edit Save makes no API call (bio+checkbox changes lost s
 
 ## CLOSED
 
+S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris-a follow+unfollow refresh panel, 0 console errors
 S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
 S79 | CLOSED | qa | actor postsCount misses Page + Question — PASS: live qa-iris-a postsCount=2 (Note+Question), actor page "Posts (2)", 0 console errors
 S80 | CLOSED | qa | actor page Posts omits Page cross-posts — PASS: live qa-iris-a new user post shows in actor page Posts tab, GET outbox?type=content 200, 0 console errors
@@ -56,4 +56,3 @@ S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS: live f
 S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: fed tests green)
 
 S53 | CLOSED | dev2 | community-scoped search returned 0 (Pass 345: search + feed return content)
-S55 | CLOSED | dev1 | post edit UI stale (Pass 344: fresh nav + save render current note content)
