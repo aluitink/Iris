@@ -116,7 +116,7 @@
                 }
                 @if (ActivityUpdated is { } updated)
                 {
-                    <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
+                    <div class="object-updated" title="edited @updated.ToString("o")">edited @updated.ToLocalTime().ToString("g")</div>
                 }
                 @if (ArticleDuration is { } duration)
                 {
@@ -532,7 +532,7 @@
             }
             @if (Updated is { } updated)
             {
-                <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
+                <div class="object-updated" title="edited @updated.ToString("o")">edited @updated.ToLocalTime().ToString("g")</div>
             }
             @if (ArticlePublishedTime is { } pubTime)
             {

@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S90 | OPEN | - | Mark edited posts: show "edited" label on objects that were updated via Update
+S90 | OPEN-QA | dev1 | Mark edited posts: show "edited" label on objects that were updated via Update
 S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
 
 ## CLOSED
