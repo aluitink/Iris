@@ -51,6 +51,7 @@
     <label for="compose-content">Content</label>
     <div class="compose-autocomplete-wrap">
         <textarea id="compose-content" class="compose-content" rows="4"
+                  value="@(Content)"
                   @oninput="OnContentInputEvent"
                   placeholder="What's on your mind?"></textarea>
         @if (Autocomplete is { Visible: true } ac)
