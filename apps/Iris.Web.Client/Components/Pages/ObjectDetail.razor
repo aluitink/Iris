@@ -1003,10 +1003,11 @@ else if (ObjectDoc is null)
     }
 
     /// <summary>
-    /// Saves the edited note as the signed-in actor: builds an updated <see cref="Note"/> (same IRI,
-    /// author, and audience — only the content changes) and posts it via <c>UpdateNoteAsync</c>. The
-    /// server's <c>UpdateActivityHandler</c> refreshes the stored object in place and federates the
-    /// change to remote followers (F-02).
+    /// Saves the edited post as the signed-in actor: builds an updated content object of the SAME
+    /// concrete type as the stored subject (Note, Article, … — same IRI, author, and audience, only the
+    /// content changes) and posts it via <c>UpdateObjectAsync</c>. The server's
+    /// <c>UpdateActivityHandler</c> refreshes the stored object in place and federates the change to
+    /// remote followers (F-02).
     /// </summary>
     private async Task SaveEditAsync()
     {
@@ -1024,19 +1025,35 @@ else if (ObjectDoc is null)
         EditError = null;
         try
         {
-            var updated = new Note
+            // Build the updated object as the SAME concrete type as the stored subject so the edit
+            // round-trips: an Article stays an Article (S83 — a bare Note edit of an Article produced a
+            // type-mismatched object the server refused to apply, so the edit silently no-opped).
+            var updated = SubjectObject switch
             {
-                Id = id,
-                Content = [EditContent.Trim()],
-                AttributedTo = attributed,
+                Note note => (IObject)new Note
+                {
+                    Id = id,
+                    Content = [EditContent.Trim()],
+                    AttributedTo = attributed,
+                    To = note.To,
+                },
+                Article article => new Article
+                {
+                    Id = id,
+                    Content = [EditContent.Trim()],
+                    AttributedTo = attributed,
+                    To = article.To,
+                },
+                _ => (IObject)new Note
+                {
+                    Id = id,
+                    Content = [EditContent.Trim()],
+                    AttributedTo = attributed,
+                    To = SubjectObject is { To: { } to } ? to : null,
+                },
             };
 
-            if (SubjectObject is { To: { } to })
-            {
-                updated.To = to;
-            }
-
-            var result = await client.UpdateNoteAsync(me, updated);
+            var result = await client.UpdateObjectAsync(me, updated);
             if (result.IsSuccess)
             {
                 // Re-fetch the NOTE's IRI (the content object), bypassing the actor cache, so the

@@ -466,6 +466,9 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
         public Task<Iris.Client.DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
 
+        public Task<Iris.Client.DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default)
+            => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
+
         public Task<Iris.Client.DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new Iris.Client.DeliveryResult(202, true, ""));
 

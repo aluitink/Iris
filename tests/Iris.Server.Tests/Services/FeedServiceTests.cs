@@ -2671,6 +2671,9 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
             Iri actorId, Iris.Client.Pipeline.ProxyCredentials credentials, CollectionQuery? query = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {
@@ -2935,6 +2938,7 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> PostQuestionAsync(Iri actorId, string content, IEnumerable<string> options, DateTime? endsAt = null, bool multiple = false, IEnumerable<Iri>? to = null, IEnumerable<Iri>? cc = null, IEnumerable<Iri>? mentions = null, IEnumerable<string>? hashtags = null, Func<string, string?>? hashtagHrefFactory = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
         public Task<DeliveryResult> PostReplyAsync(Iri actorId, Iri parentIri, string content, IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null, IEnumerable<string>? cc = null, Iri? conversationIri = null, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
         public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
         public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
             Iri actorId,
             Iris.Client.Pipeline.ProxyCredentials credentials,
