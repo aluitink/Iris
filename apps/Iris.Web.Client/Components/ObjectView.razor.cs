@@ -1413,17 +1413,17 @@ public partial class ObjectView
         // S72: restore the "Reported" (flagged) state on load. The Report button's state lives only in
         // in-memory component state (_reportedAuthorIri, set by CardReportAsync), so a fresh page load
         // loses it and the button renders "Report" even though the flag is still recorded. Read the
-        // local actor's flags collection and restore the state when the card's moderation author is
-        // already in that set — mirroring how Settings -> Reported already reads the collection.
-        if (Session.ActorId is { } me && Session.Client is { } client)
+        // local actor's flags collection (via the UiContext's per-circuit moderation cache, S110) and
+        // restore the state when the card's moderation author is already in that set.
+        if (Session.ActorId is { })
         {
             var target = Item is Announce ? BoostedAuthorIri : ActivityActorIri;
             if (target is { } modAuthor && CanModerateAuthor(modAuthor))
             {
                 try
                 {
-                    var flags = await CollectIrisAsync(client.GetFlagsAsync(me));
-                    if (ReportStateRestore.ShouldRestoreReportedState(flags, modAuthor))
+                    var (_, _, isFlagged) = await Ui.GetModerationStateAsync(modAuthor);
+                    if (isFlagged)
                     {
                         _reportedAuthorIri = modAuthor;
                         StateHasChanged();
