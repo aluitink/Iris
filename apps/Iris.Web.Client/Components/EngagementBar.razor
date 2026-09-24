@@ -279,36 +279,66 @@
                 _likeCount = likedCount;
                 _boostCount = sharedCount;
                 _replyCount = obj.GetRepliedCount(ns) ?? 0;
-                _liked = obj.GetIsLiked(ns) is true;
-                _boosted = obj.GetIsShared(ns) is true;
                 _countsLoaded = true;
 
-                // 72.2: seed the minted Like/Announce id(s) directly from the server-rendered
-                // extensions (iris:likeActivityIri / iris:announceActivityIri) — no collection walk.
-                if (_liked)
-                {
-                    _likeIri = obj.GetLikeActivityIri(ns);
-                }
-                if (_boosted)
-                {
-                    _announceIri = obj.GetAnnounceActivityIri(ns);
-                }
-
-                // Residual (72.2 fallback): an engaged post whose minted-id extension is absent (a
-                // non-Iris instance, or a read the server did not enrich with per-requester state) still
-                // recovers the id via the shared per-object engagement cache (72.1) — a single walk, and
-                // a re-created bar reuses the already-loaded walk.
-                if (me is { } meIri &&
-                    ((_liked && _likeIri is null) || (_boosted && _announceIri is null)))
+                // The per-requester like/boost state (iris:isLiked / iris:isShared) is rendered by the
+                // server ONLY when the requester has (net) liked / boosted the object — a false value is
+                // omitted (see ServeObjectDocument). So GetIsLiked / GetIsShared are effectively `true`
+                // or `null` (absent). `null` means the served document does NOT carry the requester's
+                // current per-requester state — which happens when the object document was served from a
+                // STALE cache (the browser HTTP cache, max-age=60) taken BEFORE the requester liked /
+                // boosted, or on a read the server did not enrich. Per the extension contract
+                // (IrisDocumentExtensions.GetIsLiked), a caller that must distinguish "not liked" from
+                // "unknown" treats `null` as "unknown" and falls back to walking the object's /likes and
+                // /shares collections. S93: the old code did `obj.GetIsLiked(ns) is true` (null -> false),
+                // so a reload after a like/boost showed a 0/unpressed button and a re-click minted a
+                // DUPLICATE Like/Announce. When signed in and either per-requester state is absent,
+                // re-derive the viewer's net state (and the minted ids) from the authoritative
+                // collections, keeping the (cacheable) counts the fast path already read.
+                var likedState = obj.GetIsLiked(ns);
+                var sharedState = obj.GetIsShared(ns);
+                if (me is { } meIri && (likedState is null || sharedState is null))
                 {
                     var counts = await Ui.GetEngagementCountsAsync(iri, meIri);
-                    if (_likeIri is null)
+                    _liked = counts.Liked;
+                    _boosted = counts.Boosted;
+                    _likeIri = counts.LikeActivityIri is { } l ? new Iri(l) : null;
+                    _announceIri = counts.AnnounceActivityIri is { } a ? new Iri(a) : null;
+                }
+                else
+                {
+                    // Both per-requester states are present (authoritative, rendered `true` by the server)
+                    // or the viewer is signed out (no per-requester state to resolve): use them directly.
+                    _liked = likedState is true;
+                    _boosted = sharedState is true;
+
+                    // 72.2: seed the minted Like/Announce id(s) directly from the server-rendered
+                    // extensions (iris:likeActivityIri / iris:announceActivityIri) — no collection walk.
+                    if (_liked)
                     {
-                        _likeIri = counts.LikeActivityIri is { } l ? new Iri(l) : null;
+                        _likeIri = obj.GetLikeActivityIri(ns);
                     }
-                    if (_announceIri is null)
+                    if (_boosted)
                     {
-                        _announceIri = counts.AnnounceActivityIri is { } a ? new Iri(a) : null;
+                        _announceIri = obj.GetAnnounceActivityIri(ns);
+                    }
+
+                    // Residual (72.2 fallback): an engaged post whose minted-id extension is absent (a
+                    // non-Iris instance, or a read the server did not enrich with per-requester state) still
+                    // recovers the id via the shared per-object engagement cache (72.1) — a single walk, and
+                    // a re-created bar reuses the already-loaded walk.
+                    if (me is { } meIri2 &&
+                        ((_liked && _likeIri is null) || (_boosted && _announceIri is null)))
+                    {
+                        var counts = await Ui.GetEngagementCountsAsync(iri, meIri2);
+                        if (_likeIri is null)
+                        {
+                            _likeIri = counts.LikeActivityIri is { } l ? new Iri(l) : null;
+                        }
+                        if (_announceIri is null)
+                        {
+                            _announceIri = counts.AnnounceActivityIri is { } a ? new Iri(a) : null;
+                        }
                     }
                 }
             }
