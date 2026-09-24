@@ -145,6 +145,22 @@ public class MentionLinkifyTests
     }
 
     [Fact]
+    public void LinkifyPlain_DeclaredHashtag_LinksToLocalTagTimeline()
+    {
+        // S115: a declared hashtag links to this instance's hashtag timeline (/tag/{name}), not the
+        // authoring server's search URL. The inbound tag's own href (a foreign origin) is ignored.
+        var plain = "loving #qatag today";
+        var remoteHref = new Iri("https://b.luit.ink/search?q=%23qatag");
+        var result = MentionLinkify.LinkifyPlain(plain, "https://a.luit.ink", null,
+            [("#qatag", remoteHref)]);
+
+        Assert.Contains("class=\"hashtag\"", result);
+        Assert.Contains("href=\"/tag/qatag\"", result);
+        Assert.DoesNotContain("b.luit.ink/search", result);
+        Assert.Contains("#qatag</a>", result);
+    }
+
+    [Fact]
     public void LinkifyPlain_DefaultIriMention_DoesNotThrow()
     {
         // S76: a declared mention IRI that is the default value must not crash LinkifyPlain (which

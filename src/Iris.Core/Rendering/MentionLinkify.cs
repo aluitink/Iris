@@ -198,14 +198,14 @@ public static partial class MentionLinkify
                     h => string.Equals(NameOf(h.Name), name, StringComparison.OrdinalIgnoreCase));
                 if (tag is { } t)
                 {
-                    var href = t.Href?.Value
-                        ?? (instanceOrigin is { Length: > 0 } origin
-                            ? $"{origin.TrimEnd('/')}/search?q={Uri.EscapeDataString(display)}"
-                            : null);
-                    if (!string.IsNullOrEmpty(href))
-                    {
-                        linkifyHashtags.Add(new Hashtag(display, href!));
-                    }
+                    // A hashtag always links to THIS instance's hashtag timeline (the relative
+                    // /tag/{name} Blazor route). The inbound tag's own href, when present, is the
+                    // authoring server's hashtag URL — a foreign origin that does not serve this
+                    // reader's local tag — so it is deliberately ignored in favor of the local route.
+                    // The display keeps its leading '#' (the route param normalizes it back), and the
+                    // name is URI-escaped so a tag with unusual characters round-trips cleanly.
+                    var href = $"/tag/{Uri.EscapeDataString(name)}";
+                    linkifyHashtags.Add(new Hashtag(display, href));
                 }
             }
         }
