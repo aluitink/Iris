@@ -12,7 +12,7 @@ A thread never acts in a persona or worktree outside its pin.
 |------|-------|----------|--------|-------|--------|
 | DEV  | agent-a | dev1 | dev1 | dev env | after `dotnet test` green |
 | DEV  | agent-b | dev2 | dev2 | dev env | after `dotnet test` green |
-| QA   | agent-a | qa     | qa   | qa env  | every turn |
+| QA   | agent-a | qa     | qa   | qa env  | every turn it writes PLAN.md (every non-idle turn) |
 | PA   | agent-b | pa     | pa   | unclaimed dev env (redeployed) | every non-idle turn |
 
 The loop operates on `ACTIVE_BRANCH` from /workspace/LOOP-CONFIG (call it `<active>`).
@@ -49,9 +49,7 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
   same-turn coordination channel. Visibility is read-time: you see what is on disk when you read.
 - Worktrees are pinned: `agent-a` holds `dev1` or `qa`, `agent-b` holds `dev2` or `pa`.
   Worktrees never cross, so no worktree arbitration is needed.
-- Write `CLAIM: <worktree>` in your `.state` file every turn you hold it. Every claim write also
-  stamps `TS: <unix-epoch-seconds>` (current wall-clock) so the other agent can tell whether
-  you are active this turn.
+- Write `CLAIM: <worktree>` in your `.state` file every turn you hold it.
 - If the other `.state` file is missing or empty, the other agent is absent: no claims of theirs exist.
   Do not wait. Do not look for work outside PLAN.md.
 - Claiming a PLAN item = writing its id on the `WORK` line. Before claiming, read the other `.state`
@@ -60,7 +58,7 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
   If the item you want is now in their `WORK` line, take the next item. Residual same-instant race:
   last writer wins on disk; the loser sees the id on its next read and skips it that turn.
 - Both agents may be DEV in the same turn (agent-a on dev1, agent-b on dev2): they must still never
-  take the same PLAN id or edit the same PLAN.md item line. If unsure, skip the item.
+  take the same PLAN id (each edits PLAN.md only in its own worktree). If unsure, skip the item.
 
 ## .state file format (hard)
 
@@ -69,17 +67,16 @@ Exactly this shape, max 12 lines, rewritten every turn:
 ```
 CLAIM: dev1
 WORK: S54
-TS: 1790180000
 NEXT: re-test input binding on dev1 stack
 HIST: merged S51 | verified S52 | fixed S54
 ```
 
 - `CLAIM` — worktree you hold this turn (`none` when idle).
 - `WORK` — one PLAN id (or `idle`).
-- `TS` — unix epoch seconds, stamped on every write that sets a non-`none` `CLAIM`. Lets the other agent
-  judge claim freshness (Claims section). Omit or leave stale when `CLAIM: none`.
 - `NEXT` — one line: the single next action.
 - `HIST` — last 3 completed actions, `|` separated, each <= 6 words. Older than 3 is deleted.
+- No other keys. Optional free-text header lines (e.g. a `# agent-b`, `ROLE: dev`) are tolerated but
+  discouraged; the four keys above are the contract the other agent parses.
 
 ## PLAN.md format (hard)
 
@@ -110,12 +107,16 @@ QA or PA finds/proposes an item -> `OPEN`. Dev fixes in worktree, merges to root
 - CLOSED: max 25 lines. When a new item is closed, the oldest CLOSED line is deleted.
 - `.state/<agent>.md`: max 12 lines (see format).
 - Rule: a write that would exceed a cap MUST delete something first. No exceptions, no archives, no "keep for reference".
+- Deleting (removing a whole line) is the only way to make room; shortening a line's desc or reordering
+  lines does not consume a slot, so a cap-full section can still be cleaned in place.
 
 ## Writing rules (anti-fluff)
 
 - One line = one fact. No paragraphs, no prose, no lists inside PLAN items.
 - No justification, no history, no "notes:", no "TODO:", no speculation in PLAN.
-- QA evidence belongs in the commit message, not PLAN. PLAN carries the verdict only.
+- QA evidence belongs in the commit message, not PLAN. PLAN carries the verdict only:
+  `desc — PASS|FAIL|NOT REPRODUCED (<one-line detail max 80 chars>)`. Never paste repro steps,
+  test counts, or multi-clause evidence into a line.
 - PA ideas are one line each. If it takes more than one line, it is not ready; do not add it.
 - Never edit docs/*.md. PLAN.md, persona files, and PROTOCOL.md are human-maintained at the root;
   agents edit PLAN.md only inside their worktree.
@@ -171,7 +172,10 @@ commits stay on its worktree branches; nothing is lost.
 - An agent may build/deploy only its bound environment's stack, via the single command in
   docs/ENVIRONMENTS.md (Stack ops). No compose commands of any other kind, ever.
 - Merges: worktree branch -> `<active>` (root) per the role's merge rule in the Roles table.
-  Root moves only by merge. Agents never commit in root except the merge command itself.
+  Root moves only by merge. Agents never commit in root except the merge commit.
+  Canonical merge, always run from the root checkout (`/workspace`, checked out on `<active>`):
+  `git merge <branch> --no-edit` — this creates the merge commit in root and is the only root commit.
+  Never merge from inside a worktree (that would move the worktree's branch, not `<active>`).
 - Before merging, sync the branch: `git merge <active> --no-edit` in the worktree.
   If that merge conflicts, resolve by taking the `<active>` (root) side of `PLAN.md` and
   committing the merge; then merge the branch to `<active>`.
@@ -190,9 +194,9 @@ re-check a single test or to change a filter — parse the captured file instead
 dotnet test --logger "console;verbosity=detailed" 2>&1 | tee .tmp/<you>/test-$(date +%Y%m%d-%H%M%S).txt
 ```
 
-- `<you>` is your thread name (`agent-a` or `agent-b`), so each agent's runs are isolated from the
-  other's even when both are DEV in the same window. The timestamp means each run lands in its own file
-  and prior runs are never lost.
+- `<you>` is your thread name (`agent-a` or `agent-b`) — not your worktree — so each agent's runs are
+  isolated from the other's even when both are DEV in the same window. The timestamp means each run
+  lands in its own file and prior runs are never lost.
 - The exit code tells you pass/fail. The file holds every result: each test's name, status, and any
   failure message or stack trace.
 - To find a specific test or failure, search your own latest file (e.g.
@@ -203,8 +207,20 @@ dotnet test --logger "console;verbosity=detailed" 2>&1 | tee .tmp/<you>/test-$(d
 - A test failing for a reason outside your item: note `BLOCKED: <reason>` in your .state and pick the next item
   (see Failure handling).
 
+## Tests (when to write new ones)
+
+- Default: maintain existing tests. Fix them when behavior you intentionally changed makes them fail;
+  extend an existing test in the item's area when it already covers the flow.
+- Create a NEW test only when it is critical: no existing test fails without the fix (the fix is
+  otherwise unguarded) and the failure mode is real (not theoretical). One new test per item, at most.
+- Never add tests that duplicate an existing test's coverage, and never add test scaffolding for code
+  you did not change this turn.
+
 ## Failure handling
 
-- Stack down: restart it. If still down after 2 tries, write `BLOCKED: <reason>` on your .state file line 2 (replaces WORK) and stop.
+- Stack down: restart it. If still down after 2 tries, write `BLOCKED: <reason>` in your .state file
+  (extra line after WORK; the other keys keep their values) and stop. `BLOCKED` is the one exception
+  to the four-key format.
 - Test failing for a reason outside your item: leave the item, note `BLOCKED: <reason>`, pick the next item.
-- Other agent appears stuck (its claim TS is stale and it is not idle): proceed; it will resync on its next read.
+- Other agent appears stuck (its `WORK` is not `idle`, it has not changed across your reads, and it
+  does not hold your target): proceed; it will resync on its next read.

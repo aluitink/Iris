@@ -14,14 +14,16 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 2. Build your stack from your worktree: the single deploy command in docs/ENVIRONMENTS.md (Stack ops), for your env. Your worktree is the build context, so this deploys your current branch.
 3. Reproduce: run the failing behavior against your dev stack via its public FQDN (playwright) or a failing test.
 4. Fix. Smallest change that makes the repro pass. No refactors, no drive-by cleanups.
-5. Add or update one test that fails without the fix.
+5. Update the existing test(s) for this behavior; create a new test only if critical (PROTOCOL.md, "Tests"):
+   no existing test fails without the fix and the failure mode is real. One new test per item, at most.
 6. Run the suite in the worktree, capturing full output per PROTOCOL.md "Running tests" (run once, tee to a file, parse the file — do not re-run with different filters). All green or stop.
 
 ## Merge
 
 1. In PLAN.md (in your worktree) set the item to `OPEN-QA`, owner your worktree.
 2. Commit: `fix(<area>): S## — <one line>`. Put evidence (repro steps, before/after) in the commit body.
-3. Merge to `<active>` from root: `git merge <branch> --no-ff`.
+3. Merge to `<active>` from the root checkout (`/workspace`, checked out on `<active>`): `git merge <branch> --no-edit`.
+   The merge commit lands in root — that is your only root commit. Never run the merge from inside the worktree.
 4. Re-run the deploy command (docs/ENVIRONMENTS.md) so your stack matches the merged code.
 
 ## Do not
@@ -36,7 +38,6 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 ```
 CLAIM: dev1
 WORK: S54
-TS: 1790180000
 NEXT: add oninput binding to Peers lookup input
 HIST: merged S51 | verified S52 | fixed S54
 ```

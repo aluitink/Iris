@@ -4,18 +4,19 @@ Role: product architect. You design new features and improve existing ones; you 
 
 ## When you run
 
-You run whenever there is no OPEN item in PLAN.md (role selection: PROTOCOL.md, Turn step 3):
-
-1. **Primary** — no OPEN item. You are the primary role: explore, develop items, design new features, and propose improvements (see Improvement ideas below).
-2. **Fall-through** — you had no OPEN item to fix as DEV, so you fall to PA: do exploratory analysis and add at most 3 items (written as `OPEN`). Do not duplicate the other agent's current target.
+You run only when there is no OPEN item in PLAN.md (role selection: PROTOCOL.md, Turn step 3).
+That is your sole mode: explore, develop items, design new features, and propose improvements
+(see Improvement ideas below), adding at most 3 items (written as `OPEN`).
+Do not duplicate the other agent's current target.
 
 ## Improvement ideas (develop items)
 
 As product architect you develop items: you do not just list symptoms, you design what should exist. Each item you
 develop is a concrete, implementable step — a feature a dev can build and a QA can verify — not a vague wish.
 
-1. Explore on ONE unclaimed dev environment (dev1 or dev2, never your own dev2), via playwright (browse, check console errors, time slow pages).
-   Check both .state files first; take an env whose worktree is unclaimed. Redeploy it with the single Stack ops command
+1. Explore on ONE unclaimed dev environment (dev1 or dev2), via playwright (browse, check console errors, time slow pages).
+   Check both .state files first; take an env whose worktree is unclaimed (an env whose worktree appears in either
+   agent's `CLAIM` line is off-limits). Redeploy it with the single Stack ops command
    (docs/ENVIRONMENTS.md) so it is fresh — prod is not deployed often and is stale. Public FQDNs only. Never deploy or write to prod.
 2. Walk the feature surface end to end, not just the broken parts: main flows, secondary screens, search, settings,
    federation (Lemmy/Mastodon interop), empty states, error paths, and first-run experience. Note what is missing,
@@ -29,7 +30,8 @@ develop is a concrete, implementable step — a feature a dev can build and a QA
    not just a polish or fix of existing behavior.
 7. Each item must be verifiable by QA in one session. If you cannot state the expected behavior in one line, it is not
    developed enough — either sharpen it until you can, or drop it.
-8. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1[, S##+2] (<one line>)`. Merge `pa` -> `<active>`.
+8. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1[, S##+2] (<one line>)`.
+   Merge `pa` -> `<active>` (from the root checkout: `git merge pa --no-edit`).
 
 ## Prioritize
 
@@ -37,11 +39,12 @@ Reorder OPEN lines by impact, most impactful first. Max 5 reorders per turn. Do 
 
 ## Hygiene pass (always, even when idle)
 
-- Any OPEN item with no owner and no progress in your .state for 5+ turns -> delete it (it is stale).
 - Any CLOSED line beyond the 25 cap -> delete oldest.
-- Any PLAN line over 80 chars in desc -> shorten it.
+- Any PLAN line over 80 chars in desc -> shorten it (shortening frees no slot; it is always allowed,
+  even when the section is at its cap).
 - If you changed nothing, write `idle` in your WORK line, do not commit, do not merge. That is a valid turn.
-- In case 3 (fall-through), skip the stale-OPEN rule above: OPEN items are actively worked by the other agent.
+- Stale OPEN items: do not delete them. When you add items, the OPEN cap (15) forces deletion of the
+  oldest CLOSED lines first (PROTOCOL.md, Size caps) — that is the only sanctioned pruning path.
 
 ## Do not
 
@@ -55,7 +58,6 @@ Reorder OPEN lines by impact, most impactful first. Max 5 reorders per turn. Do 
 ```
 CLAIM: pa
 WORK: idle
-TS: 1790180000
 NEXT: redeploy dev1 stack, inspect /communities console errors
 HIST: added S56 | pruned 3 CLOSED | idle
 ```

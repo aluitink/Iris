@@ -30,7 +30,8 @@ You never change which branch is active; that is a human action.
     QA and PA may record up to 3 distinct items found in that one unit (written as `OPEN`); DEV still does one item per turn.
 6. PLAN.md: edit it **in your worktree** only, for items you touched. Commit it in your worktree.
    It reaches root when your branch merges. Never edit `/workspace/PLAN.md` directly.
-7. Commit your work in the worktree. Merge to main when your persona says to (DEV: tests green; QA/PA: every turn).
+7. Commit your work in the worktree. Merge to `<active>` when your persona says to (DEV: tests green;
+   QA/PA: every non-idle turn), from the root checkout: `git merge <branch> --no-edit` (see PROTOCOL.md, Environments).
 8. Final rewrite of `/workspace/.state/<you>.md` with this turn's `HIST`.
 9. Stop. No second unit of work, no extra files (QA/PA: the up-to-3 items from step 5 are the exception).
 
@@ -44,7 +45,8 @@ You never change which branch is active; that is a human action.
   Do not wait for them. Do not search for work outside PLAN.md. Selection runs on PLAN state + visible claims only.
 - Idle is a valid turn. If you cannot select an item without overlapping, write an idle `.state` file and stop.
 - PLAN.md writes must respect the size caps in PROTOCOL.md. If a write would exceed a cap, delete the oldest
-  eligible line first. If nothing is eligible to delete, do not make the write.
+  eligible line first. Shortening a line's desc or reordering lines does not consume a slot (PROTOCOL.md,
+  Size caps), so a cap-full section can still be cleaned in place.
 - Evidence (repro steps, before/after, build ids) goes in commit messages, never in PLAN.md.
 - If blocked: write `BLOCKED: <reason>` in your `.state` file and stop. Do not retry in a loop.
 - When in doubt, do less. One item done correctly beats three done badly.

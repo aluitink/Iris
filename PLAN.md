@@ -52,4 +52,4 @@ S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS: live f
 
 S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: fed tests green)
 
-S53 | CLOSED | dev2 | community-scoped search returned 0 (Pass 345: search + feed return content)
+S53 | CLOSED | dev2 | community-scoped search returned 0 — PASS: search + feed return content
