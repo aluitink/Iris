@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Iris — a decentralized social platform built on ActivityPub." />
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="css/app.css?v=1.0.0+3e62d81d" />
+    <title>Iris</title>
+</head>
+
+<body>
+    <div id="app">
+        <div class="splash">
+            <div class="splash-logo" aria-hidden="true">
+                <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" fill="none" stroke="#5b8cff" stroke-width="2.5"/>
+                    <circle cx="16" cy="16" r="4" fill="#5b8cff"/>
+                </svg>
+            </div>
+            <div class="splash-spinner" aria-hidden="true"></div>
+            <h1 class="splash-title">Iris</h1>
+            <p class="splash-sub">An ActivityPub social platform.</p>
+            <span class="splash-status" role="status">Loading…</span>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="." class="reload">Reload</a>
+        <span class="dismiss">🗙</span>
+    </div>
+
+    <!-- WebCrypto signing bridge (Iris.WebCrypto). Defines window.webcryptoSign (the crypto
+         surface) and the named webcryptoSignBootstrap.install entry point the C# side calls to
+         import the session's signing key. Must load before the WASM client's first signing call. -->
+    <script src="js/WebCrypto.js?v=1.0.0+3e62d81d"></script>
+    <script src="js/error-ui.js?v=1.0.0+3e62d81d"></script>
+    <script>
+    // Infinite scroll: a single passive scroll listener checks whether any
+    // .paged-collection-sentinel is within 200px of the viewport bottom. When it is
+    // (and no load is in flight for that sentinel), click it to trigger the Blazor
+    // @onclick handler (LoadMoreAsync). A data attribute marks a sentinel "busy" while
+    // its load is in flight; it is cleared on the next scroll once new content has pushed
+    // the sentinel back below the trigger line (re-arming it for the next scroll).
+    (function () {
+        var TRIGGER_PX = 200;
+        var checking = false;
+        function maybeLoad() {
+            if (checking) return;
+            checking = true;
+            try {
+                var sentinels = document.querySelectorAll('.paged-collection-sentinel');
+                var vh = window.innerHeight;
+                for (var i = 0; i < sentinels.length; i++) {
+                    var el = sentinels[i];
+                    var rect = el.getBoundingClientRect();
+                    var nearBottom = rect.top < vh + TRIGGER_PX && rect.bottom > 0;
+                    var busy = el.getAttribute('data-busy') === 'true';
+                    if (nearBottom && !busy) {
+                        el.setAttribute('data-busy', 'true');
+                        el.click();
+                    } else if (!nearBottom && busy) {
+                        // New content pushed the sentinel below the trigger line — re-arm.
+                        el.removeAttribute('data-busy');
+                    }
+                }
+            } finally {
+                // Defer the re-entrancy guard reset to the next microtask so a rapid burst
+                // of scroll events within one frame is coalesced into a single check.
+                Promise.resolve().then(function () { checking = false; });
+            }
+        }
+        window.addEventListener('scroll', maybeLoad, { passive: true });
+        window.addEventListener('resize', maybeLoad, { passive: true });
+        // Initial check once the app has rendered (covers the signed-out public feed case
+        // where the first page already reaches the trigger line on load).
+        window.addEventListener('load', function () {
+            setTimeout(maybeLoad, 500);
+        });
+    })();
+    // Roving tabindex + arrow-key navigation for ARIA tab bars (role="tablist"). The active
+    // tab gets tabindex="0" (the keyboard entry point); all others get tabindex="-1".
+    // Left/Right (and Up/Down) arrow keys move focus to the adjacent tab and activate it
+    // (automatic activation per the WAI-ARIA tabs pattern); Home/End jump to first/last.
+    // Tab lists render progressively as pages load, so a re-scan (until all are initialized)
+    // wires each one up; a MutationObserver re-syncs tabindex when the active tab changes.
+    (function () {
+        function syncTablist(tablist) {
+            var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+            if (tabs.length === 0) return;
+            var active = tabs.filter(function (t) {
+                return t.getAttribute('aria-selected') === 'true';
+            })[0] || tabs[0];
+            tabs.forEach(function (t) {
+                t.setAttribute('tabindex', t === active ? '0' : '-1');
+            });
+        }
+        function initTablist(tablist) {
+            if (tablist.getAttribute('data-iris-tab-init')) return;
+            tablist.setAttribute('data-iris-tab-init', 'true');
+            syncTablist(tablist);
+            tablist.addEventListener('keydown', function (e) {
+                var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+                if (tabs.length === 0) return;
+                var idx = tabs.indexOf(document.activeElement);
+                if (idx === -1) return;
+                var next = null;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    next = tabs[(idx + 1) % tabs.length];
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    next = tabs[(idx - 1 + tabs.length) % tabs.length];
+                } else if (e.key === 'Home') {
+                    next = tabs[0];
+                } else if (e.key === 'End') {
+                    next = tabs[tabs.length - 1];
+                }
+                if (next) {
+                    e.preventDefault();
+                    next.focus();
+                    next.click();
+                }
+            });
+            var mo = new MutationObserver(function () { syncTablist(tablist); });
+            mo.observe(tablist, { subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+        }
+        var scanTimer = setInterval(function () {
+            var pending = Array.prototype.slice.call(document.querySelectorAll('[role="tablist"]'))
+                .filter(function (t) { return !t.getAttribute('data-iris-tab-init'); });
+            if (pending.length === 0) { clearInterval(scanTimer); return; }
+            pending.forEach(initTablist);
+        }, 1000);
+        setTimeout(function () { clearInterval(scanTimer); }, 30000);
+    })();
+    </script>
+    <script src="_framework/blazor.webassembly.js?v=1.0.0+3e62d81d"></script>
+</body>
+
+</html>

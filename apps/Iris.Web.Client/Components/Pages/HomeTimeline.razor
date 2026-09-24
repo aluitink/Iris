@@ -1,6 +1,7 @@
 @page "/home"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Core
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Components
@@ -81,35 +82,7 @@
     }
 
     private static bool IsContentItem(IObjectOrLink item)
-    {
-        if (item is Create create)
-        {
-            if (create.Object is { } objects)
-            {
-                foreach (var obj in objects)
-                {
-                    if (obj is Note || obj is Article || obj is Page || obj is Question)
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        if (item is Announce)
-        {
-            return true;
-        }
-
-        if (item is Note || item is Article || item is Page || item is Question)
-        {
-            return true;
-        }
-
-        return false;
-    }
+        => ContentItems.IsContentPost(item);
 
     public void Dispose()
     {

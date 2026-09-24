@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S81 | OPEN | - | content-item classification exists as 4 divergent copies (client + 3 server)
+S81 | OPEN-QA | dev2 | content-item classification exists as 4 divergent copies (client + 3 server)
 
 
 ## CLOSED
