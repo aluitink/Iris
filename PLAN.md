@@ -11,10 +11,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
-S88 | OPEN | - | Search "Actors only" filter lost on page reload / URL round-trip
 
 ## CLOSED
 
+S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
 S86 | CLOSED | qa | Likes tab renders raw IRI instead of post content — PASS: shows post cards
@@ -45,6 +45,6 @@ S61 | CLOSED | qa | admin bootstrap reads APP_ADMIN__* env (config fallback) (PA
 
 S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live; bodies via TestServer)
 
-S59 | CLOSED | dev2 | signable-actor metric counted remote actors (PASS: local-only; remote excluded)
+
 
 
