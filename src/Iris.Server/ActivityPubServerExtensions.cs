@@ -7263,12 +7263,13 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Counts the content posts (the outbox items a client would render in a "posts" view — a
-    /// <c>Create</c> whose object is a <c>Note</c>/<c>Article</c>, or an <c>Announce</c>) in an actor's
-    /// outbox. This is the value advertised as <c>iris:postsCount</c> on the actor document and on
-    /// directory (search) results, so a client displays the post count off the document alone. The
-    /// classification mirrors the client's <c>OutboxFilter.IsContentItem</c> (the profile "Your posts"
-    /// tab): social and moderation activities (<c>Follow</c>, <c>Accept</c>, <c>Like</c>, <c>Flag</c>, …)
-    /// are excluded, so the counter matches what a visitor actually sees as posts.
+    /// <c>Create</c> whose object is a <c>Note</c>/<c>Article</c>/<c>Page</c>/<c>Question</c> (poll), or an
+    /// <c>Announce</c>) in an actor's outbox. This is the value advertised as <c>iris:postsCount</c> on
+    /// the actor document and on directory (search) results, so a client displays the post count off
+    /// the document alone. The classification mirrors the home feed's content filter: social and
+    /// moderation activities (<c>Follow</c>, <c>Accept</c>, <c>Like</c>, <c>Flag</c>, …) are excluded, so
+    /// the counter matches what a visitor actually sees as posts. S79: <c>Page</c> (Lemmy cross-posts)
+    /// and <c>Question</c> (polls) were previously omitted.
     /// </summary>
     private static async Task<int> CountPostsAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
     {
@@ -7291,7 +7292,7 @@ public static class ActivityPubServerExtensions
             {
                 foreach (var obj in objects)
                 {
-                    if (obj is Note || obj is Article)
+                    if (obj is Note || obj is Article || obj is Page || obj is Question)
                     {
                         count++;
                         break;

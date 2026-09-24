@@ -54,6 +54,12 @@ public sealed class ActorCountRefreshServiceTests
         _ = p.Activities.AddToOutboxAsync(actorIri, (IObjectOrLink)create);
     }
 
+    private static void AddCreateOfToOutbox(IPersistenceProvider p, Iri actorIri, IObject obj)
+    {
+        var create = new Create { Object = [obj] };
+        _ = p.Activities.AddToOutboxAsync(actorIri, (IObjectOrLink)create);
+    }
+
     private static void AddAnnounceToOutbox(IPersistenceProvider p, Iri actorIri, Iri targetIri)
     {
         var announce = new Announce { Object = [new Link { Href = new Uri(targetIri.Value) }] };
@@ -134,6 +140,23 @@ public sealed class ActorCountRefreshServiceTests
         var (found, stored) = await GetActorAsync(persistence, Alice);
         Assert.True(found);
         Assert.Equal(1, GetExtInt(stored, Ns + IrisExtensionTerms.PostsCount));
+    }
+
+    [Fact]
+    public async Task RefreshOnce_WithPageAndQuestion_CountsAsPosts()
+    {
+        var (sut, persistence) = CreateSut();
+        var actor = MakeActor(Alice, "Alice");
+        await persistence.Actors.PutActorAsync(actor);
+        AddCreateOfToOutbox(persistence, Alice, new Page { Id = "https://a.test/ap/v1/o/page-1", Content = ["<p>cross-post</p>"] });
+        AddCreateOfToOutbox(persistence, Alice, new Question { Id = "https://a.test/ap/v1/o/poll-1", Content = ["poll?"] });
+        AddPostToOutbox(persistence, Alice, Note1);
+
+        await sut.RefreshOnceAsync(CancellationToken.None);
+
+        var (found, stored) = await GetActorAsync(persistence, Alice);
+        Assert.True(found);
+        Assert.Equal(3, GetExtInt(stored, Ns + IrisExtensionTerms.PostsCount));
     }
 
     [Fact]
