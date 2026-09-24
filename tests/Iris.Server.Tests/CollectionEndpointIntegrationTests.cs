@@ -258,6 +258,59 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // --- S78: ?type=content filters the outbox to content items -------------------
+
+    [Fact]
+    public async Task Outbox_TypeContent_FiltersToContentItemsOnly()
+    {
+        // The seeded outbox has 5 Create activities (all content items). Request with ?type=content
+        // and verify all 5 are returned (they're all content). Also verify the next/last IRIs carry
+        // the type=content parameter so subsequent pages preserve the filter.
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{Alice}/outbox?limit=2&type=content");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(5, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        // The next page IRI should carry type=content.
+        var next = doc.RootElement.GetProperty("next").GetString();
+        Assert.Equal($"{_base}/ap/v1/u/{Alice}/outbox/?page=2&type=content", next);
+
+        // The last page IRI should carry type=content.
+        var last = doc.RootElement.GetProperty("last").GetString();
+        Assert.Equal($"{_base}/ap/v1/u/{Alice}/outbox/?page=3&type=content", last);
+    }
+
+    [Fact]
+    public async Task Outbox_TypeContent_ExcludesSocialActivities()
+    {
+        // The seeded outbox has 5 Create activities (all content items) and no social activities.
+        // Request ?type=content and verify the same 5 items are returned (the filter is a no-op
+        // when all items are content, but it exercises the code path). Also verify the `next` and
+        // `last` IRIs carry type=content so subsequent pages preserve the filter.
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{Alice}/outbox?limit=2&type=content");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(5, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.EndsWith("-5", items[0]);
+        Assert.EndsWith("-4", items[1]);
+
+        // Page 2 should also carry type=content in its `next`/`last` IRIs.
+        var page2 = await _http.GetAsync($"{_base}/ap/v1/u/{Alice}/outbox?limit=2&page=2&type=content");
+        page2.EnsureSuccessStatusCode();
+        using var doc2 = JsonDocument.Parse(await page2.Content.ReadAsStringAsync());
+        Assert.Equal("OrderedCollectionPage", doc2.RootElement.GetProperty("type").GetString());
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/outbox/?page=3&type=content",
+            doc2.RootElement.GetProperty("next").GetString());
+    }
+
     // --- Helpers ------------------------------------------------------------------
 
     /// <summary>

@@ -10196,19 +10196,37 @@ public static class ActivityPubServerExtensions
             _ => [],
         };
 
+        // S78: ?type=content filters the outbox to only content items (Create with Note/Article/Question,
+        // or Announce). Without this, a large outbox dominated by social activities (Follow, Like, Undo,
+        // Delete) and mirrored remote content buries the user's own posts deep in the collection, and the
+        // client's PagedCollection top-up (capped at 3 extra pages) never reaches them — the "Your posts"
+        // tab renders empty even though the outbox has hundreds of items. The client's Profile.razor "Your
+        // posts" tab now requests ?type=content so the server serves only the relevant items.
+        var contentType = context.Request.Query["type"].ToString();
+        if (collectionName == "outbox" && contentType == "content")
+        {
+            items = items.Where(OutboxItemIsContent).ToList();
+        }
+
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
         var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{actorIri}/{collectionName}");
-        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
+        // S78: include the type filter in the cache key so filtered and unfiltered pages are cached
+        // separately (a ?type=content page and an unfiltered page are different documents).
+        var cacheKeyIri = collectionName == "outbox" && contentType == "content"
+            ? (page == 1
+                ? new Iri($"{collectionIri.Value}/?type=content")
+                : new Iri($"{collectionIri.Value}/?page={page}&type=content"))
+            : (page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}"));
 
         // Read (or render on a miss) through the local collection-page response cache. For the outbox,
         // enrich nested objects with likedCount/sharedCount (cacheable, not per-requester) before
         // rendering so the cached document includes the interaction counts.
         var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
-            pageIri,
+            cacheKeyIri,
             refresh,
             async _ =>
             {
@@ -10224,7 +10242,8 @@ public static class ActivityPubServerExtensions
                     limit,
                     itemsToRender,
                     supportsRefresh: true,
-                    namespaceIri: ns);
+                    namespaceIri: ns,
+                    extraQuery: collectionName == "outbox" && contentType == "content" ? "type=content" : null);
             },
             ct).ConfigureAwait(false);
 
@@ -12316,6 +12335,8 @@ public static class ActivityPubServerExtensions
     /// <param name="supportsType">When true, advertises the <c>iris:type</c> capability on page 1.</param>
     /// <param name="supportsDepth">When true, advertises the <c>iris:depth</c> capability on page 1.</param>
     /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (null omits all capabilities).</param>
+    /// <param name="extraQuery">Optional extra query string (e.g. "type=content") appended to the
+    /// page IRIs so that subsequent pages (followed via <c>next</c>/<c>last</c>) carry the same filter.</param>
     /// <returns>The serialized JSON-LD document for the requested page.</returns>
     private static string BuildCollectionPageDocument(
         Iri collectionIri,
@@ -12326,7 +12347,8 @@ public static class ActivityPubServerExtensions
         bool supportsQuery = false,
         bool supportsType = false,
         bool supportsDepth = false,
-        string? namespaceIri = null)
+        string? namespaceIri = null,
+        string? extraQuery = null)
     {
         var total = items.Count;
         var pageCount = total == 0 ? 1 : (int)Math.Ceiling(total / (double)limit);
@@ -12343,11 +12365,28 @@ public static class ActivityPubServerExtensions
             slice.Add(items[i - 1]);
         }
 
+        // S78: when an extra query string (e.g. "type=content") is present, append it to the page
+        // IRIs so that subsequent pages (followed via `next`/`last`) carry the same filter.
+        // Page IRIs always use the `/{?page=N}` form (even page 1, which is `/?page=1`) to stay
+        // consistent with the existing wire shape; the extra query is appended as an additional
+        // parameter when present.
+        static string PageIri(string baseIri, int pageNum, string? extraQuery)
+        {
+            if (string.IsNullOrEmpty(extraQuery))
+            {
+                return pageNum == 1 ? baseIri : $"{baseIri}/?page={pageNum}";
+            }
+
+            return pageNum == 1
+                ? $"{baseIri}/?{extraQuery}"
+                : $"{baseIri}/?page={pageNum}&{extraQuery}";
+        }
+
         // The final page of the collection. A multi-page collection's last page is `?page={pageCount}`;
         // a single-page collection's only page is the collection document itself, so `last` points at
         // the collection IRI. `last` is emitted on every page so a client on any page can jump to the
         // end (AS2.0 `OrderedCollection.last`).
-        var lastIri = pageCount > 1 ? $"{collectionIri.Value}/?page={pageCount}" : collectionIri.Value;
+        var lastIri = pageCount > 1 ? PageIri(collectionIri.Value, pageCount, extraQuery) : collectionIri.Value;
 
         if (page == 1)
         {
@@ -12366,7 +12405,7 @@ public static class ActivityPubServerExtensions
                 last: lastIri,
                 partOf: null,
                 startIndex: null,
-                next: pageCount > 1 ? $"{collectionIri.Value}/?page=2" : null,
+                next: pageCount > 1 ? PageIri(collectionIri.Value, 2, extraQuery) : null,
                 prev: null,
                 supportsRefresh: supportsRefresh,
                 supportsQuery: supportsQuery,
@@ -12376,7 +12415,7 @@ public static class ActivityPubServerExtensions
         }
 
         return SerializeCollectionPage(
-            id: $"{collectionIri.Value}/?page={page}",
+            id: PageIri(collectionIri.Value, page, extraQuery),
             type: "OrderedCollectionPage",
             slice: slice,
             total: total,
@@ -12384,7 +12423,7 @@ public static class ActivityPubServerExtensions
             last: lastIri,
             partOf: collectionIri.Value,
             startIndex: start,
-            next: page < pageCount ? $"{collectionIri.Value}/?page={page + 1}" : null,
+            next: page < pageCount ? PageIri(collectionIri.Value, page + 1, extraQuery) : null,
             prev: $"{collectionIri.Value}/?page={page - 1}",
             supportsRefresh: false,
             supportsQuery: false,
@@ -12559,6 +12598,41 @@ public static class ActivityPubServerExtensions
         }
 
         return links;
+    }
+
+    /// <summary>
+    /// S78: whether an outbox item is a content item — a <c>Create</c> whose embedded object is a
+    /// <c>Note</c>, <c>Article</c>, or <c>Question</c> (poll), or an <c>Announce</c> (boost). Social
+    /// and moderation activities (Follow, Like, Undo, Delete, Accept, Reject, Flag, Block) return
+    /// <c>false</c>. Used by the <c>?type=content</c> outbox filter so the "Your posts" tab receives
+    /// only the items it needs to render.
+    /// </summary>
+    private static bool OutboxItemIsContent(IObjectOrLink item)
+    {
+        if (item is Announce)
+        {
+            return true;
+        }
+
+        if (item is not Create create)
+        {
+            return false;
+        }
+
+        if (create.Object is not { } objects)
+        {
+            return false;
+        }
+
+        foreach (var obj in objects)
+        {
+            if (obj is Note || obj is Article || obj is Question)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
