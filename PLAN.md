@@ -10,6 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+S94 | OPEN | - | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply
+S95 | OPEN | - | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404
+S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
 S93 | OPEN | - | Like/Boost btns ignore existing state on load; re-click duplicates Like/Announce
 
 ## CLOSED
@@ -40,8 +43,6 @@ S69 | CLOSED | qa | direct note not federated via UI /outbox (fix: local inbox l
 S68 | CLOSED | qa | poll not stored locally on remote (IRI 404; no vote UI) — PASS: attributedTo rewrite fix verified live on qa stack
 
 S67 | CLOSED | qa | cross-instance mention: notify + search by mention (PASS: live qa-iris-a/b)
-S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
-
 
 
 
