@@ -18,6 +18,7 @@ else
     <div class="tab-bar" role="tablist" aria-label="Settings sections">
         <a href="#account" id="tab-account" role="tab" aria-selected="@(ActiveTab == "account")" aria-controls="panel-account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
         <a href="#content" id="tab-content" role="tab" aria-selected="@(ActiveTab == "content")" aria-controls="panel-content" class="tab @(ActiveTab == "content" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("content")'>Content</a>
+        <a href="#appearance" id="tab-appearance" role="tab" aria-selected="@(ActiveTab == "appearance")" aria-controls="panel-appearance" class="tab @(ActiveTab == "appearance" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("appearance")'>Appearance</a>
         <a href="#danger" id="tab-danger" role="tab" aria-selected="@(ActiveTab == "danger")" aria-controls="panel-danger" class="tab tab--danger @(ActiveTab == "danger" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("danger")'>Danger</a>
     </div>
 
@@ -369,6 +370,44 @@ else
             </details>
         </div>
     }
+    else if (ActiveTab == "appearance")
+    {
+        <div class="card" id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance">
+            <h2>Appearance</h2>
+
+            <details class="settings-subsection" open>
+                <summary class="settings-subsection-summary">Theme</summary>
+                <div class="settings-subsection-body">
+                    @if (NotifError is not null && NotifPrefs is null)
+                    {
+                        <div class="error" role="alert">@NotifError</div>
+                    }
+                    <p class="muted">Choose how Iris looks on this device. Your choice is remembered
+                        on this browser and saved to your account.</p>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 20rem; margin-top: 0.75rem;">
+                        <label class="notif-pref-row">
+                            <input type="radio" name="theme" value="dark" checked="@Theme.Equals("dark")"
+                                   @onchange="@(() => SetThemeAsync("dark"))" />
+                            <span>Dark</span>
+                        </label>
+                        <label class="notif-pref-row">
+                            <input type="radio" name="theme" value="light" checked="@Theme.Equals("light")"
+                                   @onchange="@(() => SetThemeAsync("light"))" />
+                            <span>Light</span>
+                        </label>
+                    </div>
+                    @if (ThemeSaving)
+                    {
+                        <p class="muted" role="status">Saving…</p>
+                    }
+                    @if (ThemeSaved)
+                    {
+                        <div class="success" style="margin-top: 0.75rem;" role="status">Theme saved.</div>
+                    }
+                </div>
+            </details>
+        </div>
+    }
     else if (ActiveTab == "danger")
     {
         <div class="card card--danger" id="panel-danger" role="tabpanel" aria-labelledby="tab-danger">
@@ -411,6 +450,9 @@ else
     [Inject]
     private NavigationManager Navigation { get; set; } = default!;
 
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+
     private HttpClient _http = null!;
 
     private IActivityPubClient? Client => Session.Client;
@@ -445,6 +487,9 @@ else
     private string? NotifError { get; set; }
     private bool NotifSaved { get; set; }
     private string MutedActorInput { get; set; } = string.Empty;
+    private string Theme { get; set; } = "dark";
+    private bool ThemeSaving { get; set; }
+    private bool ThemeSaved { get; set; }
     private KeyInfo? KeyInfoValue { get; set; }
     private bool KeyInfoLoaded { get; set; }
 
@@ -548,6 +593,14 @@ else
         if (tab == "content" && NotifPrefs is null && NotifError is null)
         {
             _ = LoadNotifPrefsAsync();
+        }
+        if (tab == "appearance")
+        {
+            ApplyStoredTheme();
+            if (NotifPrefs is null && NotifError is null)
+            {
+                _ = LoadNotifPrefsAsync();
+            }
         }
     }
 
@@ -863,6 +916,7 @@ else
     {
         public HashSet<string> DisabledTypes { get; set; } = [];
         public HashSet<string> MutedActors { get; set; } = [];
+        public string? Theme { get; set; }
     }
 
     /// <summary>
@@ -874,6 +928,17 @@ else
         public string? Algorithm { get; set; }
         public string? KeyIri { get; set; }
         public string? Thumbprint { get; set; }
+    }
+
+    /// <summary>
+    /// JS interop for the Appearance theme (S99): reads/writes the per-browser choice that the
+    /// early script in index.html consumes so a chosen theme applies before first paint (no flash).
+    /// Both functions are defined on <c>window</c> by the inline script in index.html (no module).
+    /// </summary>
+    public static class JsThemeReader
+    {
+        public const string GetTheme = "window.irisThemeGet";
+        public const string SetTheme = "window.irisThemeSet";
     }
 
     private async Task LoadNotifPrefsAsync()
@@ -910,6 +975,10 @@ else
                         if (s is not null) prefs.MutedActors.Add(s);
                     }
                 }
+                if (doc.RootElement.TryGetProperty("theme", out var th))
+                {
+                    prefs.Theme = th.GetString();
+                }
                 NotifPrefs = prefs;
             }
         }
@@ -920,6 +989,111 @@ else
         finally
         {
             NotifBusy = false;
+        }
+
+        ApplyStoredTheme();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Applies the user's saved theme to the document (S99). Reads the server-side value when it is
+    /// loaded (the source of truth), falling back to this browser's localStorage copy so a first
+    /// visit before the settings load still honors a previously chosen theme. Also persists the
+    /// resolved choice to localStorage so the early script in index.html can apply it before the
+    /// next paint without a flash of the wrong theme.
+    /// </summary>
+    private void ApplyStoredTheme()
+    {
+        var stored = NotifPrefs?.Theme;
+        if (stored is not "dark" && stored is not "light")
+        {
+            stored = null;
+        }
+
+        if (stored is null)
+        {
+            try
+            {
+                var local = JS.InvokeAsync<string?>(JsThemeReader.GetTheme).GetAwaiter().GetResult();
+                stored = local is "dark" || local is "light" ? local : "dark";
+            }
+            catch
+            {
+                stored = "dark";
+            }
+        }
+
+        if (!string.Equals(Theme, stored, StringComparison.Ordinal))
+        {
+            Theme = stored;
+        }
+
+        ApplyThemeToDocument(stored);
+    }
+
+    private void ApplyThemeToDocument(string theme)
+    {
+        try
+        {
+            if (string.Equals(theme, "light", StringComparison.Ordinal))
+            {
+                JS.InvokeVoidAsync("document.documentElement.setAttribute", "data-theme", "light");
+            }
+            else
+            {
+                JS.InvokeVoidAsync("document.documentElement.removeAttribute", "data-theme");
+            }
+
+            JS.InvokeVoidAsync(JsThemeReader.SetTheme, theme);
+        }
+        catch
+        {
+            // Non-fatal: the theme just won't persist to localStorage.
+        }
+    }
+
+    private async Task SetThemeAsync(string theme)
+    {
+        if (NotifPrefs is null || ThemeSaving)
+        {
+            return;
+        }
+
+        ThemeSaving = true;
+        ThemeSaved = false;
+        NotifError = null;
+
+        // Apply optimistically so the user sees the change immediately; the server write follows.
+        Theme = theme;
+        ApplyThemeToDocument(theme);
+
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                disabledTypes = NotifPrefs.DisabledTypes.ToList(),
+                mutedActors = NotifPrefs.MutedActors.ToList(),
+                theme,
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
+            if (response.IsSuccessStatusCode)
+            {
+                NotifPrefs.Theme = theme;
+                ThemeSaved = true;
+            }
+            else
+            {
+                NotifError = $"Theme couldn't be saved (HTTP {(int)response.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            NotifError = "Your theme preference couldn't be saved. Please try again.";
+        }
+        finally
+        {
+            ThemeSaving = false;
         }
 
         StateHasChanged();
@@ -965,10 +1139,15 @@ else
             {
                 disabledTypes = NotifPrefs.DisabledTypes.ToList(),
                 mutedActors = NotifPrefs.MutedActors.ToList(),
+                theme = NotifPrefs.Theme ?? Theme ?? "dark",
             });
             var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
             NotifSaved = response.IsSuccessStatusCode;
+            if (NotifSaved && NotifPrefs.Theme is { } t)
+            {
+                Theme = t is "light" ? "light" : "dark";
+            }
         }
         catch (Exception)
         {
