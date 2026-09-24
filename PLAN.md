@@ -18,6 +18,7 @@ S85 | OPEN | - | Notifications page never refreshes while open: reload on Unread
 S82 | NEW | - | community feed renders non-content items (Delete/Follow) as empty post cards
 S83 | NEW | - | Article edit silently fails (Note edit works)
 S86 | NEW | - | Profile Likes tab renders raw IRI link instead of post content
+S87 | NEW | - | Profile edit (bio) silently fails: Save closes form, no API call, no error shown
 
 ## CLOSED
 
