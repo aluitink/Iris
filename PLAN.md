@@ -10,10 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S106 | OPEN-QA | dev1 | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
+
 ## OPEN
 
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
-S106 | OPEN | - | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
 S107 | OPEN | - | Copied links for a post should generate a front end link instead of an Activity Pub object link
 S108 | OPEN | - | Profile - Your posts pages through a ton of content to find your post, Outbox should be objects the actor produced, posts/likes/boosts, feed is an iris extension view that joins followed content. The outbox should be lean and only contain objects the user posted.
 S109 | OPEN | - | When viewing on object in any object view feed stream (home/profile/likes/shares), I should be able to play a video without it redirecting to the object specific page. When I try to click play it sends acts as if I opened the object.
