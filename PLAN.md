@@ -11,7 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S94 | OPEN | - | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply
-S95 | OPEN | - | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404
+S95 | OPEN-QA | dev1 | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404
 S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
 
 ## CLOSED

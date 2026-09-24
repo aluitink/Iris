@@ -535,9 +535,11 @@
 
         var resource = $"acct:{handle}@{domain}";
         var webFingerUrl = $"https://{domain}/.well-known/webfinger?resource={Uri.EscapeDataString(resource)}";
-        var body = await Session.ProxyGetAsync(webFingerUrl, "application/jrd+json");
-        if (body is null)
+        var proxyResult = await Session.ProxyGetAsync(webFingerUrl, "application/jrd+json");
+        if (!proxyResult.Succeeded || proxyResult.Body is not { } body)
         {
+            // Any failure (404 not-found, unreachable host, rejection) just means the mention does not
+            // resolve — the composer surfaces no error for an unresolvable remote mention.
             return null;
         }
 

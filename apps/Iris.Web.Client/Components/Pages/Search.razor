@@ -271,13 +271,13 @@ else
 
         // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
         var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
-        var webfingerBody = await Session.ProxyGetAsync(
+        var proxyResult = await Session.ProxyGetAsync(
             webfingerUrl,
             "application/jrd+json, application/json; q=0.9",
             CancellationToken.None);
 
         Iri? actorIri = null;
-        if (webfingerBody is not null)
+        if (proxyResult.Succeeded && proxyResult.Body is { } webfingerBody)
         {
             actorIri = ParseWebFingerActorIri(webfingerBody, preferGroup);
         }

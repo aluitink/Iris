@@ -170,10 +170,26 @@ public interface IActorSessionAccessor
     /// <param name="accept">The <c>Accept</c> header to send (content negotiation). Null sends no
     /// <c>Accept</c> header.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The remote response body as a string, or null when signed out, the proxy rejects the
-    /// request, or the remote returns a non-success status.</returns>
-    Task<string?> ProxyGetAsync(string target, string? accept, CancellationToken ct = default);
+    /// <returns>The outcome of the proxied read: <see cref="ProxyGetResult.Succeeded"/> with the body
+    /// when the remote returned a success status; <see cref="ProxyGetResult.NotFound"/> when the remote
+    /// returned 404 (the resource does not exist on that host — distinct from an unreachable host, which
+    /// the proxy surfaces as a 502 and yields neither flag); or neither when signed out / the proxy
+    /// rejects the request / the remote is unreachable.</returns>
+    Task<ProxyGetResult> ProxyGetAsync(string target, string? accept, CancellationToken ct = default);
 }
+
+/// <summary>
+/// The outcome of a proxied <c>GET</c> read (<see cref="IActorSessionAccessor.ProxyGetAsync"/>).
+/// Distinguishes a remote <c>404</c> (the resource does not exist on that host) from an unreachable
+/// host (the proxy's <c>502</c>) so a caller can show a "not found" message instead of a misleading
+/// "could not reach" one (S95).
+/// </summary>
+/// <param name="Succeeded">True when the remote returned a success status and a body.</param>
+/// <param name="NotFound">True when the remote returned <c>404</c> (the resource does not exist on that
+/// host). Mutually exclusive with <see cref="Succeeded"/>; both are false when the host is unreachable
+/// or the request was not made.</param>
+/// <param name="Body">The remote response body when <see cref="Succeeded"/> is true; otherwise null.</param>
+public sealed record ProxyGetResult(bool Succeeded, bool NotFound, string? Body);
 
 /// <summary>
 /// The default <see cref="IActorSessionAccessor"/>. Reads the current <see cref="AuthenticationState"/>
@@ -793,11 +809,11 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     }
 
     /// <inheritdoc/>
-    public async Task<string?> ProxyGetAsync(string target, string? accept, CancellationToken ct = default)
+    public async Task<ProxyGetResult> ProxyGetAsync(string target, string? accept, CancellationToken ct = default)
     {
         if (!IsSignedIn)
         {
-            return null;
+            return new ProxyGetResult(false, false, null);
         }
 
         try
@@ -811,16 +827,27 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
             }
 
             using var response = await _sameOriginHttp.SendAsync(request, ct);
-            if (!response.IsSuccessStatusCode)
+
+            // S95: the proxy relays the remote's status verbatim, so a remote 404 (the resource does not
+            // exist on that host) comes back as a 404, while an unreachable host (DNS failure, connection
+            // refused, timeout) is surfaced by the proxy as a 502. Distinguish the two so a caller can say
+            // "not found" instead of a misleading "could not reach".
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                return null;
+                return new ProxyGetResult(false, true, null);
             }
 
-            return await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new ProxyGetResult(false, false, null);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return new ProxyGetResult(true, false, body);
         }
         catch
         {
-            return null;
+            return new ProxyGetResult(false, false, null);
         }
     }
 }

@@ -1482,12 +1482,23 @@ else
             var preferGroup = handle.Value.preferGroup;
 
             var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
-            var webfingerBody = await Session.ProxyGetAsync(
+            var proxyResult = await Session.ProxyGetAsync(
                 webfingerUrl,
                 "application/jrd+json, application/json; q=0.9",
                 CancellationToken.None);
 
-            if (webfingerBody is null)
+            if (!proxyResult.Succeeded)
+            {
+                // S95: a remote 404 means the host is reachable but the handle does not exist there
+                // (say so); any other failure (unreachable host → proxy 502, rejection, not signed in)
+                // is a genuine "could not reach".
+                PeerError = proxyResult.NotFound
+                    ? $"No account found on {host}. Check the handle and try again."
+                    : $"Could not reach {host}. Check the domain and try again.";
+                return;
+            }
+
+            if (proxyResult.Body is not { } webfingerBody)
             {
                 PeerError = $"Could not reach {host}. Check the domain and try again.";
                 return;
