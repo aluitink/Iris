@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S84 | OPEN | - | Profile Following tab stale after follow: refresh panel on FollowChanged
+S84 | OPEN-QA | dev2 | Profile Following tab stale after follow: refresh panel on FollowChanged
 S85 | OPEN | - | Notifications page never refreshes while open: reload on UnreadCountChanged
 
 ## NEW
