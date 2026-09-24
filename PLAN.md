@@ -11,11 +11,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S99 | OPEN-QA | dev2 | No theme/dark-mode setting in Settings (no Appearance section) — FIXED: per-account Appearance/Theme setting. Server: NotificationPreferences.Theme (dark|light) + NotificationPrefsRequest.Theme; GET /local/v1/account/notification-preferences returns theme, PUT stores it (normalized: anything but "light" -> "dark"), round-tripped via InMemoryUserAccountStore. Client: new Settings "Appearance" tab (Dark/Light radios) that applies data-theme="light" on <html> optimistically + PUTs the pref + persists to localStorage. Light theme = :root[data-theme="light"] token overrides in app.css (components already read the tokens, so it re-skins the app); an early <head> script in index.html applies the saved theme before first paint (no dark flash), dark = unstyled default. LIVE dev2 (s97verify): theme applies + persists (DB NotificationPrefsJson {"Theme":"light"}), GET round-trips, reverting to dark works, early-paint light on hard reload, Content-tab notif toggle does NOT clobber theme, 0 console errors. No new tests (UI + additive model field; verified live per protocol). Full suite 1521/1496 pass/25 skip/0 fail
-S96 | OPEN-QA | dev1 | Search local-only; add cross-instance post search over followed remote outboxes
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 
 ## CLOSED
 
+S96 | CLOSED | qa | Search local-only; add cross-instance post search over followed remote outboxes — PASS: live qa-iris-a signed-in s95qa (follows qa-lemmy s50qa) search ?q=S96XSEARCH-7Q4LZ returns the nested remote post/2 (Announce{Create{Page}}, not in local store) via cross-instance pass; opens + renders (lemmyadmin/s50qa); 0 console errors
 S98 | CLOSED | qa | Communities page local-only; no cross-instance community discovery — PASS: live qa-iris-a "All known" tab lists qa-lemmy s50qa (remote) + local s50qa-community; "All on this instance" excludes remote; 0 console errors
 S97 | CLOSED | qa | Lemmy post Replies tab empty though header shows N comments (S43 skips walk) — PASS: live qa-iris-a /object?iri=...post/1 Replies tab renders s95qa reply (server ?iri= 200 orderedItems=1); header 1 comments agrees; 0 console errors
 S94 | CLOSED | qa | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply — PASS: live qa-iris-a s95qa replied to Lemmy /post/1, note to[] carries full-IRI activitystreams#Public, comment id 1 landed (path 0.1, by s95qa)
@@ -40,7 +40,6 @@ S77 | CLOSED | qa | home feed only showed own content (sort-by-date fix before M
 S76 | CLOSED | qa | NRE in Iri.get_Value on empty-IRI mention tag — PASS: live qa-iris-a normal mention renders as link, no console errors, 1506/1506 tests green
 S72 | CLOSED | qa | Report button "Reported" state not restored on reload (fix: moderation cache walks /flags; QA PASS: live qa-iris-a, reported s67bob, navigate away/back, button shows "Reported ✓" disabled)
 S73 | CLOSED | qa | community join state lost on nav — PASS: live qa-iris-a join 3 communities, navigate away/back, all show Leave
-S71 | CLOSED | qa | community ns#followersCount reads Follow not CommunityFollower; AP doc 1 vs 5 — PASS: live qa-iris-a AP doc ns#followersCount=5, /followers=5, UI Members(5)
 
 
 
