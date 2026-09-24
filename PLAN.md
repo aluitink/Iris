@@ -11,6 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
+S89 | OPEN | - | Post edit persists; signed GET serves stale pre-edit content (object+profile)
 
 ## CLOSED
 
