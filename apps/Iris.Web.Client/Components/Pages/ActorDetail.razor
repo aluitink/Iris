@@ -53,7 +53,7 @@ else
         <PagedCollection
             Client="Client"
             AnonymousHttpClient="Http"
-            CollectionIri="OutboxIri"
+            CollectionIri="PostsIri"
             PageSize="5"
             ShowRefreshButton="@(Client is not null)"
             ItemFilter="OutboxItemFilter"
@@ -180,6 +180,17 @@ else
     /// </summary>
     private Iri? OutboxIri
         => ResolveCollectionIri(ActorDoc as Actor, a => a.Outbox, iri => iri.OutboxOf());
+
+    /// <summary>
+    /// S80: the actor page "Posts" tab requests the outbox with <c>?type=content</c> so the server
+    /// serves only content items (Create with Note/Article/Question/Page, or Announce). Without this,
+    /// a large outbox dominated by social activities and mirrored remote content buries the actor's
+    /// own posts deep in the collection, and the PagedCollection top-up (capped at 3 extra pages)
+    /// never reaches them — the tab renders empty. The <c>?type=content</c> filter also includes
+    /// <c>Page</c> (Lemmy-style long-form posts) which the previous client-only filter missed.
+    /// </summary>
+    private Iri? PostsIri
+        => OutboxIri is { } outbox ? new Iri($"{outbox.Value}?type=content") : null;
 
     /// <summary>
     /// The actor's followers IRI — read from the actor document's <c>followers</c> property when

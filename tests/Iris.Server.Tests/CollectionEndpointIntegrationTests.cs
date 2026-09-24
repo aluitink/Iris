@@ -39,10 +39,12 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
 
     private readonly HttpClient _http;
     private readonly string _base = $"https://{AHost}";
+    private readonly Iris.Server.Stores.IPersistenceProvider? _persistence;
 
     public CollectionEndpointIntegrationTests(CollectionEndpointSharedHost fixture)
     {
         _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
+        _persistence = fixture.Persistence;
     }
 
     public void Dispose()
@@ -309,6 +311,41 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(
             $"{_base}/ap/v1/u/{Alice}/outbox/?page=3&type=content",
             doc2.RootElement.GetProperty("next").GetString());
+    }
+
+    // --- S80: Page objects are included by ?type=content ----------------------------
+
+    [Fact]
+    public async Task Outbox_TypeContent_IncludesPageObjects()
+    {
+        // Seed a new actor (pageauthor) with a single Create(Page) in their outbox.
+        // Verify ?type=content includes the Page (S80: the previous filter missed Page).
+        const string handle = "pageauthor";
+        var actorIriString = $"{_base}/ap/v1/u/{handle}";
+        var actorIri = new Iri(actorIriString);
+
+        var actor = new Person
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        await _persistence!.Actors.PutActorAsync(actor);
+
+        var create = new Create
+        {
+            Id = $"{actorIriString}/activities/create-page-1",
+            Actor = [new Link { Href = new Uri(actorIriString) }],
+            Object = [new Page { Id = $"{actorIriString}/objects/page-1", Content = ["A Page object"] }],
+        };
+        await _persistence.Activities.AddToOutboxAsync(actorIri, create);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{handle}/outbox?type=content");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     // --- Helpers ------------------------------------------------------------------
