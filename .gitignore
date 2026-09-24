@@ -72,6 +72,9 @@ apps/Iris.Web/wwwroot_old/
 apps/Iris.Web/wwwroot/**/*.br
 apps/Iris.Web/wwwroot/**/*.gz
 
+## Agent temp files
+.tmp/
+
 ## Scratch (reflection probes / throwaway experiments)
 .probe_tmp/
 .probe_tmp2/
