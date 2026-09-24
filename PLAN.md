@@ -10,13 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S119 | OPEN-QA | dev2 | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory. Live dev2: alice profile shows Message btn, click -> /compose?dmTo=..alice, header "Messaging alice — direct", content "@alice ", visibility=direct+disabled, posted OK (creates IRI minted), 0 console errors; MessagesIntegrationTests +DmWithMention (to:[alice]+mention tag+IsDirectMessage+lands in /messages) 4/4; full suite green
-
 ## OPEN
 
 S121 | OPEN | - | Media alt text: UI doesn't render alt on img tag (RichAttachment has no Alt prop; gallery+lightbox use att.Name)
 
 ## CLOSED
+
+S119 | CLOSED | qa | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory — PASS: live qa-iris-a (wasm d8xp549r0o) s116rcv on s116snd profile sees Message btn, click -> /compose?dmTo=..s116snd, header "Messaging s116snd — direct", content "@s116snd", visibility=direct+disabled; fresh acct s119qa /messages empty-state "Find someone to message" -> /directory; 0 console errors
 
 S120 | CLOSED | qa | DM inbox: UI-posted Direct messages don't appear in /messages (received or sent) — PASS: live qa-iris-a (build fcfd6302) s116rcv /messages shows received DM from s116snd (create 06GDASKRST5DDV19MYZ2FXV7JM), s116snd /messages shows sent DM to s116rcv; 0 console errors both sides
 
