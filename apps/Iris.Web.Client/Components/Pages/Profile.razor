@@ -68,7 +68,7 @@ else
         <div role="tabpanel" id="panel-posts" aria-labelledby="tab-posts">
         <PagedCollection
             Client="@OutboxClient"
-            CollectionIri="@OutboxIri"
+            CollectionIri="@PostsIri"
             PageSize="5"
             ShowRefreshButton="true"
             ItemFilter="IsOwnContentItem"
@@ -260,6 +260,16 @@ else
 
     private Iri? OutboxIri
         => Session.ActorId is { } actor ? actor.OutboxOf() : null;
+
+    /// <summary>
+    /// S78: the "Your posts" tab requests the outbox with <c>?type=content</c> so the server serves
+    /// only content items (Create with Note/Article/Question, or Announce). Without this, a large
+    /// outbox dominated by social activities (Follow, Like, Undo, Delete) and mirrored remote content
+    /// buries the user's own posts deep in the collection, and the PagedCollection top-up (capped at
+    /// 3 extra pages) never reaches them — the tab renders empty.
+    /// </summary>
+    private Iri? PostsIri
+        => Session.ActorId is { } actor ? new Iri($"{actor.OutboxOf().Value}?type=content") : null;
 
     private Iri? InboxIri
         => Session.ActorId is { } actor ? actor.InboxOf() : null;
