@@ -9,9 +9,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
 ## OPEN-QA
+S126 | OPEN-QA | agent-a | Directory People: sort (default/name) + host filter to find accounts — dev1 verified: commit 8cf43d4e, live dev1-iris-a /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/dev1-iris-a.luit.ink/dev1-iris-b.luit.ink/dev1-lemmy.luit.ink); Name sort alphabetical (alice, carol, d2feeda...); host filter dev1-iris-b shows only iris-b accounts (d2feedb, s24devb, s28b, s33b, s37b, s41b, s43b, s46b, s70vb, s72bob); 0 console errors
 
 ## OPEN
-S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
