@@ -32,6 +32,18 @@
                 <a href="/communities">My communities →</a>
             </div>
         }
+        else if (_state.Tab == "local")
+        {
+            <div class="empty-state">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M2 12h20" />
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                <p>No local posts yet.</p>
+                <p>Be the first to share something!</p>
+            </div>
+        }
         else
         {
             <div class="empty-state">
@@ -70,6 +82,11 @@
     {
         get
         {
+            if (_state.Tab == "local")
+            {
+                return Session.PublicFeedIri;
+            }
+
             if (Session.ActorId is not { } actor)
             {
                 return null;
