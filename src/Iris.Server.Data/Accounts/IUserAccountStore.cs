@@ -45,6 +45,11 @@ public interface IUserAccountStore
     Task UpdateNotificationsReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default);
 
     /// <summary>
+    /// Advances an account's "messages read" cursor (S116 — the DM inbox).
+    /// </summary>
+    Task UpdateMessagesReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns whether any account has the <see cref="UserRole.Admin"/> role. Used by the admin
     /// bootstrapper (which is idempotent — it never creates a second admin once one exists).
     /// </summary>

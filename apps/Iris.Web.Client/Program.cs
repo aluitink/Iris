@@ -60,6 +60,11 @@ builder.Services.AddHttpClient("iris-notifications", client =>
     client.BaseAddress = serverBaseUri;
 });
 
+builder.Services.AddHttpClient("iris-messages", client =>
+{
+    client.BaseAddress = serverBaseUri;
+});
+
 // The WASM client uses an in-memory key store + key provider (keys are ephemeral per browser session).
 builder.Services.AddSingleton<IKeyStore, InMemoryKeyStore>();
 builder.Services.AddSingleton<IKeyProvider, InMemoryKeyProvider>();
@@ -93,6 +98,11 @@ builder.Services.AddScoped<NotificationService>(sp =>
 {
     var factory = sp.GetRequiredService<IHttpClientFactory>();
     return new NotificationService(factory.CreateClient("iris-notifications"));
+});
+builder.Services.AddScoped<MessagesService>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    return new MessagesService(factory.CreateClient("iris-messages"));
 });
 builder.Services.AddScoped<UiContext>();
 builder.Services.AddScoped<HomeTabState>();

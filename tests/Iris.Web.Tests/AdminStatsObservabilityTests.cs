@@ -358,6 +358,9 @@ public sealed class AdminStatsObservabilityTests
         public Task UpdateNotificationsReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default) =>
             Task.CompletedTask;
 
+        public Task UpdateMessagesReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
         public Task<bool> AnyAdminExistsAsync(CancellationToken ct = default) => Task.FromResult(false);
 
         public Task<int> CountAsync(CancellationToken ct = default) => Task.FromResult(0);
@@ -393,6 +396,9 @@ public sealed class AdminStatsObservabilityTests
             Task.CompletedTask;
 
         public Task UpdateNotificationsReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default) =>
+            Task.CompletedTask;
+
+        public Task UpdateMessagesReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default) =>
             Task.CompletedTask;
 
         public Task<bool> AnyAdminExistsAsync(CancellationToken ct = default) => Task.FromResult(false);

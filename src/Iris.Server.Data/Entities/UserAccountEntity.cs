@@ -39,6 +39,11 @@ public sealed class UserAccountEntity
     public DateTimeOffset? NotificationsReadAt { get; set; }
 
     /// <summary>
+    /// The "mark messages as read" cursor (S116 — the DM inbox). Null until first read.
+    /// </summary>
+    public DateTimeOffset? MessagesReadAt { get; set; }
+
+    /// <summary>
     /// Serialized notification preferences (53.2). Null means all types enabled, no muted actors.
     /// </summary>
     public string? NotificationPrefsJson { get; set; }

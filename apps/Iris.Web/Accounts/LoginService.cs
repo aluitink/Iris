@@ -120,6 +120,7 @@ public sealed class LoginService
                 Role = account.Role,
                 ActorId = account.ActorId,
                 NotificationsReadAt = account.NotificationsReadAt,
+                MessagesReadAt = account.MessagesReadAt,
                 CreatedAt = account.CreatedAt,
             };
         }

@@ -688,6 +688,8 @@ public static class WebAppFactory
         // HTTP requests.
         MapAuthEndpoints(app);
         MapNotificationEndpoints(app);
+        MapMessageEndpoints(app);
+        MapAccountPrefsEndpoints(app);
         MapAccountEndpoints(app);
         MapSessionEndpoints(app, app.Services.GetRequiredService<IOptions<ActivityPubServerOptions>>());
         MapAdminEndpoints(app);
@@ -1113,6 +1115,142 @@ public static class WebAppFactory
             });
         }).RequireAuthorization();
 
+    }
+
+    /// <summary>
+    /// Maps the DM-inbox (messages) endpoints (S116): <c>GET /local/v1/messages</c> (the merged
+    /// sent+received direct-message list, paged) and <c>POST /local/v1/messages/read</c> (marks all
+    /// DMs as read). Both are <c>[Authorize]</c>-gated (cookie or Basic auth) and resolve the signed-in
+    /// user's account via the <c>sub</c> claim.
+    /// </summary>
+    public static void MapMessageEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        // Messages (S116): GET returns the user's DM inbox — direct messages received (Create
+        // activities addressed to the account in the account's inbox) and sent (direct messages the
+        // account's actor authored, from the outbox) — merged, de-duplicated, newest first, paged.
+        // Returns { items: [...], totalItems: N, nextPage: "..." | null, readAt }.
+        endpoints.MapGet("/local/v1/messages", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            int? limit,
+            int? offset,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
+            var outbox = await persistence.Activities.GetOutboxAsync(account.ActorId, ct);
+
+            var received = inbox
+                .OfType<Activity>()
+                .Where(a => IsReceivedDirectCreate(a, account.ActorId))
+                .ToList();
+            var sent = outbox
+                .OfType<Activity>()
+                .Where(a => IsSentDirectCreate(a, account.ActorId))
+                .ToList();
+
+            // De-duplicate by object IRI (a DM the account both sent and received — e.g. a local
+            // echo — appears in both; keep the first occurrence).
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var merged = new List<Activity>();
+            foreach (var item in received.Concat(sent))
+            {
+                var objectIri = item.Object?.FirstOrDefault()?.ResolveObjectIri()?.Value;
+                if (objectIri is not null)
+                {
+                    if (!seen.Add(objectIri))
+                    {
+                        continue;
+                    }
+                }
+
+                merged.Add(item);
+            }
+
+            merged.Sort((a, b) =>
+            {
+                var ta = a.Published ?? (a.Object is IObject oa ? oa.Published : null);
+                var tb = b.Published ?? (b.Object is IObject ob ? ob.Published : null);
+                if (ta is { } taVal && tb is { } tbVal)
+                {
+                    return tbVal.CompareTo(taVal);
+                }
+
+                if (ta is not null)
+                {
+                    return -1;
+                }
+
+                return tb is not null ? 1 : 0;
+            });
+
+            var safeLimit = Math.Clamp(limit ?? 20, 1, 100);
+            var safeOffset = Math.Max(0, offset ?? 0);
+            var page = merged.Skip(safeOffset).Take(safeLimit).ToList();
+            var hasMore = safeOffset + safeLimit < merged.Count;
+
+            var readAt = account.MessagesReadAt;
+
+            return Results.Json(new
+            {
+                items = page,
+                totalItems = merged.Count,
+                nextPage = hasMore ? $"/local/v1/messages?limit={safeLimit}&offset={safeOffset + safeLimit}" : null,
+                readAt,
+            });
+        }).RequireAuthorization();
+
+        // Messages (S116): POST marks all DMs as read (advances the account's messages-read cursor).
+        // Returns { unread } so the client can update its badge without a second call.
+        endpoints.MapPost("/local/v1/messages/read", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await accounts.UpdateMessagesReadAtAsync(account.Id, now, ct);
+
+            var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
+            var receivedDirect = inbox
+                .OfType<Activity>()
+                .Where(a => IsReceivedDirectCreate(a, account.ActorId))
+                .ToList();
+            var unread = CountUnread(receivedDirect, now);
+            return Results.Json(new { unread });
+        }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Maps the account self-service endpoints: notification preferences (GET/PUT) and account
+    /// detail (GET). All <c>[Authorize]</c>-gated.
+    /// </summary>
+    public static void MapAccountPrefsEndpoints(IEndpointRouteBuilder endpoints)
+    {
         // Notification preferences (53.2): GET returns the current prefs, PUT replaces them.
         endpoints.MapGet("/local/v1/account/notification-preferences", async (
             HttpContext ctx,
@@ -1722,6 +1860,71 @@ public static class WebAppFactory
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Reports whether an inbox activity is a received direct message (S116): a <c>Create</c> whose
+    /// embedded object is a direct message and is addressed to the given account (the account is one
+    /// of the directed recipients).
+    /// </summary>
+    internal static bool IsReceivedDirectCreate(Activity activity, Iri? selfIri)
+    {
+        if (selfIri is null)
+        {
+            return false;
+        }
+
+        if (activity.Type?.FirstOrDefault() is not string type ||
+            !string.Equals(type, "Create", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (activity.Object is not { } obj)
+        {
+            return false;
+        }
+
+        var embedded = obj.FirstOrDefault() as IObject;
+        if (embedded is null || !embedded.IsDirectMessage())
+        {
+            return false;
+        }
+
+        return embedded.GetAudienceIris()
+            .Any(r => string.Equals(r.ToString(), selfIri!.ToString(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Reports whether an outbox activity is a sent direct message (S116): a <c>Create</c> whose
+    /// embedded object is a direct message authored by the given actor.
+    /// </summary>
+    internal static bool IsSentDirectCreate(Activity activity, Iri? authorIri)
+    {
+        if (authorIri is null)
+        {
+            return false;
+        }
+
+        if (activity.Type?.FirstOrDefault() is not string type ||
+            !string.Equals(type, "Create", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (activity.Object is not { } obj)
+        {
+            return false;
+        }
+
+        var embedded = obj.FirstOrDefault() as IObject;
+        if (embedded is null || !embedded.IsDirectMessage())
+        {
+            return false;
+        }
+
+        var attributedTo = embedded.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        return attributedTo is { } at && string.Equals(at.ToString(), authorIri!.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
