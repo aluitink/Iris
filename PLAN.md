@@ -15,9 +15,9 @@ S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection — FIXE
 ## OPEN
 
 S112 | OPEN-QA | dev2 | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav — FIXED (CSS): .media-gallery-item was missing from the .object-item--clickable z-index:1 list (stale .media-player class was there instead), so image clicks hit the stretched object-card-link (z-index:0) and navigated to the object page instead of opening the lightbox. Added z-index:1 to .media-gallery-item. QA: click a post image in the home feed — lightbox overlay opens (Close button visible), URL stays /home, Close button dismisses overlay; 0 console errors.
-S113 | OPEN | - | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button
 ## CLOSED
 
+S113 | CLOSED | dev2 | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button — VERIFIED (already implemented): live dev2 CW text post shows .object-sensitive banner (summary "S113-CW-TEST" + "This content may be sensitive." + Show btn), content blur(8px) until Show (filter none after); CW+media post media-gallery-wrap blur(8px) until Show; 0 console errors
 S110 | CLOSED | qa | Home feed made one /flags call per ObjectView (N posts = N calls) — PASS: live qa-iris-a fresh WASM (23f09rii0f) home feed 6 posts (4 own s106qview + 2 foreign s105follow) -> exactly 1 /flags + 1 /blocks + 1 /mutes (single cached WalkModerationAsync, 2min TTL), not N; initial 2-4 /flags was stale browser-cached OLD wasm (i0f4v109nu, now 404) until cache cleared; 0 console errors
 S109 | CLOSED | qa | Video in feed streams redirects to object page on play click instead of playing in-place — PASS: live qa-iris-a video post in home feed; .media-player computed z-index:1/position:relative, .object-card-link (stretched) z-index:0/absolute; clicked video center -> URL stayed /home (no object-page nav); served app.css .media-player in z-index:1 group, stale .object-media gone; 0 console errors
 S107 | CLOSED | qa | Copied links for a post should generate a front end link instead of an Activity Pub object link — PASS: live qa-iris-a Copy link on 2 posts copies front-end /object?iri= URL (not AP IRI), matches stretched "Open post" href, opens object view; 0 console errors
@@ -42,5 +42,4 @@ S89 | CLOSED | qa | Post edit persists; signed GET serves stale pre-edit content
 S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) — NOT REPRODUCED: live dev2 (post-S83 build) fresh acct s87clean UI-only (type bio+click checkbox+Save) → POST /ap/v1/u/s87clean/outbox 202 Update{type:Person,bio,icon:[]}, server GET confirms summary+manuallyApprovesFollowers persisted; s87repro acct same; both /profile button + ?edit=true deep-link paths work; form prefills on fresh load. Save DOES call API + persist; no repro, no code change
 S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
-S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
 
