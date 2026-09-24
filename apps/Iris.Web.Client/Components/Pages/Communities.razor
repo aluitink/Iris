@@ -62,6 +62,7 @@ else
             <a href="#following" id="tab-community-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-community-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
             <a href="#mine" id="tab-community-mine" role="tab" aria-selected="@(ActiveTab == "mine")" aria-controls="panel-community-mine" class="tab @(ActiveTab == "mine" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("mine")'>My communities</a>
             <a href="#all" id="tab-community-all" role="tab" aria-selected="@(ActiveTab == "all")" aria-controls="panel-community-all" class="tab @(ActiveTab == "all" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("all")'>All on this instance</a>
+            <a href="#all-known" id="tab-community-all-known" role="tab" aria-selected="@(ActiveTab == "all-known")" aria-controls="panel-community-all-known" class="tab @(ActiveTab == "all-known" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("all-known")'>All known</a>
         </div>
     </div>
 
@@ -93,6 +94,7 @@ else
         {
             "following" => (Following ?? LocalFollowing),
             "mine" => OwnedCommunities,
+            "all-known" => AllKnown ?? [],
             _ => All
         };
         @if (shown.Count == 0)
@@ -114,6 +116,11 @@ else
                     {
                         <p>You don't own any communities yet.</p>
                         <p>Create one above to get started.</p>
+                    }
+                    else if (ActiveTab == "all-known")
+                    {
+                        <p>No communities known yet.</p>
+                        <p>Follow or interact with a community on another instance to discover it here.</p>
                     }
                     else
                     {
@@ -219,6 +226,14 @@ else
     private List<Group> All => Items ?? [];
 
     /// <summary>
+    /// S98: every community the instance KNOWS — its own communities plus the cached REMOTE community
+    /// Groups it has seen during federation (the <c>local=false</c> actor search, which the server merges
+    /// with the community store's cached remote Groups via the S30 A8.2 path, filtered to <c>Group</c>).
+    /// Populated alongside <see cref="Items"/> in <see cref="LoadAsync"/>; null until loaded.
+    /// </summary>
+    private List<Group>? AllKnown { get; set; }
+
+    /// <summary>
     /// Fallback for the Following view when <see cref="Following"/> has not been resolved yet: the
     /// local communities whose IRI is in the following set.
     /// </summary>
@@ -307,6 +322,24 @@ else
             }
 
             Items = results
+                .OfType<Group>()
+                .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // S98: the "All known" (federated) surface — this instance's communities PLUS the cached
+            // remote community Groups the server has seen. The local=false actor search returns local
+            // actors + cached remote actors, and the server merges in the community store's cached
+            // remote Groups (S30 A8.2); filtering to Group leaves exactly the known communities.
+            var allKnownResults = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                                baseIri,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor", LocalOnly = false }))
+            {
+                allKnownResults.Add(item);
+            }
+
+            AllKnown = allKnownResults
                 .OfType<Group>()
                 .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .ToList();
