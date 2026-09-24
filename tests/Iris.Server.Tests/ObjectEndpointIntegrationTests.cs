@@ -401,6 +401,91 @@ public sealed class ObjectEndpointIntegrationTests : IAsyncLifetime
         await AssertServesTombstoneAsync(server, NoteIri, baseUri);
     }
 
+    // --- S89: a post edit refreshes the served object AND the cached collection surfaces ----
+    //
+    // S89 root cause: after a content-object Update (a post edit), the UpdateActivityHandler refreshes
+    // the object in the IObjectStore but (before the fix) did not (a) drop the per-actor follow-feed
+    // cache, (b) drop the profile "Your posts" outbox?type=content page cache, or (c) tell the browser
+    // HTTP cache that the object is now mutable. The result: the object-detail page (browser cache,
+    // stale-while-revalidate=300) and the home feed / "Your posts" tab (the Create activity's frozen
+    // embedded object, rendered by EnrichCollectionItemsAsync) kept showing the PRE-EDIT content.
+    //
+    // This test verifies the three halves of the fix end-to-end over the signed wire path:
+    //   1. Part A — an EDITED object's document carries `no-cache` (the browser revalidates, so a
+    //      reload after an edit gets the current content); a NEVER-EDITED object keeps the longer
+    //      `max-age=60, stale-while-revalidate=300`.
+    //   2. Part B — the outbox?type=content collection renders the CURRENT (edited) content of the
+    //      stored Note (re-resolved from the IObjectStore), not the frozen creation-time snapshot in
+    //      the Create activity.
+
+    [Fact]
+    public async Task S89_EditedNote_ObjectDocNoCache_And_OutboxTypeContentServesFreshContent()
+    {
+        // Seed a local actor with a real signing key so the inbound activities are signature-valid.
+        var persistence = new InMemoryPersistenceProvider();
+        var seeded = TestSeeder.SeedPersonWithKey(persistence, Host, Handle);
+
+        TestServer? self = null;
+        using var server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = Host,
+            Handle = Handle,
+            Persistence = persistence,
+            IdentityKeys = new IdentityKeys(persistence.Keys, new InMemoryKeyProvider(persistence.Keys), new HttpSignatureSigner(persistence.Keys)),
+            Fetcher = BuildSelfFetcher(seeded.Key, ActorIri, () => self!),
+        });
+        self = server;
+
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(seeded.Key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(ActorIri, seeded.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = ActorIri, EnableRetry = false },
+            server.CreateHandler());
+
+        var inbox = ActorIri.InboxOf();
+        var baseUri = new Uri(_base);
+        using var http = new HttpClient(server.CreateHandler(), disposeHandler: false) { BaseAddress = baseUri };
+
+        var editedNoteIri = new Iri($"{ActorIri.Value}/notes/s89-edited");
+        var untouchedNoteIri = new Iri($"{ActorIri.Value}/notes/s89-untouched");
+
+        // 1. Two Create posts: one we will edit, one we leave untouched (the Part A contrast).
+        Assert.Equal(202, (await client.DeliverAsync(inbox, BuildCreate(editedNoteIri, "original content"))).StatusCode);
+        Assert.Equal(202, (await client.DeliverAsync(inbox, BuildCreate(untouchedNoteIri, "untouched content"))).StatusCode);
+
+        // 2. Edit the first note (a signed Update with the new embedded content).
+        Assert.Equal(202, (await client.DeliverAsync(inbox, BuildUpdate(editedNoteIri, "edited content"))).StatusCode);
+
+        // Part A — the EDITED object's document carries `no-cache` (mutable: the browser must
+        // revalidate, so a reload after the edit returns the current content, not the 300 s
+        // stale-while-revalidate pre-edit body).
+        var editedResponse = await http.GetAsync(ObjectPathFor(editedNoteIri));
+        editedResponse.EnsureSuccessStatusCode();
+        Assert.Equal("no-cache", editedResponse.Headers.CacheControl?.ToString());
+
+        // The NEVER-EDITED object keeps the stable-document TTL (max-age=60, stale-while-revalidate=300).
+        var untouchedResponse = await http.GetAsync(ObjectPathFor(untouchedNoteIri));
+        untouchedResponse.EnsureSuccessStatusCode();
+        Assert.Equal("max-age=60, stale-while-revalidate=300", untouchedResponse.Headers.CacheControl?.ToString());
+
+        // Part B — the outbox?type=content collection (the profile "Your posts" tab's source) renders
+        // the CURRENT content of the edited Note (re-resolved from the IObjectStore), not the frozen
+        // creation-time snapshot in the Create activity. Fetch with ?refresh=true so the read is not
+        // served from the local collection-page response cache (the fix also drops that cache entry on
+        // edit, but the refresh bypass isolates the rendering assertion).
+        var outboxResponse = await http.GetAsync($"/ap/v1/u/{Handle}/outbox?type=content&refresh=true");
+        outboxResponse.EnsureSuccessStatusCode();
+        var outboxJson = await outboxResponse.Content.ReadAsStringAsync();
+
+        Assert.Contains("edited content", outboxJson);
+        Assert.DoesNotContain("original content", outboxJson);
+        Assert.Contains("untouched content", outboxJson);
+    }
+
     private Create BuildCreate(Iri objectIri, string content) => new()
     {
         Id = $"{ActorIri}/creates/{Guid.NewGuid():N}",

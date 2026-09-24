@@ -4710,6 +4710,21 @@ public static class ActivityPubServerExtensions
                 if (handlers.OfType<UpdateActivityHandler>().FirstOrDefault() is { } updateHandler)
                 {
                     await updateHandler.HandleAsync(new InboxDelivery(actorIri, update), update, ct).ConfigureAwait(false);
+
+                    // S89: an edit (a local actor updating their own content) refreshes the object in the
+                    // IObjectStore, but two cached surfaces keep serving the PRE-EDIT content until their
+                    // TTL lapses:
+                    //   1. The per-actor follow-feed cache (FeedService, 30 s) — the owner's home feed and
+                    //      GET /u/{handle}/feed would show the pre-edit note for up to the TTL.
+                    //   2. The profile "Your posts" tab reads outbox?type=content, which is served through
+                    //      the local collection-page response cache under a DISTINCT key
+                    //      ({owner}/outbox/?type=content) — the bare-outbox invalidation above (line ~4494)
+                    //      does not touch it, so the tab serves the stale page for up to 300 s.
+                    // Drop both so the next read re-renders with the edited content. The bare outbox page
+                    // was already invalidated for every activity (line ~4494); only the ?type=content key
+                    // and the feed cache need the extra drops here.
+                    collectionCache.Invalidate(new Iri($"{actorIri}/outbox/?type=content"));
+                    followFeed.InvalidateActorFeedCache(actorIri, ct);
                 }
             }
             else
@@ -8206,8 +8221,17 @@ public static class ActivityPubServerExtensions
         // (isLiked / isShared depend on the requester), so the 60s TTL is a soft bound — a requester who
         // just liked / boosted an object sees it light on a re-fetch that bypasses the cache (the client
         // passes ?refresh=true).
-        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.ActorCacheControl;
+        //
+        // S89: an object that has been EDITED (it carries a non-null `updated` timestamp, stamped by the
+        // UpdateActivityHandler) is no longer a stable document — its content is mutable and the
+        // stale-while-revalidate window (300 s) would let a browser HTTP cache replay the pre-edit body
+        // long after the edit. Emit no-cache for edited objects so the browser revalidates on every load
+        // (the server reads IObjectStore fresh, so the revalidation returns the current content). A
+        // never-edited object (no `updated`) keeps the longer TTL.
+        var objectDocumentCacheControl = obj is ActivityStreamsObject editedObject && editedObject.Updated is not null
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.ActorCacheControl;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = objectDocumentCacheControl;
         return Results.Text(
             ServeObjectDocument(
                 obj, objectIri, isLikedValue, isSharedValue, isDislikedValue,
@@ -8589,6 +8613,44 @@ public static class ActivityPubServerExtensions
             return items;
         }
 
+        // S89: resolve the CURRENT content of each direct content object (a Note/Article/Question/Page
+        // embedded in a Create) from the IObjectStore, so the rendered collection page reflects the
+        // LATEST stored content rather than the frozen creation-time snapshot in the Create activity.
+        // When an owner edits a post, the UpdateActivityHandler refreshes the object in the IObjectStore
+        // (and stamps `updated`) but does NOT mutate the Create activity's embedded object (the event
+        // history keeps the original). Without this re-resolution, the home feed and the profile "Your
+        // posts" tab (outbox?type=content) — both of which render the Create's embedded object via
+        // ObjectView — keep showing the pre-edit content. A stored object (local or federated-in) is
+        // served fresh; an object that is not stored locally (e.g. a boost of remote content never
+        // fetched into the store) falls back to the frozen embedded copy (the existing behavior).
+        // The fetches run in parallel (a page is a small set of IRIs) and only on a cache miss, so the
+        // cost is amortized over the collection page's TTL.
+        var freshContentByIri = new Dictionary<Iri, IObject>();
+        var freshFetchTargets = new List<(Iri Iri, int Index)>();
+        foreach (var (index, _, embeddedObj, objectIri) in entries)
+        {
+            if (objectIri is { } fcIri
+                && (embeddedObj is Note || embeddedObj is Article || embeddedObj is Question || embeddedObj is Page))
+            {
+                freshFetchTargets.Add((fcIri, index));
+            }
+        }
+
+        if (freshFetchTargets.Count > 0)
+        {
+            var freshFetches = freshFetchTargets
+                .Select(async t => (t.Iri, found: await persistence.Objects.TryGetObjectAsync(t.Iri, out IObject? freshObj, ct).ConfigureAwait(false), freshObj))
+                .ToList();
+            var freshResults = await Task.WhenAll(freshFetches).ConfigureAwait(false);
+            foreach (var (iri, found, freshObj) in freshResults)
+            {
+                if (found && freshObj is not null && freshObj is not KristofferStrube.ActivityStreams.Tombstone)
+                {
+                    freshContentByIri[iri] = freshObj;
+                }
+            }
+        }
+
         // Phase 2: batch-fetch interaction counts and per-requester state.
         //
         // Phase 151 — background processing: the ObjectInteractionCountRefreshService pre-computes the
@@ -8661,6 +8723,23 @@ public static class ActivityPubServerExtensions
             {
                 enrichedByIndex[index] = activity;
                 continue;
+            }
+
+            // S89: when a fresh copy of this content object was resolved from the IObjectStore (the
+            // object is stored locally / federated-in), render the CURRENT content instead of the
+            // frozen creation-time snapshot in the Create activity. Deep-copy the fresh object so the
+            // annotation below (the interaction counters) does not mutate the shared stored instance.
+            // A fresh object that already carries the pre-computed counters (Phase 151) is used as-is;
+            // the count-annotation below still reads them via TryReadStoredCounts.
+            if (objectIri is { } freshIri
+                && freshContentByIri.TryGetValue(freshIri, out var freshObj)
+                && freshObj is not null)
+            {
+                var freshCopy = ActivityJson.Deserialize<IObject>(ActivityJson.Serialize(freshObj));
+                if (freshCopy is not null)
+                {
+                    copyObj = freshCopy;
+                }
             }
 
             if (objectIri is { } oid)
