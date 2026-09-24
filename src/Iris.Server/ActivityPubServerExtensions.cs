@@ -10329,8 +10329,20 @@ public static class ActivityPubServerExtensions
         var contentType = context.Request.Query["type"].ToString();
         if (collectionName == "outbox" && contentType is "content" or "reply")
         {
+            // S105/S108: the ?type=content / ?type=reply outbox surfaces (the profile "Your posts" and
+            // "Replies" tabs) must show only the actor's OWN content. The unfiltered outbox also
+            // contains FOLLOWED content that the CreateActivityHandler records in the recipient's
+            // outbox (a followed/remote user's post delivered to this actor's inbox), and a DM/mention
+            // addressed to this actor — the public feed's S5 audience filter relies on those items
+            // being in the outbox, so they must NOT be removed from the outbox itself. But the
+            // "Your posts" / "Replies" surfaces are the lean "objects this actor produced" views
+            // (S108), so they filter to items the actor THEMSELVES authored (a Create/Announce whose
+            // `actor` is this actor). Without this, a heavy follower's "Your posts" tab paged through
+            // thousands of followed/foreign posts to reach the actor's own post (S105/S108).
             items = items
-                .Where(item => contentType == "content" ? OutboxItemIsContent(item) : OutboxItemIsReply(item))
+                .Where(item =>
+                    (contentType == "content" ? OutboxItemIsContent(item) : OutboxItemIsReply(item))
+                    && OutboxItemIsAuthoredBy(item, actorIri))
                 .ToList();
         }
 
@@ -12765,6 +12777,33 @@ public static class ActivityPubServerExtensions
         /// </summary>
         private static bool OutboxItemIsReply(IObjectOrLink item)
             => ContentItems.IsContentReply(item);
+
+        /// <summary>
+        /// S105/S108: whether an outbox item was authored by <paramref name="ownerIri"/> — i.e. the
+        /// item is an <c>Activity</c> whose <c>actor</c> (first element) resolves to the owner's IRI.
+        /// Used by the <c>?type=content</c> / <c>?type=reply</c> outbox filters so the profile "Your
+        /// posts" / "Replies" tabs show only the actor's OWN content, not the followed/foreign content
+        /// the <c>CreateActivityHandler</c> records in the recipient's outbox (which the public feed's
+        /// S5 audience filter still needs there, unfiltered). A bare (unwrapped) content object has no
+        /// <c>actor</c>; it is attributed via its <c>attributedTo</c>, so a bare object is accepted as
+        /// authored by the owner when its <c>attributedTo</c> resolves to the owner (the owner's own
+        /// object published unwrapped).
+        /// </summary>
+        private static bool OutboxItemIsAuthoredBy(IObjectOrLink item, Iri ownerIri)
+        {
+            if (item is Activity activity)
+            {
+                var actor = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+                return actor is { } a && a.Value == ownerIri.Value;
+            }
+
+            if (item is IObject bare && bare.AttributedTo is { } attributed)
+            {
+                return attributed.Any(at => at.ResolveObjectIri() is { } a && a.Value == ownerIri.Value);
+            }
+
+            return false;
+        }
 
     /// <summary>
     /// Parses a <c>?limit</c> query value into a bounded page size (default
