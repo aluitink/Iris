@@ -16,6 +16,7 @@ S117 | OPEN-QA | dev2 | Mention autocomplete: @ in compose shows matching accoun
 ## OPEN
 
 S116 | OPEN | - | DM inbox: /messages lists Direct posts you sent/received; add nav link
+S118 | OPEN | - | Media alt text: compose lets you set alt text on image attachments; serialized to Image alt
 ## CLOSED
 
 S114 | CLOSED | qa | Edit/Delete own posts from feed card — PASS: live qa-iris-a (wasm kzz9lgxzn4) own post shows .engagement-more menu w/ Edit+Delete; Edit deep-link -> prefilled editor + Save; Delete confirm -> tombstone "Deleted post"; 0 console errors
