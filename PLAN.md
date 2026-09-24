@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S83 | OPEN-QA | dev2 | Article edit silently fails (Note edit works) (fix: type-preserving UpdateObjectAsync; 1512 tests green)
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 
 ## CLOSED
 
+S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
 S86 | OPEN-QA | dev1 | Profile Likes tab renders raw IRI link instead of post content
 S82 | OPEN-QA | dev1 | community feed filters to content items (ContentItems.IsContentPost) — no empty post cards
@@ -46,5 +46,4 @@ S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live; bodi
 
 S59 | CLOSED | dev2 | signable-actor metric counted remote actors (PASS: local-only; remote excluded)
 
-S58 | CLOSED | dev1 | admin dashboard surfaces dead letters + signable-actor gap (PASS: /admin clean)
 
