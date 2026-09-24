@@ -278,6 +278,23 @@
 
         var me = Session.ActorId;
         var ns = Session.IrisNamespaceBase?.Value;
+
+        // S111: seed the signed-in user's bookmark state from the user's /bookmarks set (cached on
+        // the per-circuit UiContext — a feed renders one bar per post, and without the cache each
+        // bar would fire its own GET /bookmarks). Without this, a reload reverted every bookmark
+        // button to unpressed: the server does not render per-requester bookmark state onto the
+        // content object, so _bookmarked defaulted to false on every re-created bar.
+        if (me is { } bookmarkMeIri)
+        {
+            try
+            {
+                _bookmarked = await Ui.IsBookmarkedAsync(iri);
+            }
+            catch
+            {
+                // Non-fatal: the button simply defaults to unbookmarked.
+            }
+        }
         // The object document this bar was given carries the server-rendered iris:likedCount /
         // iris:sharedCount (and the per-requester isLiked / isShared) whenever the serving instance
         // enriched it — whether the object is local or a cross-instance note whose OWNER is on this
@@ -516,11 +533,17 @@
             {
                 await mod.UnbookmarkAsync(me, iri);
                 _bookmarked = false;
+                // S111: invalidate the shared bookmark-set cache so a re-created bar re-reads.
+                Ui.InvalidateBookmarks();
             }
             else
             {
-                await mod.BookmarkAsync(me, iri);
-                _bookmarked = true;
+                var result = await mod.BookmarkAsync(me, iri);
+                if (result.IsSuccess)
+                {
+                    _bookmarked = true;
+                    Ui.InvalidateBookmarks();
+                }
             }
         }
         catch
