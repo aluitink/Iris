@@ -29,6 +29,12 @@ public sealed class NotificationPreferences
     /// from these actors). An empty or null set means no actors are muted.
     /// </summary>
     public HashSet<string> MutedActors { get; set; } = [];
+
+    /// <summary>
+    /// The account's UI appearance theme: <c>"dark"</c> or <c>"light"</c> (S99). Null or
+    /// unrecognized values fall back to the default (dark), so existing rows keep rendering dark.
+    /// </summary>
+    public string? Theme { get; set; }
 }
 
 /// <summary>

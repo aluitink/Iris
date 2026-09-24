@@ -9,6 +9,38 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="css/app.css" />
     <title>Iris</title>
+    <script>
+    // Theme (S99): apply the user's saved Appearance before first paint so the app does not
+    // flash dark for users who chose light. The setting is stored per-browser in localStorage
+    // (key "iris-theme"); the server-side copy is the source of truth, re-read on load.
+    // The two window.* functions are the JS interop surface the Blazor Settings page calls.
+    (function () {
+        var KEY = "iris-theme";
+        window.irisThemeGet = function () {
+            try {
+                var saved = localStorage.getItem(KEY);
+                return saved === "light" ? "light" : "dark";
+            } catch (e) {
+                return "dark";
+            }
+        };
+        window.irisThemeSet = function (theme) {
+            try {
+                if (theme === "light") {
+                    document.documentElement.setAttribute("data-theme", "light");
+                    localStorage.setItem(KEY, "light");
+                } else {
+                    document.documentElement.removeAttribute("data-theme");
+                    localStorage.setItem(KEY, "dark");
+                }
+            } catch (e) { /* private mode: ignore */ }
+        };
+        var current = window.irisThemeGet();
+        if (current === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+        }
+    })();
+    </script>
 </head>
 
 <body>

@@ -1136,6 +1136,7 @@ public static class WebAppFactory
             {
                 disabledTypes = prefs.DisabledTypes.ToList(),
                 mutedActors = prefs.MutedActors.ToList(),
+                theme = prefs.Theme,
             });
         }).RequireAuthorization();
 
@@ -1151,14 +1152,21 @@ public static class WebAppFactory
                 return Results.Unauthorized();
             }
 
+            // S99: the theme is a fixed choice; anything other than "light" (case-insensitive)
+            // is treated as the dark default so a malformed value can't break the UI.
+            var theme = string.Equals(body.Theme, "light", StringComparison.OrdinalIgnoreCase)
+                ? "light"
+                : "dark";
+
             var prefs = new NotificationPreferences
             {
                 DisabledTypes = [.. (body.DisabledTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t))],
                 MutedActors = [.. (body.MutedActors ?? []).Where(a => !string.IsNullOrWhiteSpace(a))],
+                Theme = theme,
             };
 
             await accounts.UpdateNotificationPrefsAsync(accountId, prefs, ct);
-            return Results.Ok(new { success = true });
+            return Results.Ok(new { success = true, theme });
         }).RequireAuthorization();
     }
 
@@ -2281,7 +2289,8 @@ public sealed record AdminPasswordResetRequest(string? Password);
 /// <summary>Request body for <c>PUT /local/v1/account/notification-preferences</c> (53.2).</summary>
 /// <param name="DisabledTypes">Activity types the user has opted out of.</param>
 /// <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
-public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors);
+/// <param name="Theme">The UI appearance theme: <c>"light"</c> or <c>"dark"</c> (S99).</param>
+public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors, string? Theme);
 
 /// <summary>Request body for <c>POST /local/v1/admin/users/{id}/role</c> (88.5).</summary>
 /// <param name="Role">The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</param>
