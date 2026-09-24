@@ -175,4 +175,40 @@ public sealed class GlobalSearchCrossInstanceTests
         Assert.Single(ids);
         Assert.Contains(ids, id => id.Contains("local-note"));
     }
+
+    [Fact]
+    public async Task Nested_AnnounceWrappingCreate_IsUnwrappedToEmbeddedPost()
+    {
+        var p = await SeedLocalAsync();
+        // S96: a community post delivered from a remote instance arrives NESTED — an Announce whose object
+        // is a Create whose object is the actual post (a Lemmy community post is an Announce of a Create
+        // of a Page/Note). A single-level unwrap sees the Announce -> the Create (also an activity) and
+        // returns null, dropping the post. The fix recurses through the nesting to the embedded post.
+        var remotePostIri = $"https://{RemoteHost}/post/77";
+        var remoteAuthorLink = new Link { Href = new Uri(RemoteAuthor.Value) };
+        var nested = new Announce
+        {
+            Id = remotePostIri,
+            Actor = [remoteAuthorLink],
+            Object = [new Create
+            {
+                Id = remotePostIri,
+                Actor = [remoteAuthorLink],
+                Object = [new Note
+                {
+                    Id = remotePostIri,
+                    Content = ["a nested remote community post about kittens"],
+                    AttributedTo = [remoteAuthorLink],
+                    To = [new Link { Href = new Uri(Iri.Public.Value) }],
+                }],
+            }],
+        };
+        var feed = new FakeFollowFeed([nested]);
+        var search = new GlobalSearchService(p, new Iri($"https://{LocalHost}"), feed);
+
+        var ids = Ids(await search.SearchAsync("kittens", requesterIri: LocalUser));
+
+        Assert.Contains(ids, id => id == remotePostIri);   // the nested post is unwrapped and surfaced
+        Assert.Contains(ids, id => id.Contains("local-note"));
+    }
 }

@@ -342,6 +342,13 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// the object itself. Returns null when the item carries no embedded content (a link-only reference, a
     /// social activity with no object, or a <see cref="Link"/>).
     /// </summary>
+    /// <remarks>
+    /// S96: the unwrap is recursive, not single-level. A community post delivered from a remote instance
+    /// arrives nested (an <c>Announce</c> whose <c>object</c> is a <c>Create</c> whose <c>object</c> is the
+    /// <c>Page</c>), so the first level's embedded object is itself an activity (the <c>Create</c>) and a
+    /// single-level scan would return null, dropping the post from cross-instance search. Recursing through
+    /// each nested activity finds the first non-activity object (the actual post) at any depth.
+    /// </remarks>
     private static IObject? UnwrapContentObject(IObjectOrLink item)
     {
         if (item is not IObject obj)
@@ -356,9 +363,12 @@ public sealed class GlobalSearchService : IGlobalSearchService
 
         foreach (var referenced in activity.Object ?? [])
         {
-            if (referenced is IObject refObj && refObj is not Activity)
+            // Recurse: a referenced object may itself be an activity wrapping the real content
+            // (Announce -> Create -> Page). The first embedded non-activity object at any depth wins.
+            var unwrapped = UnwrapContentObject(referenced);
+            if (unwrapped is not null)
             {
-                return refObj;
+                return unwrapped;
             }
         }
 

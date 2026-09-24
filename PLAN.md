@@ -11,7 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S99 | OPEN | - | No theme/dark-mode setting in Settings (no Appearance section)
-S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
+S96 | OPEN-QA | dev1 | Search local-only; add cross-instance post search over followed remote outboxes
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 
 ## CLOSED
