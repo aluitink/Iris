@@ -57,6 +57,12 @@ public sealed class ForeignObjectDocumentEndpointTests : IDisposable
         };
         persistence.Objects.PutObjectAsync(foreignObject).GetAwaiter().GetResult();
 
+        // A local reply to the foreign parent (S97): the reply edge is recorded against the FOREIGN
+        // parent IRI (the instance stores the reply locally, keyed by the foreign parent). This is the
+        // data the object document's iris:repliedCount renders, and what /replies?iri= must serve.
+        var foreignReply = new Iri($"{BaseUri}/ap/v1/u/alice/notes/r1");
+        persistence.Replies.RecordReplyAsync(new Iri(ForeignIri), foreignReply).GetAwaiter().GetResult();
+
         // A stored LOCAL object (this instance's host) — the backward-compat regression case.
         var localObject = new Note
         {
@@ -172,6 +178,32 @@ public sealed class ForeignObjectDocumentEndpointTests : IDisposable
         // A relative ?iri= is not an absolute IRI, so it is ignored and the path-based reconstruction
         // is used (here: a path that names no local object → 404, not a crash).
         var response = await _http.GetAsync($"{BaseUri}/ap/v1/lemmy.luit.ink/post/1?iri=post%2F1");
+
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ForeignParent_Replies_ByExplicitIri_ServesRecordedReplies()
+    {
+        // S97: the replies of a stored FOREIGN parent are unreachable by path (the catch-all
+        // reconstructs a LOCAL parent IRI, so the foreign parent's reply edges are missed → 404). The
+        // ?iri= override names the foreign parent directly, so the home server serves the reply edges
+        // it recorded (the same data the object document's iris:repliedCount renders).
+        var response = await _http.GetAsync(
+            $"{BaseUri}/ap/v1/object/replies?iri={Uri.EscapeDataString(ForeignIri)}");
+
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("r1", body);
+    }
+
+    [Fact]
+    public async Task ForeignParent_Replies_ByPath_Returns404()
+    {
+        // S97 (the bug, no ?iri=): the catch-all reconstructs a LOCAL parent IRI from the path, so the
+        // foreign parent's reply edges are not found → 404 (this is why the Replies tab was empty while
+        // the header count was correct).
+        var response = await _http.GetAsync($"{BaseUri}/ap/v1/lemmy.luit.ink/post/1/replies");
 
         Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }

@@ -229,6 +229,9 @@ else if (ObjectDoc is null)
     [Inject]
     private NavigationManager Navigation { get; set; } = default!;
 
+    [Inject]
+    private HttpClient Http { get; set; } = default!;
+
     [SupplyParameterFromQuery(Name = "iri")]
     public string? IriParam { get; set; }
 
@@ -424,6 +427,33 @@ else if (ObjectDoc is null)
 
         const string marker = "/ap/v1";
         return iri.Value.Contains(marker, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The home instance's canonical base IRI (the host a SAME-ORIGIN <c>/ap/v1</c> read targets), derived
+    /// from the actor IRI's <c>/ap/v1</c> origin (S97). Null when no actor IRI is available. Used to read
+    /// the replies of a stored foreign parent via the home server's <c>?iri=</c> override.
+    /// </summary>
+    private Iri? HomeBase
+    {
+        get
+        {
+            if (Session.ActorId is not { } actor)
+            {
+                return null;
+            }
+
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            if (index <= 0)
+            {
+                return null;
+            }
+
+            var baseValue = value[..index];
+            return Iri.TryParse(baseValue, out var baseIri) ? baseIri : null;
+        }
     }
 
     /// <summary>
@@ -628,10 +658,24 @@ else if (ObjectDoc is null)
             // Replies tab on A (the header reply count, read off the doc's iris:repliedCount, was correct,
             // so the count and the list disagreed). Allow the walks for local objects AND remote-Iris
             // objects; only skip for non-Iris remote platforms (Lemmy et al.).
-            if (IsLocalIri(contentIri) || IsRemoteIrisIri(contentIri))
+            //
+            // S97: even for a non-Iris remote platform (Lemmy), the instance's OWN server knows the
+            // replies to a stored foreign parent (the reply edges recorded when a local user replied to
+            // it — the same data the object document's iris:repliedCount renders). The parent's OWN host
+            // (Lemmy) does not expose /replies, but the HOME server serves them via the 139.3-s6 F2
+            // ?iri= override (GET /ap/v1/.../replies?iri={foreign}). So still walk the Replies tab for a
+            // non-Iris remote object — pointed at the home base with ?iri= — so the count and the list
+            // agree. Only the Likes/Shares walks (the engagement counters) remain skipped for those,
+            // since the home server has no like/announce edges for a foreign object.
+            var walkDirectCollections = IsLocalIri(contentIri) || IsRemoteIrisIri(contentIri);
+            if (walkDirectCollections)
             {
                 await LoadRepliesAsync(client, contentIri);
                 await LoadEngagementAsync(client, contentIri);
+            }
+            else
+            {
+                await LoadForeignRepliesAsync(client, contentIri);
             }
         }
     }
@@ -670,6 +714,114 @@ else if (ObjectDoc is null)
             Replies = resolved;
             RepliesLoaded = count;
             HasMoreReplies = count >= 20;
+        }
+        catch
+        {
+            // Non-fatal: the object still renders; replies simply won't show.
+        }
+        finally
+        {
+            RepliesLoading = false;
+        }
+
+        await BuildReplyTreeAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Loads the Replies tab for a stored FOREIGN (non-Iris) parent (S97). The parent's own host (e.g.
+    /// Lemmy) does not expose a <c>/replies</c> collection, so the home server is asked for it via the
+    /// 139.3-s6 F2 <c>?iri=</c> override — <c>GET {home}/ap/v1/…/replies?iri={foreign}</c> — which serves
+    /// the reply edges this instance recorded when a local user replied to the foreign parent (the same
+    /// data the object document's <c>iris:repliedCount</c> renders). The read is a SAME-ORIGIN request,
+    /// so the cross-instance proxy is not involved. Each item is a link to a reply object the instance
+    /// stores locally (the replier is a local user), so <c>GetObjectAsync</c> resolves it directly. The
+    /// Likes/Shares engagement walks are intentionally NOT run for a foreign parent (the home server has
+    /// no like/announce edges for a foreign object); the header counts fall back to the document's
+    /// stored counters.
+    /// </summary>
+    private async Task LoadForeignRepliesAsync(IActivityPubClient client, Iri foreignParentIri)
+    {
+        RepliesLoading = true;
+        RepliesObjectIri = foreignParentIri;
+        try
+        {
+            var homeBase = HomeBase;
+            if (homeBase is { } home)
+            {
+                var url = $"{home.Value.TrimEnd('/')}/ap/v1/object/replies?iri={Uri.EscapeDataString(foreignParentIri.Value)}&limit=20";
+                var resolved = new List<IObject?>();
+                var count = 0;
+                using var response = await Http.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Get, url), CancellationToken.None);
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                    using var doc = System.Text.Json.JsonDocument.Parse(json);
+                    // The /replies collection (S97 F2 ?iri= override) serializes as an
+                    // OrderedCollection whose orderedItems is an ARRAY OF IRI STRINGS (the reply
+                    // object IRIs the instance stores locally), not an array of {href} objects.
+                    // (Matches how the direct /replies walk reads items via ResolveObjectIri.)
+                    var replyIris = new List<Iri>();
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (prop.Name is not ("orderedItems" or "items"))
+                        {
+                            continue;
+                        }
+
+                        if (prop.Value.ValueKind is not System.Text.Json.JsonValueKind.Array)
+                        {
+                            continue;
+                        }
+
+                        foreach (var element in prop.Value.EnumerateArray())
+                        {
+                            var replyHref = element.ValueKind switch
+                            {
+                                System.Text.Json.JsonValueKind.String => element.GetString(),
+                                System.Text.Json.JsonValueKind.Object
+                                    when element.TryGetProperty("href", out var href) => href.GetString(),
+                                _ => null,
+                            };
+                            if (string.IsNullOrWhiteSpace(replyHref)
+                                || !Iri.TryParse(replyHref, out var replyIri))
+                            {
+                                continue;
+                            }
+
+                            replyIris.Add(replyIri);
+                        }
+                    }
+
+                    foreach (var replyIri in replyIris)
+                    {
+                        try
+                        {
+                            var replyObj = await client.GetObjectAsync(replyIri, CancellationToken.None);
+                            if (replyObj is not null)
+                            {
+                                resolved.Add(replyObj);
+                                count++;
+                            }
+                        }
+                        catch
+                        {
+                            // Skip unresolvable replies (404, network error, etc.).
+                        }
+                    }
+                }
+
+                Replies = resolved;
+                RepliesLoaded = count;
+                HasMoreReplies = count >= 20;
+            }
+            else
+            {
+                Replies = [];
+                RepliesLoaded = 0;
+                HasMoreReplies = false;
+            }
         }
         catch
         {

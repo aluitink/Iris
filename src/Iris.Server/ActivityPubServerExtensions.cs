@@ -8057,7 +8057,21 @@ public static class ActivityPubServerExtensions
         if (isReplies)
         {
             var parentPath = path.Substring(0, path.Length - (repliesSegment.Length + 1));
-            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, IrisExtensionNamespace(optionsAccessor.Value), ct).ConfigureAwait(false);
+            // 139.3-s6 F2 (replies): the same explicit ?iri= override as the object-document path — the
+            // catch-all reconstructs a LOCAL parent IRI from the path, so the replies of a STORED FOREIGN
+            // object (e.g. a Lemmy post) are unreachable by path. A client (the object-detail Replies tab)
+            // that wants the replies of a known foreign parent passes its exact IRI via ?iri= (the UI's
+            // /object?iri= page already does this for the object itself); the lookup then uses the full
+            // foreign IRI directly. When ?iri= is absent the path-based behavior is preserved.
+            var repliesIriParam = context.Request.Query["iri"].ToString();
+            Iri? explicitParentIri = null;
+            if (!string.IsNullOrWhiteSpace(repliesIriParam)
+                && Iri.TryParse(repliesIriParam, out var repliesExplicitIri)
+                && repliesExplicitIri.IsAbsolute)
+            {
+                explicitParentIri = repliesExplicitIri;
+            }
+            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, IrisExtensionNamespace(optionsAccessor.Value), explicitParentIri, ct).ConfigureAwait(false);
         }
 
         // Per-object interaction collections (decision 056 (d)): when the catch-all path ends in a
@@ -9020,11 +9034,16 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         string normalizedBase,
         string namespaceIri,
+        Iri? explicitParentIri,
         CancellationToken ct)
     {
-        // The object IRI IS the endpoint IRI (no serving prefix), so the parent IRI is base + route
-        // prefix + parent path (the same reconstruction the object-document endpoint uses).
-        var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
+        // The parent IRI is normally base + route prefix + parent path (the same reconstruction the
+        // object-document endpoint uses — the object IRI IS the endpoint IRI, no serving prefix). An
+        // explicit ?iri= override (139.3-s6 F2, replies) names a STORED FOREIGN object directly (e.g. a
+        // Lemmy post) whose IRI's host is not this instance's, so the path reconstruction would miss it;
+        // the override uses the full foreign IRI instead.
+        var parentIri = explicitParentIri
+            ?? new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
 
         // An object this instance does not store has no replies to serve (404, mirroring the object
         // document) — UNLESS the instance knows reply edges for it. Phase 136.7 (cross-instance thread
