@@ -98,6 +98,7 @@ else
             PageSize="10"
             ShowRefreshButton="true"
             ItemTemplate="@PostTemplate"
+            ItemResolver="@LikesResolver"
             EmptyMessage="You haven't liked any posts yet." />
         </div>
     }
@@ -338,6 +339,41 @@ else
             builder.AddComponentParameter(2, nameof(ObjectView.ShowModeration), true);
             builder.CloseComponent();
         };
+
+    /// <summary>
+    /// S86: the actor's <c>liked</c> collection is served as bare object IRIs (<c>Link</c>s), and
+    /// <see cref="ObjectView"/> renders a bare link as a raw IRI string — so the Likes tab showed raw
+    /// links instead of the post content. This resolver (wired into the Likes tab's
+    /// <c>PagedCollection</c> via <c>ItemResolver</c>) fetches each liked object's full document and
+    /// substitutes it, so the standard <c>PostTemplate</c> renders the post. Items that are already
+    /// full objects (not bare links) pass through unchanged; a failed fetch returns the original item
+    /// (PagedCollection keeps it and renders the bare-IRI fallback rather than dropping it).
+    /// </summary>
+    private async Task<IObjectOrLink?> LikesResolver(IObjectOrLink item)
+    {
+        if (OutboxClient is null)
+        {
+            return item;
+        }
+
+        Iri? objectIri = null;
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            objectIri = new Iri(id);
+        }
+        else if (item is ILink { Href: { } href })
+        {
+            objectIri = new Iri(href.OriginalString);
+        }
+
+        if (objectIri is null)
+        {
+            return item;
+        }
+
+        var resolved = await OutboxClient.GetObjectAsync(objectIri.Value, CancellationToken.None);
+        return resolved is null ? item : (IObjectOrLink)resolved;
+    }
 
     private RenderFragment<IObjectOrLink> NotificationTemplate
         => item => builder =>

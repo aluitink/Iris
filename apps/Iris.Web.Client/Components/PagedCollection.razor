@@ -193,6 +193,18 @@
     [Parameter]
     public Func<IObjectOrLink, bool>? ItemFilter { get; set; }
 
+    /// <summary>
+    /// Optional per-item resolver run once after each page's items are fetched. The returned value
+    /// (or the original item when the resolver returns <c>null</c>) is what gets rendered. Used by the
+    /// Profile Likes tab (S86): the actor's <c>liked</c> collection is served as bare object IRIs
+    /// (<c>Link</c>s), and <see cref="ObjectView"/> renders a bare link as a raw IRI string — so the
+    /// resolver fetches each object's full document and substitutes it, letting the standard
+    /// <c>PostTemplate</c> render the post content. When <c>null</c>, items are rendered as fetched
+    /// (default behavior).
+    /// </summary>
+    [Parameter]
+    public Func<IObjectOrLink, Task<IObjectOrLink?>>? ItemResolver { get; set; }
+
     private List<IObjectOrLink>? Items { get; set; }
     private bool HasMore { get; set; }
     private bool LoadingMore { get; set; }
@@ -453,6 +465,7 @@
                 Items.AddRange(page.Items);
                 HasMore = !page.IsLastPage;
                 _resumeFrom = page.NextPage;
+                await ResolveItemsAsync();
                 break;
             }
             return;
@@ -466,6 +479,38 @@
         if (AnonymousHttpClient is { } anonClient)
         {
             await FetchAnonymousPageAsync(anonClient, resumeIri);
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="ItemResolver"/> (when set) over each fetched item, in place, once per page fetch.
+    /// A resolver that returns <c>null</c> leaves the item as fetched. A resolver that throws for one
+    /// item is caught so a single unresolvable item (a deleted object, a 404) does not drop the rest of
+    /// the page — the item is left as-is and renders via the bare-IRI fallback. No-op when no resolver
+    /// is set or no items have been fetched yet.
+    /// </summary>
+    private async Task ResolveItemsAsync()
+    {
+        if (ItemResolver is null || Items is null || Client is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < Items.Count; i++)
+        {
+            try
+            {
+                var resolved = await ItemResolver(Items[i]);
+                if (resolved is not null)
+                {
+                    Items[i] = resolved;
+                }
+            }
+            catch
+            {
+                // A single unresolvable item (404 / deleted / network) keeps its original form
+                // (a bare link renders as a raw-IRI row) rather than failing the whole page.
+            }
         }
     }
 

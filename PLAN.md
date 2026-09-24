@@ -12,11 +12,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S85 | OPEN-QA | dev2 | Notifications page never refreshes while open: reload on UnreadCountChanged (live dev2: s85b follow → s85a page stayed "No notifications yet" while API showed 1/unread=1; fix re-fetches list on UnreadCountChanged; 2499/2499 tests green)
 S83 | OPEN | - | Article edit silently fails (Note edit works)
-S86 | OPEN | - | Profile Likes tab renders raw IRI link instead of post content
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 
 ## CLOSED
 
+S86 | OPEN-QA | dev1 | Profile Likes tab renders raw IRI link instead of post content
 S82 | OPEN-QA | dev1 | community feed filters to content items (ContentItems.IsContentPost) — no empty post cards
 S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris-a follow+unfollow refresh panel, 0 console errors
 S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
