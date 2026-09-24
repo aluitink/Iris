@@ -1,0 +1,1129 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Iris.Web</name>
+    </assembly>
+    <members>
+        <member name="T:Iris.Web.Accounts.AccountDeletionResult">
+            <summary>
+            The result of an account-deletion attempt.
+            </summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.AccountDeletionResult.Succeeded">
+            <summary>Whether the deletion completed.</summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.AccountDeletionResult.Error">
+            <summary>A user-facing error message (null on success).</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.AccountDeletionResult.Ok">
+            <summary>Creates a success result.</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.AccountDeletionResult.Fail(System.String)">
+            <summary>Creates a failure result.</summary>
+            <param name="error">The error message.</param>
+        </member>
+        <member name="T:Iris.Web.Accounts.AccountDeletionService">
+            <summary>
+            Orchestrates the teardown of a local account: tombstones the actor's content objects,
+            removes the actor from the actor store, and deletes the account row.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.AccountDeletionService.#ctor(Iris.Server.Data.Accounts.IUserAccountStore,Iris.Server.Stores.IPersistenceProvider,Microsoft.Extensions.Logging.ILogger{Iris.Web.Accounts.AccountDeletionService})">
+            <summary>
+            Initializes the service.
+            </summary>
+            <param name="accounts">The account store.</param>
+            <param name="persistence">The persistence provider (for actor + object stores).</param>
+            <param name="logger">A logger.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.AccountDeletionService.DeleteAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Deletes an account by id: tombstones the actor's objects, removes the actor, and deletes
+            the account row.
+            </summary>
+            <param name="accountId">The account id.</param>
+            <param name="ct">A cancellation token.</param>
+            <returns>A result (success or a user-facing error).</returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.ActorClaims">
+            <summary>
+            The custom claim keys for the local-account auth cookie.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.Accounts.ActorClaims.ActorIri">
+            <summary>
+            The claim key for the linked actor's IRI (the account's federated identity).
+            </summary>
+        </member>
+        <member name="T:Iris.Web.Accounts.ActorProvisioner">
+            <summary>
+            Provisions a local ActivityPub actor (a <see cref="T:KristofferStrube.ActivityStreams.Person"/>) for a new account. This is the same
+            "create a local actor" mechanism <c>SampleServer</c>'s seed logic uses (generate a
+            <see cref="T:Iris.Core.Identity.KeyPair"/>, write it to the <see cref="T:Iris.Core.Identity.IKeyStore"/>, build the <see cref="T:KristofferStrube.ActivityStreams.Person"/> with
+            its <c>publicKeyPem</c>, store it in the actor store, and register its key with the
+            <see cref="T:Iris.Client.Auth.IKeyProvider"/> so the server can sign as it) — but generalized into a DI service so
+            registration and the admin bootstrapper call one shared code path.
+            </summary>
+            <remarks>
+            The actor's IRI is derived the exact way the server derives it (<c>BaseUri.Value.TrimEnd('/')</c>
+            + <c>/ap/v1/u/{handle}</c>) so the provisioned actor's IRI is identical to the one the WebFinger /
+            actor-document / inbox handlers resolve. Idempotent by handle (re-provisioning replaces the actor
+            and re-mints the key).
+            </remarks>
+        </member>
+        <member name="M:Iris.Web.Accounts.ActorProvisioner.#ctor(Iris.Server.Stores.IPersistenceProvider,Iris.Core.Identity.IKeyStore,Iris.Client.Auth.IKeyProvider,Iris.Core.Identity.Iri)">
+            <summary>
+            Initializes the provisioner.
+            </summary>
+            <param name="persistence">The persistence provider (for the actor store + key store).</param>
+            <param name="keyStore">The key store the signing key is written to.</param>
+            <param name="keyProvider">The server's key provider (so the proxy / delivery worker can sign as the actor).</param>
+            <param name="baseUri">The advertised public base URI (used to derive the actor IRI).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ActorProvisioner.ActorIriFor(System.String)">
+            <summary>
+            The IRI a local actor with the given handle would have (<c>{base}/ap/v1/u/{handle}</c>).
+            </summary>
+            <param name="handle">The actor's handle.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ActorProvisioner.ProvisionAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Provisions (or re-provisions) a local actor for the given handle and returns its IRI. Generates
+            a fresh RSA key pair, writes it to the key store, stores the <see cref="T:KristofferStrube.ActivityStreams.Person"/>, and registers
+            the key with the <see cref="T:Iris.Client.Auth.IKeyProvider"/>.
+            </summary>
+            <param name="handle">The actor's handle (the account's username).</param>
+            <param name="displayName">The actor's display name (defaults to the handle when null/blank).</param>
+            <param name="ct">A cancellation token.</param>
+            <returns>The provisioned actor's IRI.</returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.AdminBootstrapper">
+            <summary>
+            Bootstraps the first <see cref="F:Iris.Server.Data.Accounts.UserRole.Admin"/> account on a clean deployment. Invoked once at
+            startup, <em>after</em> persistence is ready (<see cref="M:Iris.Web.WebAppFactory.InitializePersistence(System.IServiceProvider,Microsoft.Extensions.Configuration.IConfiguration,System.String)"/>,
+            i.e. after the EF migration + the seed actor): if no admin account exists and both
+            <c>App:Admin:Username</c> and <c>App:Admin:Password</c> are configured, it provisions one (same path
+            as registration, with <c>Role = Admin</c>). Idempotent — it never creates a second admin once one
+            exists. It is not an <see cref="T:Microsoft.Extensions.Hosting.IHostedService"/> (which would run at <c>Build()</c>, before the
+            migration); it is invoked directly once the provider is usable.
+            </summary>
+            <remarks>
+            This avoids the chicken-and-egg "how do I get my first admin" problem without a separate CLI. The
+            config keys are <c>App:Admin:*</c> (an <c>Iris.Web</c>-only concern — not <c>Iris:*</c>, which is
+            reserved for <c>AddActivityPubServer</c>'s bound options). The deployment doc notes these should be
+            unset (or rotated out of <c>.env</c>) after the first successful startup, since they otherwise stay
+            readable in the environment.
+            </remarks>
+        </member>
+        <member name="F:Iris.Web.Accounts.AdminBootstrapper.Section">
+            <summary>The configuration section for the bootstrap admin credentials.</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.AdminBootstrapper.#ctor(System.IServiceProvider,Microsoft.Extensions.Configuration.IConfiguration,Iris.Core.Identity.Iri,Microsoft.Extensions.Logging.ILogger{Iris.Web.Accounts.AdminBootstrapper})">
+            <summary>
+            Initializes the bootstrapper.
+            </summary>
+            <param name="services">The application service provider (the account store + provisioner are
+            resolved here so they are only touched once the host has started).</param>
+            <param name="configuration">The application configuration.</param>
+            <param name="baseUri">The advertised public base URI (used to derive the admin actor IRI).</param>
+            <param name="logger">A logger.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.AdminBootstrapper.StartAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="T:Iris.Web.Accounts.ChangePasswordResult">
+            <summary>
+            The result of a change-password attempt. <see cref="P:Iris.Web.Accounts.ChangePasswordResult.Error"/> is null on success.
+            </summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.ChangePasswordResult.Error">
+            <summary>The error message, or null on success.</summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.ChangePasswordResult.Succeeded">
+            <summary>Whether the operation succeeded.</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.ChangePasswordResult.Ok">
+            <summary>Creates a success result.</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.ChangePasswordResult.Fail(System.String)">
+            <summary>Creates a failure result.</summary>
+            <param name="error">The error message.</param>
+        </member>
+        <member name="T:Iris.Web.Accounts.ChangePasswordService">
+            <summary>
+            Changes a user's password: verifies the current password, validates the new password's length,
+            hashes it, and persists the new hash. The caller (the endpoint) resolves the signed-in account
+            via the <c>sub</c> claim.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.ChangePasswordService.#ctor(Iris.Server.Data.Accounts.IUserAccountStore,Iris.Web.Accounts.PasswordHasher,Microsoft.Extensions.Logging.ILogger{Iris.Web.Accounts.ChangePasswordService})">
+            <summary>
+            Initializes the service.
+            </summary>
+            <param name="accounts">The account store.</param>
+            <param name="hasher">The password hasher.</param>
+            <param name="logger">A logger (records outcomes, never the password).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ChangePasswordService.ChangeAsync(System.Guid,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Changes the password for the given account.
+            </summary>
+            <param name="accountId">The account's id.</param>
+            <param name="currentPassword">The current password (verified before the change).</param>
+            <param name="newPassword">The new password (must be at least <see cref="F:Iris.Web.Accounts.RegistrationService.MinPasswordLength"/> chars).</param>
+            <param name="ct">A cancellation token.</param>
+            <returns>A <see cref="T:Iris.Web.Accounts.ChangePasswordResult"/>.</returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.ClaimsFactory">
+            <summary>
+            Builds the cookie-auth <see cref="T:System.Security.Claims.ClaimsIdentity"/> for a signed-in account. The claims schema is
+            fixed (the auth plan §5): the account id as <c>sub</c>, the username, the linked actor IRI (custom
+            claim <see cref="F:Iris.Web.Accounts.ActorClaims.ActorIri"/>), and the role. The WASM client reads the actor-IRI claim
+            to bind the user's <see cref="T:Iris.Client.IActivityPubClient"/>.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.ClaimsFactory.CreateIdentity(Iris.Server.Data.Accounts.UserAccount)">
+            <summary>
+            Builds the claims identity for the given account.
+            </summary>
+            <param name="account">The signed-in account. Must not be null.</param>
+            <returns>A <see cref="T:System.Security.Claims.ClaimsIdentity"/> carrying the user id, username, actor IRI, and role.</returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.ILoginRateLimiter">
+            <summary>
+            Bounds repeated failed login attempts (a different concern from the library's inbound-federation
+            rate limiter — which gates signed inbox POSTs by peer host, and is much higher throughput). This
+            one gates <em>login attempts</em>, keyed by <c>username + remote IP</c>, with a much lower
+            threshold (default 5 attempts / 15 minutes). Reuse of the library limiter's shape is deliberate;
+            this is a new, small component in <c>Iris.Web</c>, not a change to the library.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.ILoginRateLimiter.RecordFailure(System.String)">
+            <summary>
+            Records a failed attempt for the given key and returns whether further attempts are currently
+            permitted (false when the key has exceeded its budget inside the window).
+            </summary>
+            <param name="key">The rate-limit key (<c>username + remote IP</c>).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ILoginRateLimiter.Clear(System.String)">
+            <summary>
+            Clears the failure count for a key (called on a successful login).
+            </summary>
+            <param name="key">The rate-limit key.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ILoginRateLimiter.IsBlocked(System.String)">
+            <summary>
+            Returns whether the key is currently over budget (and thus should be rejected before even
+            attempting to verify the password).
+            </summary>
+            <param name="key">The rate-limit key.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.ILoginRateLimiter.RetryAfter(System.String)">
+            <summary>
+            Returns when the key's window resets (for a <c>Retry-After</c> hint), or now if unblocked.
+            </summary>
+            <param name="key">The rate-limit key.</param>
+        </member>
+        <member name="T:Iris.Web.Accounts.SlidingWindowLoginRateLimiter">
+            <summary>
+            The default <see cref="T:Iris.Web.Accounts.ILoginRateLimiter"/>: a sliding-window counter keyed by
+            <c>username + remote IP</c>. Mirrors the shape of
+            <c>Iris.Server.Security.SlidingWindowInboundRateLimiter</c> (per-key lock, ordered timestamp list,
+            fail-fast reject) but with the login threshold.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.SlidingWindowLoginRateLimiter.#ctor(System.Int32,System.Nullable{System.TimeSpan})">
+            <summary>
+            Initializes the limiter.
+            </summary>
+            <param name="maxAttempts">
+            The maximum failed attempts per key per window. 0 disables the limiter (the no-op default).
+            </param>
+            <param name="window">The sliding-window length. Defaults to 15 minutes.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.SlidingWindowLoginRateLimiter.RecordFailure(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Iris.Web.Accounts.SlidingWindowLoginRateLimiter.Clear(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Iris.Web.Accounts.SlidingWindowLoginRateLimiter.IsBlocked(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Iris.Web.Accounts.SlidingWindowLoginRateLimiter.RetryAfter(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="T:Iris.Web.Accounts.LoginResult">
+            <summary>
+            The result of a login attempt.
+            </summary>
+            <param name="Account">The verified account (null when <see cref="P:Iris.Web.Accounts.LoginResult.Succeeded"/> is false).</param>
+            <param name="Error">A generic user-facing error (null on success). Never reveals which field was
+            wrong — the same message for a bad username and a bad password.</param>
+            <param name="RetryAfter">When the key is rate-limited, when it unblocks (for a <c>Retry-After</c>
+            hint); otherwise null.</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.LoginResult.#ctor(Iris.Server.Data.Accounts.UserAccount,System.String,System.Nullable{System.DateTimeOffset})">
+            <summary>
+            The result of a login attempt.
+            </summary>
+            <param name="Account">The verified account (null when <see cref="P:Iris.Web.Accounts.LoginResult.Succeeded"/> is false).</param>
+            <param name="Error">A generic user-facing error (null on success). Never reveals which field was
+            wrong — the same message for a bad username and a bad password.</param>
+            <param name="RetryAfter">When the key is rate-limited, when it unblocks (for a <c>Retry-After</c>
+            hint); otherwise null.</param>
+        </member>
+        <member name="P:Iris.Web.Accounts.LoginResult.Account">
+            <summary>The verified account (null when <see cref="P:Iris.Web.Accounts.LoginResult.Succeeded"/> is false).</summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.LoginResult.Error">
+            <summary>A generic user-facing error (null on success). Never reveals which field was
+            wrong — the same message for a bad username and a bad password.</summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.LoginResult.RetryAfter">
+            <summary>When the key is rate-limited, when it unblocks (for a <c>Retry-After</c>
+            hint); otherwise null.</summary>
+        </member>
+        <member name="T:Iris.Web.Accounts.LoginService">
+            <summary>
+            Verifies a login: rate-limits repeated failures per <c>username + remote IP</c>, looks up the
+            account, verifies the password hash (re-hashing + saving when the stored hash is from an older
+            algorithm), and returns the verified account. The caller (the <c>/login</c> page) signs the user
+            in via cookie authentication using the account's claims. On any failure it returns the same
+            generic "invalid username or password" message (it never reveals which field was wrong).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.Accounts.LoginService.InvalidCredentials">
+            <summary>
+            The generic failure message (used for both a wrong username and a wrong password, so the
+            response does not reveal which).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.Accounts.LoginService.RateLimited">
+            <summary>
+            The generic rate-limit message.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.LoginService.#ctor(Iris.Server.Data.Accounts.IUserAccountStore,Iris.Web.Accounts.PasswordHasher,Iris.Web.Accounts.ILoginRateLimiter,Microsoft.Extensions.Logging.ILogger{Iris.Web.Accounts.LoginService})">
+            <summary>
+            Initializes the service.
+            </summary>
+            <param name="accounts">The account store.</param>
+            <param name="hasher">The password hasher.</param>
+            <param name="rateLimiter">The login rate limiter.</param>
+            <param name="logger">A logger (records outcomes, never the password).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.LoginService.LoginAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Verifies a login.
+            </summary>
+            <param name="username">The username.</param>
+            <param name="password">The plaintext password (never persisted or logged).</param>
+            <param name="remoteIp">The remote IP (part of the rate-limit key).</param>
+            <param name="ct">A cancellation token.</param>
+            <returns>A <see cref="T:Iris.Web.Accounts.LoginResult"/> (success + account, or the generic failure).</returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.NotificationService">
+            <summary>
+            A scoped service that provides notification read-state operations for Blazor components.
+            Operates via HTTP against the server's <c>/local/v1/notifications/...</c> endpoints, so it
+            works in both InteractiveServer (same-origin, cookie-auth) and InteractiveWebAssembly
+            (same-origin, cookie-auth via the browser's HttpClient) render modes.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.NotificationService.#ctor(System.Net.Http.HttpClient)">
+            <summary>
+            Initializes the service.
+            </summary>
+            <param name="http">A cookie-authenticated <see cref="T:System.Net.Http.HttpClient"/> (same-origin).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.NotificationService.GetUnreadCountAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            The number of unread notifications for the signed-in user. Returns 0 on auth failure.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.NotificationService.MarkAllReadAsync(System.Guid,System.Threading.CancellationToken)">
+            <summary>
+            Marks all notifications as read for the signed-in user. Returns the (now-zero) unread count.
+            </summary>
+        </member>
+        <member name="T:Iris.Web.Accounts.PasswordHasher">
+            <summary>
+            The password hasher used by registration and login. Wraps ASP.NET Core's
+            <see cref="T:Microsoft.AspNetCore.Identity.PasswordHasher`1"/> (PBKDF2-HMAC-SHA256, a per-password salt, and a versioned
+            hash format) so the rest of the app never touches the raw Identity type. The hash is the only
+            thing persisted; the plaintext password is never stored or logged.
+            </summary>
+            <remarks>
+            The versioned format means a future algorithm upgrade re-hashes transparently on the next login:
+            <see cref="M:Iris.Web.Accounts.PasswordHasher.Verify(System.String,System.String)"/> returns <c>SuccessRehashNeeded</c> when the stored hash was produced by an
+            older algorithm, and the caller re-hashes + saves.
+            </remarks>
+        </member>
+        <member name="M:Iris.Web.Accounts.PasswordHasher.Hash(System.String)">
+            <summary>
+            Produces the versioned hash for a plaintext password.
+            </summary>
+            <param name="plaintext">The plaintext password (never persisted).</param>
+            <returns>The versioned hash string (persisted in <see cref="P:Iris.Server.Data.Accounts.UserAccount.PasswordHash"/>).</returns>
+        </member>
+        <member name="M:Iris.Web.Accounts.PasswordHasher.Verify(System.String,System.String)">
+            <summary>
+            Verifies a plaintext password against a stored hash.
+            </summary>
+            <param name="storedHash">The stored versioned hash.</param>
+            <param name="plaintext">The plaintext candidate password (never persisted).</param>
+            <returns>
+            <see cref="F:Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success"/> when the password matches;
+            <c>SuccessRehashNeeded</c> when it matches but the hash should be re-hashed with the current
+            algorithm; <c>Failed</c> when it does not match (or the stored value is not a valid hash).
+            </returns>
+        </member>
+        <member name="T:Iris.Web.Accounts.RegistrationResult">
+            <summary>
+            The result of a registration attempt.
+            </summary>
+            <param name="Account">The created account (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is false).</param>
+            <param name="Error">A user-facing error message (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is true).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.RegistrationResult.#ctor(Iris.Server.Data.Accounts.UserAccount,System.String)">
+            <summary>
+            The result of a registration attempt.
+            </summary>
+            <param name="Account">The created account (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is false).</param>
+            <param name="Error">A user-facing error message (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is true).</param>
+        </member>
+        <member name="P:Iris.Web.Accounts.RegistrationResult.Account">
+            <summary>The created account (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is false).</summary>
+        </member>
+        <member name="P:Iris.Web.Accounts.RegistrationResult.Error">
+            <summary>A user-facing error message (null when <see cref="P:Iris.Web.Accounts.RegistrationResult.Succeeded"/> is true).</summary>
+        </member>
+        <member name="T:Iris.Web.Accounts.RegistrationService">
+            <summary>
+            Registers a new local account: validates the username + password, provisions the linked local
+            ActivityPub actor (a <see cref="T:KristofferStrube.ActivityStreams.Person"/> with a real key pair),
+            and persists the <see cref="T:Iris.Server.Data.Accounts.UserAccount"/> linked 1:1 to that actor. The returned account's
+            <see cref="P:Iris.Server.Data.Accounts.UserAccount.ActorId"/> is the actor's IRI; the caller (the <c>/register</c> page) signs
+            the user in via cookie authentication using the account's claims.
+            </summary>
+            <remarks>
+            This is the "bootstrap mechanism" of the production app — the one deliberate exception to the
+            "no new APIs" rule, because ActivityPub has no browser-session login. Actor provisioning calls the
+            library's existing host-side actor-management surface in-process (the same path
+            <c>SampleServer</c> uses to seed <c>alice</c>/<c>bob</c>), not a wire endpoint.
+            </remarks>
+        </member>
+        <member name="F:Iris.Web.Accounts.RegistrationService.MinPasswordLength">
+            <summary>The minimum password length (a reasonable floor, not a gauntlet).</summary>
+        </member>
+        <member name="M:Iris.Web.Accounts.RegistrationService.#ctor(Iris.Server.Data.Accounts.IUserAccountStore,Iris.Web.Accounts.ActorProvisioner,Iris.Web.Accounts.PasswordHasher,Microsoft.Extensions.Logging.ILogger{Iris.Web.Accounts.RegistrationService})">
+            <summary>
+            Initializes the service.
+            </summary>
+            <param name="accounts">The account store.</param>
+            <param name="provisioner">The actor provisioner (creates the linked actor).</param>
+            <param name="hasher">The password hasher.</param>
+            <param name="logger">A logger (records registration outcomes, never the password).</param>
+        </member>
+        <member name="M:Iris.Web.Accounts.RegistrationService.RegisterAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            Registers a new account.
+            </summary>
+            <param name="username">The desired username (also the linked actor's handle).</param>
+            <param name="password">The plaintext password (never persisted).</param>
+            <param name="displayName">An optional display name (defaults to the username).</param>
+            <param name="ct">A cancellation token.</param>
+            <returns>A <see cref="T:Iris.Web.Accounts.RegistrationResult"/> (success + account, or a user-facing error).</returns>
+        </member>
+        <member name="T:Iris.Web.HandleRules">
+            <summary>
+            The username / actor-handle rules enforced at registration. A username doubles as the linked
+            actor's handle (the local name in the WebFinger <c>acct:handle@host</c> URI and the
+            <c>/ap/v1/u/{handle}</c> route), so it must be a valid local handle: a short, URL-safe
+            identifier. The ActivityPub layer itself imposes no handle constraints (the server looks the
+            handle up by exact match and 404s if absent), so these are the app-level rules that keep handles
+            sane, unique, and unambiguous on the wire.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.HandleRules.MinLength">
+            <summary>The minimum handle length.</summary>
+        </member>
+        <member name="F:Iris.Web.HandleRules.MaxLength">
+            <summary>The maximum handle length (matches the <c>Actors.Handle</c> column width headroom).</summary>
+        </member>
+        <member name="F:Iris.Web.HandleRules.Reserved">
+            <summary>
+            Handles that are reserved and cannot be registered: they collide with the server's well-known
+            routes (the namespace document, the NodeInfo routes, etc.) or with the instance-level actors.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.HandleRules.Validate(System.String)">
+            <summary>
+            A handle is valid when it is <see cref="F:Iris.Web.HandleRules.MinLength"/>–<see cref="F:Iris.Web.HandleRules.MaxLength"/> characters of
+            letters, digits, or hyphens; does not start or end with a hyphen; and is not
+            <see cref="F:Iris.Web.HandleRules.Reserved"/>. Only <c>[A-Za-z0-9-]</c> is allowed (no underscores, spaces, or
+            punctuation) — a tight, URL-safe alphabet for the <c>/ap/v1/u/{handle}</c> route.
+            </summary>
+            <param name="handle">The candidate handle.</param>
+            <returns>The validation error message, or <c>null</c> when the handle is valid.</returns>
+        </member>
+        <member name="M:Iris.Web.HandleRules.Pattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^[A-Za-z0-9-]+$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a character in the set [\-0-9A-Za-z] atomically at least once.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="T:Iris.Web.WebAppFactory">
+            <summary>
+            The Iris production app's composition root. Wires the Blazor Web App, the ActivityPub server
+            (via <c>Iris.Server</c>'s <c>AddActivityPubServer</c> / <c>MapActivityPubEndpoints</c>, unchanged),
+            in-memory persistence, and the single seeded local actor, then builds the application. Exposed as a
+            public seam so the integration tests (<c>Iris.Web.Tests</c>) can boot the identical host in-process
+            (via <see cref="M:Iris.Web.WebAppFactory.BuildApp(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)"/>) against a <c>TestServer</c>.
+            </summary>
+            <remarks>
+            <para>
+            Slice 32.1 is the <em>bare</em> host: it proves the library's federation endpoints (WebFinger,
+            actor document, inbox, outbox) work inside the new Blazor Web App process, before production
+            persistence (32.2), local auth (32.3), and the product screens (32.4) are layered on. The
+            composition order follows <c>docs/plans/production-app-web-host-structure.md</c> §2: Razor
+            components first, then the ActivityPub server, then the app pipeline (signature validation +
+            ActivityPub endpoints, then the Razor component endpoints).
+            </para>
+            <para>
+            The host binds to <c>http://localhost:8088</c> by default (the production port, see
+            <c>production-app-overview.md</c> §2 — the reverse proxy for <c>https://iris.luit.ink</c> targets
+            host 8088). The <em>advertised</em> base URI defaults to <c>http://localhost:8088</c> too; an
+            operator sets <c>Iris:AdvertiseBase</c> to expose the instance under a public hostname while
+            listening elsewhere.
+            </para>
+            </remarks>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.SeedHandle">
+            <summary>
+            The handle of the single seeded local actor (the instance actor the server signs outbound
+            federation requests as). Later slices (32.3, auth) replace the fixed seed with
+            per-account-provisioned actors.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.InstanceHandle">
+            <summary>
+            The preferred username of the seeded <strong>site actor</strong> — the dedicated
+            <c>Application</c>-type actor whose IRI is the bare instance base and which the instance root
+            serves (138.11, the Lemmy site-actor convention). It is the instance's operator identity in
+            dev mode (authenticated as <c>@{InstanceHandle}</c> / <c>{InstanceHandle}</c>).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.DefaultPort">
+            <summary>
+            The host port the app listens on and (by default) advertises. This is the production port for
+            <c>https://iris.luit.ink</c> (the reverse proxy targets host 8088).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.DefaultMaxRequestBodySize">
+            <summary>
+            The default cap on an inbound HTTP request body, in bytes (1 MiB). ActivityPub federation
+            payloads (an activity JSON document) are small — well under a few tens of KB in practice — so a
+            1 MiB ceiling is generous for legitimate traffic. It exists to bound the memory an
+            **unauthenticated** inbound <c>POST /ap/v1/u/{handle}/inbox</c> can force the app to buffer:
+            without it, Kestrel's default (no request-body limit) lets a malicious peer stream an
+            arbitrarily large body into memory (a denial-of-service vector for a public instance). An
+            operator raises it via <c>Iris:MaxRequestBodySize</c> (env <c>IRIS_MAX_REQUEST_BODY_SIZE</c>) if
+            a legitimate use case (e.g. very large embedded media on an activity) requires it.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.MaxRequestBodySizeConfigKey">
+            <summary>
+            The configuration key for the inbound request-body size cap (see
+            <see cref="F:Iris.Web.WebAppFactory.DefaultMaxRequestBodySize"/>). Bound from <c>Iris:MaxRequestBodySize</c>.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.DefaultShutdownDrainTimeout">
+            <summary>
+            The default host-shutdown delivery drain budget (slice 33.6): how long the <c>DeliveryWorker</c>
+            gets, once the host's stopping token is cancelled (a SIGTERM), to finish its in-flight outbound
+            deliveries before it stops. The host itself stops after <c>HostOptions.ShutdownTimeout</c>
+            (30 s by default, set by <c>WebApplicationBuilder</c>'s default) — and that 30 s covers
+            <em>every</em> hosted service in registration order (the EF persistence provider's
+            <c>StopAsync</c> runs before the delivery worker's), so a 60 s worker drain budget would be
+            truncated by the host's own timeout. The default is therefore 15 s: comfortably above the
+            seconds-scale delivery round-trips it protects, and comfortably below the 30 s host budget, so
+            the worker always returns before the host force-stops it. An operator raises it via
+            <c>Iris:Delivery:ShutdownDrainTimeout</c> (env <c>IRIS_SHUTDOWN_DRAIN_TIMEOUT</c>) when its
+            delivery traffic (or a busy queue) needs a longer drain — and should then also raise
+            <c>DOTNET_HOST__SHUTDOWNTIMEOUT</c> so the host's own budget covers it.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.ShutdownDrainTimeoutConfigKey">
+            <summary>
+            The configuration key for the host-shutdown delivery drain budget (slice 33.6). Bound from
+            <c>Iris:Delivery:ShutdownDrainTimeout</c> (env <c>IRIS_SHUTDOWN_DRAIN_TIMEOUT</c>); the value is
+            a <see cref="T:System.TimeSpan"/> string (e.g. <c>"00:00:30"</c>) or a number of seconds (e.g. <c>"30"</c>).
+            Unset → <see cref="F:Iris.Web.WebAppFactory.DefaultShutdownDrainTimeout"/>.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.CorsPolicyName">
+            <summary>
+            The name of the CORS policy registered when an operator opts into cross-origin access (slice
+            33.5). The policy allows only the origins listed in <see cref="F:Iris.Web.WebAppFactory.CorsOriginsConfigKey"/> — never
+            <c>AllowAnyOrigin</c>. When no origins are configured, no policy is registered and no CORS
+            middleware runs, so the app is same-origin-only by default (the safe default for a public
+            instance).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.CorsOriginsConfigKey">
+            <summary>
+            The configuration key for the comma-separated list of origins allowed cross-origin access to the
+            instance's API (slice 33.5). Bound from <c>Iris:Cors:Origins</c> (env
+            <c>IRIS_CORS_ORIGINS</c>). Empty/unset → same-origin-only (no cross-origin access); each listed
+            origin (a scheme+host, e.g. <c>https://app.example.org</c>) is granted access via the
+            <see cref="F:Iris.Web.WebAppFactory.CorsPolicyName"/> policy.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.EnableAntiforgeryConfigKey">
+            <summary>
+            The configuration key that toggles ASP.NET Core antiforgery <em>validation</em> (Phase 94). Bound
+            from <c>Iris:Security:EnableAntiforgery</c> (env <c>IRIS_SECURITY_ENABLEANTIFORGERY</c>). When
+            unset or any non-false value, antiforgery validation is enabled (the production default —
+            login/register form POSTs are validated against a per-session token). Set to <c>false</c>
+            (case-insensitive) to disable validation: a <c>PermissiveAntiforgery</c> (a no-op
+            <c>IAntiforgery</c>) is registered so the <c>UseAntiforgery</c> middleware's
+            <c>IsRequestValidAsync</c> always passes, and POSTs go through without a valid token. The
+            middleware itself is always applied (the endpoints carry antiforgery metadata, so removing it
+            would throw); only the token check is turned off. This exists for development / Playwright
+            testing, where a stale antiforgery token (one signed with a previous Data Protection key ring,
+            e.g. after a container rebuild) would otherwise make the login/register forms fail with a 400
+            until the token is re-fetched. When disabled, the <c>/local/v1/antiforgery</c> token-issuance
+            endpoint still works (the client can fetch a token harmlessly).
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.DevCacheBypassConfigKey">
+            <summary>
+            The configuration key that toggles <em>development cache bypass</em> (Phase 131.6). Bound from
+            <c>Iris:Dev:CacheBypass</c> (env <c>IRIS_DEV_CACHEBYPASS</c>). When <c>true</c> (case-insensitive),
+            the SPA shell (<c>index.html</c>) is served with <c>Cache-Control: no-store</c> and CSS/JS static
+            assets with <c>Cache-Control: no-cache</c> (revalidated on every request), so a browser never
+            serves a stale build after a container redeploy — the recurring "the site is stuck on an old
+            version" pain during active development. The fingerprinted <c>/_framework/</c> WASM assets are
+            cached long-term (<c>max-age=31536000, immutable</c>) in BOTH modes: they are content-hashed per
+            build, so a redeploy changes their URLs and they are safe to cache aggressively regardless.
+            </summary>
+            <remarks>
+            The C# production default is <c>false</c> (cache normally — correct for a public instance). The
+            development compose stack defaults it to <c>true</c> (env <c>IRIS_DEV_CACHEBYPASS</c>, override
+            back to <c>false</c> to restore normal caching), mirroring the antiforgery dev-default pattern.
+            Unset/blank or any non-<c>true</c> value → cache normally (fail closed to production behavior, so
+            a misconfiguration can never accidentally serve an uncached, slower site to public users).
+            </remarks>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.IsDevCacheBypassEnabled(Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+            Reads the development cache-bypass toggle from <paramref name="configuration"/> (Phase 131.6).
+            Cache bypass is enabled only when the value bound to <see cref="F:Iris.Web.WebAppFactory.DevCacheBypassConfigKey"/> parses
+            to <c>true</c> (case-insensitive). Unset/blank or any non-<c>true</c> value → cache normally (the
+            production default), so a misconfiguration can never silently turn off caching for a public
+            instance.
+            </summary>
+            <param name="configuration">The application configuration.</param>
+            <returns><c>true</c> when the dev cache-bypass headers should be emitted.</returns>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.WantsActivityStreams(Microsoft.AspNetCore.Http.HttpContext)">
+            <summary>
+            Whether the request is an ActivityPub client: its <c>Accept</c> header names an ActivityStreams
+            or JSON-LD media type. Mirrors the logic in
+            <see cref="T:Iris.Server.ActivityPubServerExtensions"/> so the SPA-shell middleware can
+            content-negotiate the root path the same way the instance-actor endpoint does.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.IsAntiforgeryEnabled(Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+            Reads the antiforgery toggle from <paramref name="configuration"/> (Phase 94). Antiforgery is
+            enabled unless the value bound to <see cref="F:Iris.Web.WebAppFactory.EnableAntiforgeryConfigKey"/> parses to <c>false</c>
+            (case-insensitive). Unset/blank or any non-<c>false</c> value → enabled (the production default),
+            so a misconfiguration can never silently disable the protection.
+            </summary>
+            <param name="configuration">The application configuration.</param>
+            <returns><c>true</c> when the antiforgery middleware should be applied.</returns>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.ConfigureServices(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)">
+            <summary>
+            Wires the services (Blazor, ActivityPub server, in-memory persistence, seeded actor, key
+            registration) onto <paramref name="builder"/>'s service collection.
+            </summary>
+            <param name="builder">The web application builder. Must not be null.</param>
+            <param name="advertisedBase">
+            The advertised public base URI (e.g. <c>http://localhost:8088</c> or
+            <c>https://iris.luit.ink</c>). Path segments (<c>/ap/v1/u/{handle}</c>, <c>/ns#</c>) are
+            appended to this, so it must be slash-free. When null, <c>http://localhost:8088</c> is used.
+            </param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.BuildApp(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)">
+            <summary>
+            Builds the application: runs the middleware pipeline (routing, signature validation, the
+            ActivityPub endpoints, then the Razor component endpoints) and registers the seeded actor's key
+            with the server's <c>IKeyProvider</c> (so the proxy endpoint and outbound DeliveryWorker can
+            sign as it).
+            </summary>
+            <param name="builder">The web application builder (its services must already be configured via
+            <see cref="M:Iris.Web.WebAppFactory.ConfigureServices(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)"/>).</param>
+            <param name="advertisedBase">
+            The advertised public base URI (must match the one passed to
+            <see cref="M:Iris.Web.WebAppFactory.ConfigureServices(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)"/>; when null, <c>http://localhost:8088</c>).
+            </param>
+            <returns>The fully built <see cref="T:Microsoft.AspNetCore.Builder.WebApplication"/> (not yet run).</returns>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.ConfigurePipeline(Microsoft.AspNetCore.Builder.WebApplication,System.String)">
+            <summary>
+            Applies the full middleware + endpoint pipeline (routing, antiforgery, signature validation,
+            cookie auth, the Blazor Web App, static assets, the local-auth endpoints, and the ActivityPub
+            endpoints) to a built <see cref="T:Microsoft.AspNetCore.Builder.WebApplication"/>. The integration tests reproduce this
+            pipeline on a <c>TestServer</c> (see <c>LocalAuthIntegrationTests</c>) so the exact production
+            behavior — including the <c>/register</c>/<c>/login</c>/<c>/logout</c> auth endpoints and cookie
+            auth — is exercised in-process.
+            </summary>
+            <param name="app">The built application.</param>
+            <param name="baseNoSlash">The advertised public base URI (slash-free).</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.ResolveShellVersion(System.String)">
+            <summary>
+            Resolves the per-build version stamp for the WASM shell's fixed-URL tags (Phase 137.x): a
+            short content hash of the published <c>_framework/</c> payload the server is actually serving,
+            or <c>null</c> when the directory is absent or empty (the shell is then served un-stamped,
+            with the no-cache header still protecting against a stale shell).
+            </summary>
+            <param name="webRootPath">The server's web root (where the WASM <c>_framework/</c> output lives).</param>
+            <remarks>
+            The stamp is derived from the <em>payload on disk</em>, not from an assembly attribute: the
+            Blazor WebAssembly SDK's <c>PublishTrimmed</c> output has no plain <c>Iris.Web.Client.dll</c>
+            (the main assembly is the content-hashed <c>Iris.Web.Client.{hash}.wasm</c>), so there is no
+            stable file to read a version from. Instead, the stamp is a SHA-256 over the sorted
+            <c>(name, size)</c> of every asset under <c>_framework/</c>, prefixed with the app's
+            <c>Major.Minor.Build</c>. The asset names are themselves content-hashed per build (each file
+            is <c>&lt;assembly&gt;.&lt;hash&gt;.&lt;ext&gt;</c>), so the set of names changes whenever the WASM
+            payload changes; the size is folded in as a belt-and-braces signal so a content change is
+            caught even in the (unlikely) case it left every name unchanged. The result is stable across
+            identical rebuilds and distinct across different builds — exactly the property a cache-bust
+            key needs. It is computed once per host start (the _framework/ directory does not change for
+            the life of a running server), so the per-request shell rewrite is a cheap in-memory string
+            operation.
+            </remarks>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.StampShellVersion(System.String,System.String)">
+            <summary>
+            Stamps the WASM shell's fixed-URL tags with a per-build query string (Phase 137.x), so a
+            redeploy gives the browser a fresh URL for the loader script, the app stylesheet, and the
+            app's <c>js/*.js</c> files instead of a stale cached copy. Rewrites:
+            <list type="bullet">
+            <item><c>&lt;script src="_framework/..."&gt;</c> → <c>src="_framework/...?v={version}"</c></item>
+            <item>relative <c>&lt;link href="...css"&gt;</c> / <c>&lt;script src="...js"&gt;</c> → the same
+            <c>?v={version}</c> suffix (absolute and favicon URLs are left alone).</item>
+            </list>
+            Idempotent: an already-stamped URL is re-stamped (the previous <c>?v=</c> is replaced), so a
+            shell that was stamped at an earlier build (e.g. a leftover wwwroot) converges on the current
+            version rather than accumulating suffixes. A <c>null</c> version returns the content unchanged.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapAuthEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)">
+            <summary>
+            Maps the local-account auth endpoints: <c>POST /register</c> (handle + password),
+            <c>POST /login</c> (handle + password), and <c>POST /logout</c>. Each runs in a real HTTP
+            request (writable response) so it can set the auth cookie via <c>SignInAsync</c> /
+            <c>SignOutAsync</c>, then redirects to the home page. The matching <c>GET</c> routes are
+            served by the Razor pages (the forms). These are the only way a local account signs in —
+            the interactive Blazor circuit cannot set cookies.
+            </summary>
+            <param name="endpoints">The endpoint route builder (a <see cref="T:Microsoft.AspNetCore.Builder.WebApplication"/>, or the
+            builder from <c>UseEndpoints</c> in a <c>TestServer</c> pipeline).</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapNotificationEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)">
+            <summary>
+            Maps the notification read-state endpoints: <c>POST /local/v1/notifications/read</c> (marks all
+            notifications as read) and <c>GET /local/v1/notifications/unread-count</c> (returns the number of
+            inbox items newer than the account's <c>NotificationsReadAt</c> cursor). Both are
+            <c>[Authorize]</c>-gated (cookie auth) and resolve the signed-in user's account via the
+            <c>sub</c> claim.
+            </summary>
+            <param name="endpoints">The endpoint route builder.</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapAccountEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)">
+            <summary>
+            Maps the account self-service endpoints: <c>POST /local/v1/account/password</c> (changes the
+            signed-in user's password), <c>GET /local/v1/account/key-info</c> (read-only key/algorithm
+            info for the signed-in user's actor). <c>[Authorize]</c>-gated (cookie auth); resolves the
+            account via the <c>sub</c> claim.
+            </summary>
+            <param name="endpoints">The endpoint route builder.</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapSessionEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder,Microsoft.Extensions.Options.IOptions{Iris.Server.ActivityPubServerOptions})">
+            <summary>
+            Maps the session endpoints:
+            <c>GET /local/v1/session</c> — returns the signed-in user's claims as JSON (id, username,
+            actor IRI, role, public feed IRI). Requires authorization.
+            <c>GET /local/v1/session/public</c> — returns the public feed IRI (no auth required). Used
+            by the WASM client when signed out, so the client knows which feed to render for a
+            logged-out visitor.
+            Both are used by the WASM client's <c>CookieAuthenticationStateProvider</c> to resolve
+            the auth state at startup.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapAdminEndpoints(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)">
+            <summary>
+            Maps the admin user-management endpoints (WASM client replacement for the in-process
+            <c>IUserAccountStore</c> the old <c>AdminUsers.razor</c> used):
+            <c>GET /local/v1/admin/users</c> — list all accounts.
+            Requires the <c>Admin</c> role.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MapFederationTraceEndpoint(Microsoft.AspNetCore.Routing.IEndpointRouteBuilder)">
+            <summary>
+            Maps <c>GET /local/v1/metrics</c> — the Prometheus text-format metrics endpoint (48.3).
+            Exposes the outbound-delivery counters (enqueued, delivered, attempt failures, dead-letters)
+            as Prometheus gauges so a Prometheus instance can scrape them for Grafana dashboards and
+            alerting. No authentication (a Prometheus scraper on the internal network reaches it
+            without credentials; the reverse proxy's rate limit is the only gate).
+            </summary>
+            <summary>
+            Maps <c>GET /local/v1/federation-trace</c> — a read-only, time-ordered snapshot of the
+            process-local federation trace (Phase 136.1). Returns every captured inbound and outbound
+            federation request (direction, method, url, status, peer, acting actor, activity type) as
+            JSON. This is the diagnostic surface for the 135.1b(4) signature blocker: an operator can see
+            the exact request line and status on both sides of a failed exchange. Like
+            <c>/local/v1/metrics</c> it is an operator-internal endpoint (no auth; not reverse-proxied
+            publicly) and the snapshot is process-local (multi-replica deployments report per-replica).
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.CountUnread(System.Collections.Generic.IReadOnlyList{KristofferStrube.ActivityStreams.IObjectOrLink},System.Nullable{System.DateTimeOffset})">
+            <summary>
+            Counts inbox items whose <c>Published</c> timestamp is strictly after the given read cursor.
+            When the cursor is null (never read), all items are unread.
+            </summary>
+        </member>
+        <member name="F:Iris.Web.WebAppFactory.ServerOnlyNotificationTypes">
+            <summary>
+            Filters inbox items based on notification preferences (53.2). Removes items whose activity type
+            is in the disabled set, or whose actor is in the muted-actors set.
+            </summary>
+            <summary>
+            The activity types that are <em>server-only</em> — they arrive in a local actor's inbox from
+            the server's own moderation/cleanup machinery rather than from a person the user interacts
+            with, so the user has no need to see them as notifications (Phase 91). An inbox
+            <c>Delete</c> whose <c>object</c> is <em>not</em> the deleted actor's own IRI is also dropped
+            (a remote post deletion is noise; only an account deletion — <c>object == actor</c> — is shown,
+            rendered as "deleted their account").
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.IsServerOnlyNotification(KristofferStrube.ActivityStreams.IObjectOrLink)">
+            <summary>
+            Whether the inbox item is a <em>server-only</em> notification the user should not see
+            (Phase 91): one of <see cref="F:Iris.Web.WebAppFactory.ServerOnlyNotificationTypes"/>, or a <c>Delete</c> of a remote
+            post (a <c>Delete</c> whose <c>object</c> is not the deleted actor's own IRI — i.e. not an
+            account deletion). Account deletions are kept so they can render "deleted their account".
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.DeduplicateFollows(System.Collections.Generic.IReadOnlyList{KristofferStrube.ActivityStreams.IObjectOrLink})">
+            <summary>
+            Collapses duplicate <see cref="T:KristofferStrube.ActivityStreams.Follow"/> notifications: for each unique (actor IRI, target IRI)
+            pair, only the most recent Follow is kept. Other activity types pass through unchanged.
+            </summary>
+            <remarks>
+            This is a read-time safety net (123.1). The write-time gate in <c>RecordFollowLocalAsync</c>
+            prevents new duplicates from being created in the local outbox-publish path, but pre-existing
+            rows (from before the fix) and the inbound federation path (which has no write-time gate)
+            still produce duplicates in the raw inbox. This function collapses them on read.
+            </remarks>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.MentionsSelf(KristofferStrube.ActivityStreams.IObjectOrLink,System.Nullable{Iris.Core.Identity.Iri})">
+            <summary>
+            True when a Create activity's object content (or summary) mentions the given actor IRI.
+            Matches <c>mention</c> links whose <c>href</c> equals the actor's IRI.
+            </summary>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.InitializePersistence(System.IServiceProvider,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            Migrates the database (EF provider only; a no-op for the in-memory provider), seeds the single
+            local actor (writing its signing key to the registered <see cref="T:Iris.Core.Identity.IKeyStore"/>), and registers
+            that key with the server's <see cref="T:Iris.Client.Auth.IKeyProvider"/>. Called by <see cref="M:Iris.Web.WebAppFactory.BuildApp(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)"/> and by
+            the integration-test host (which re-runs the endpoint pipeline over the same service collection).
+            </summary>
+            <param name="services">The application service provider (from a built app or test host).</param>
+            <param name="configuration">The application configuration (for the EF connection string).</param>
+            <param name="baseString">The advertised public base URI (slash-free).</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.RestoreLocalSigningKeys(System.IServiceProvider)">
+            <summary>
+            Re-registers each local actor's signing key with the server's <see cref="T:Iris.Client.Auth.IKeyProvider"/>, so a
+            local actor can sign outbound federation after a restart (slice 33.2; hardened in 84.4). The keys
+            themselves live in the (durable) <see cref="T:Iris.Core.Identity.IKeyStore"/>; only the actor→key-IRI mapping in the
+            in-process <see cref="T:Iris.Client.Auth.IKeyProvider"/> is lost on restart, so this pass rebuilds it from the
+            durable actor documents. Since 84.4 the key IRI is re-derived from each actor's persisted
+            <c>publicKey.id</c> (via <see cref="T:Iris.Server.Identity.KeyProviderRehydration"/>) rather than a
+            hard-coded <c>#key-1</c> convention — so a rotated key (84.2/84.3) survives a restart. No-op for
+            actors whose resolved key is not present in the key store.
+            </summary>
+            <param name="services">The application service provider.</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.CreateWebApplication(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)">
+            <summary>
+            Boots the host end-to-end (services + pipeline) with the given advertised base, returning the
+            built app. The single seam the integration tests use to host the app in a <c>TestServer</c>.
+            </summary>
+            <param name="builder">The web application builder.</param>
+            <param name="advertisedBase">The advertised public base URI (see
+            <see cref="M:Iris.Web.WebAppFactory.ConfigureServices(Microsoft.AspNetCore.Builder.WebApplicationBuilder,System.String)"/>).</param>
+            <returns>The fully built <see cref="T:Microsoft.AspNetCore.Builder.WebApplication"/>.</returns>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.RegisterSeedKey(System.IServiceProvider,System.String)">
+            <summary>
+            Registers the seeded local actors' signing keys with the server's <see cref="T:Iris.Client.Auth.IKeyProvider"/>, so the
+            proxy endpoint and the outbound <c>DeliveryWorker</c> can sign as them. Resolves the
+            <see cref="T:Iris.Client.Auth.IKeyProvider"/> from the given provider and registers each seeded key IRI
+            (<c>{actor}/#key-1</c>). 138.11: the site actor (the <c>Application</c> at the bare base IRI) is
+            registered alongside alice — it is now <c>InstanceActorId</c> and signs outbound federation.
+            </summary>
+            <param name="services">The application service provider.</param>
+            <param name="baseString">The advertised public base URI (slash-free).</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.SeedActor(Iris.Server.Stores.IPersistenceProvider,Iris.Core.Identity.IKeyStore,Iris.Core.Identity.Iri,System.String)">
+            <summary>
+            Seeds a local <see cref="T:KristofferStrube.ActivityStreams.Person"/> actor (with an RSA signing key, served as
+            <c>publicKeyPem</c> in its document) under the given IRI/handle. Idempotent by IRI: the actor
+            document is re-stored, but the signing key is **reused** when one is already present in the key
+            store (slice 33.2) — so a restart with a durable key store keeps the *same* key (and thus the
+            same public key in the actor document), rather than minting a new one each boot. A fresh
+            deployment (no key yet) mints one.
+            </summary>
+            <param name="persistence">The persistence provider to seed.</param>
+            <param name="keyStore">The key store the seeded signing key is read from / written to.</param>
+            <param name="actorIri">The actor's IRI (<c>{base}/ap/v1/u/{handle}</c>).</param>
+            <param name="handle">The actor's preferred username.</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.SeedInstanceActor(Iris.Server.Stores.IPersistenceProvider,Iris.Core.Identity.IKeyStore,Iris.Core.Identity.Iri,System.String,System.String)">
+            <summary>
+            Seeds the instance's <strong>site actor</strong> (138.11): a dedicated <see cref="T:KristofferStrube.ActivityStreams.Application"/>
+            whose IRI is the bare instance base (the ActivityPub site-actor convention). It is served at the
+            instance root and signs outbound federation (it is <c>InstanceActorId</c>). Idempotent by IRI: the
+            document is re-stored, but the signing key is <em>reused</em> when one is already present in the
+            key store (a restart with a durable key store keeps the same key, so the public key in the root
+            document is stable) — a fresh deployment mints one.
+            </summary>
+            <param name="persistence">The persistence provider to seed.</param>
+            <param name="keyStore">The key store the seeded signing key is read from / written to.</param>
+            <param name="actorIri">The site actor's IRI (the bare instance base, e.g.
+            <c>https://iris.luit.ink</c>).</param>
+            <param name="name">The site actor's display name (the instance name).</param>
+            <param name="handle">The site actor's preferred username (the instance handle).</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.NormalizeLocalActorPemLineEndings(Iris.Server.Stores.IPersistenceProvider,Iris.Core.Identity.Iri)">
+            <summary>
+            Normalizes CRLF → LF line endings in the <c>publicKeyPem</c> of every <strong>local</strong> actor
+            (one-time, idempotent repair, 157). Before 138.11 the PEM emitter produced CRLF (RFC 4648); a
+            peer that resolves a key from an actor's <c>publicKeyPem</c> — and that rejects CRLF (Lemmy's
+            deserializer, and the mastodon/hachyderm class that gates actor-doc GETs behind a resolvable key)
+            — could not parse such a PEM, so it rejected the instance's signed requests and the two instances
+            deadlocked in mutual key resolution. The 138.11 fix made the emitter LF-only, but it only
+            re-stamps actors the <em>seed</em> re-stores on boot; actors provisioned at <em>signup</em>
+            (the registration flow) are not re-stamped, so the instance signer (e.g. a registered account set
+            as <c>InstanceActorId</c>) could keep serving a stale CRLF PEM indefinitely.
+            </summary>
+            <remarks>
+            This walks every stored actor and, for each <strong>local</strong> actor (IRI prefix matches
+            <paramref name="instanceBase"/>) whose <c>publicKeyPem</c> contains a CRLF, replaces every
+            <c>\r\n</c> with <c>\n</c> and re-persists the document. The fix is a pure line-ending
+            normalization (the base64 key payload — and therefore the public key identity — is unchanged), so
+            no key material is re-derived and no relationship is disturbed. Remote cached actors (IRIs not
+            under the instance base) are never touched: their PEM belongs to the remote instance. The method
+            is a no-op once every local actor's PEM is LF-only.
+            </remarks>
+            <param name="persistence">The persistence provider (provides the <see cref="T:Iris.Server.Stores.IActorStore"/>).</param>
+            <param name="instanceBase">The instance base IRI (e.g. <c>https://iris.luit.ink</c>); local actors
+            are those whose IRI starts with this prefix.</param>
+        </member>
+        <member name="M:Iris.Web.WebAppFactory.HostLabel(System.String)">
+            <summary>
+            Extracts the host label (hostname) from a base URI string (used to derive the instance name).
+            </summary>
+        </member>
+        <member name="T:Iris.Web.WebAppFactory.PermissiveAntiforgery">
+            <summary>
+            A no-op <c>IAntiforgery</c> that always reports a request as valid and issues dummy (non-crypto)
+            tokens (Phase 94). Registered in place of the real antiforgery service when
+            <c>Iris:Security:EnableAntiforgery=false</c> (development / Playwright testing), so the
+            <c>UseAntiforgery</c> middleware's validation always passes and POSTs go through without a valid
+            token. It is registered AFTER <c>AddAntiforgery()</c>'s real service, so it wins
+            <c>GetRequiredService&lt;IAntiforgery&gt;</c> resolution. The token-issuance endpoint
+            (<c>/local/v1/antiforgery</c>) still works (it returns a dummy token); only the validation is a
+            no-op. Never used in production (the flag defaults to enabled).
+            </summary>
+        </member>
+        <member name="T:Iris.Web.DismissFlagRequest">
+            <summary>Request body for <c>POST /local/v1/admin/flags/dismiss</c> (51.4).</summary>
+            <param name="FlaggerIri">The IRI of the actor who filed the flag.</param>
+            <param name="FlaggedIri">The IRI of the actor that was flagged.</param>
+        </member>
+        <member name="M:Iris.Web.DismissFlagRequest.#ctor(System.String,System.String)">
+            <summary>Request body for <c>POST /local/v1/admin/flags/dismiss</c> (51.4).</summary>
+            <param name="FlaggerIri">The IRI of the actor who filed the flag.</param>
+            <param name="FlaggedIri">The IRI of the actor that was flagged.</param>
+        </member>
+        <member name="P:Iris.Web.DismissFlagRequest.FlaggerIri">
+            <summary>The IRI of the actor who filed the flag.</summary>
+        </member>
+        <member name="P:Iris.Web.DismissFlagRequest.FlaggedIri">
+            <summary>The IRI of the actor that was flagged.</summary>
+        </member>
+        <member name="T:Iris.Web.ChangePasswordRequest">
+            <summary>Request body for <c>POST /local/v1/account/password</c> (52.1).</summary>
+            <param name="CurrentPassword">The user's current password (verified before the change).</param>
+            <param name="NewPassword">The new password.</param>
+        </member>
+        <member name="M:Iris.Web.ChangePasswordRequest.#ctor(System.String,System.String)">
+            <summary>Request body for <c>POST /local/v1/account/password</c> (52.1).</summary>
+            <param name="CurrentPassword">The user's current password (verified before the change).</param>
+            <param name="NewPassword">The new password.</param>
+        </member>
+        <member name="P:Iris.Web.ChangePasswordRequest.CurrentPassword">
+            <summary>The user's current password (verified before the change).</summary>
+        </member>
+        <member name="P:Iris.Web.ChangePasswordRequest.NewPassword">
+            <summary>The new password.</summary>
+        </member>
+        <member name="T:Iris.Web.AdminPasswordResetRequest">
+            <summary>Request body for <c>POST /local/v1/admin/users/{id}/password-reset</c> (52.2).</summary>
+            <param name="Password">The new password to set for the user.</param>
+        </member>
+        <member name="M:Iris.Web.AdminPasswordResetRequest.#ctor(System.String)">
+            <summary>Request body for <c>POST /local/v1/admin/users/{id}/password-reset</c> (52.2).</summary>
+            <param name="Password">The new password to set for the user.</param>
+        </member>
+        <member name="P:Iris.Web.AdminPasswordResetRequest.Password">
+            <summary>The new password to set for the user.</summary>
+        </member>
+        <member name="T:Iris.Web.NotificationPrefsRequest">
+            <summary>Request body for <c>PUT /local/v1/account/notification-preferences</c> (53.2).</summary>
+            <param name="DisabledTypes">Activity types the user has opted out of.</param>
+            <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
+        </member>
+        <member name="M:Iris.Web.NotificationPrefsRequest.#ctor(System.Collections.Generic.IReadOnlyList{System.String},System.Collections.Generic.IReadOnlyList{System.String})">
+            <summary>Request body for <c>PUT /local/v1/account/notification-preferences</c> (53.2).</summary>
+            <param name="DisabledTypes">Activity types the user has opted out of.</param>
+            <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
+        </member>
+        <member name="P:Iris.Web.NotificationPrefsRequest.DisabledTypes">
+            <summary>Activity types the user has opted out of.</summary>
+        </member>
+        <member name="P:Iris.Web.NotificationPrefsRequest.MutedActors">
+            <summary>Actor IRIs whose notifications are muted.</summary>
+        </member>
+        <member name="T:Iris.Web.UpdateRoleRequest">
+            <summary>Request body for <c>POST /local/v1/admin/users/{id}/role</c> (88.5).</summary>
+            <param name="Role">The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</param>
+        </member>
+        <member name="M:Iris.Web.UpdateRoleRequest.#ctor(System.String)">
+            <summary>Request body for <c>POST /local/v1/admin/users/{id}/role</c> (88.5).</summary>
+            <param name="Role">The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</param>
+        </member>
+        <member name="P:Iris.Web.UpdateRoleRequest.Role">
+            <summary>The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</summary>
+        </member>
+        <member name="T:Program">
+            <summary>
+            Auto-generated public partial Program class for top-level statement apps.
+            </summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Pattern_0">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the Pattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Pattern_0.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Pattern_0.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Pattern_0.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Utilities">
+            <summary>Helper methods used by generated <see cref="T:System.Text.RegularExpressions.Regex"/>-derived implementations.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout">
+            <summary>Default timeout value set in <see cref="T:System.AppContext"/>, or <see cref="F:System.Text.RegularExpressions.Regex.InfiniteMatchTimeout"/> if none was set.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_hasTimeout">
+            <summary>Whether <see cref="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout"/> is non-infinite.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDash">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".</summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Type)">
+            <summary>
+            Generates a documentation comment ID for a type.
+            Example: T:Namespace.Outer+Inner`1 becomes T:Namespace.Outer.Inner`1
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Reflection.PropertyInfo)">
+            <summary>
+            Generates a documentation comment ID for a property.
+            Example: P:Namespace.ContainingType.PropertyName or for an indexer P:Namespace.ContainingType.Item(System.Int32)
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Type,System.String)">
+            <summary>
+            Generates a documentation comment ID for a property given its container type and property name.
+            Example: P:Namespace.ContainingType.PropertyName
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.CreateDocumentationId(System.Reflection.MethodInfo)">
+            <summary>
+            Generates a documentation comment ID for a method (or constructor).
+            For example:
+              M:Namespace.ContainingType.MethodName(ParamType1,ParamType2)~ReturnType
+              M:Namespace.ContainingType.#ctor(ParamType)
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.GetTypeDocId(System.Type,System.Boolean,System.Boolean)">
+            <summary>
+            Generates a documentation ID string for a type.
+            This method handles nested types (replacing '+' with '.'),
+            generic types, arrays, pointers, by-ref types, and generic parameters.
+            The <paramref name="includeGenericArguments"/> flag controls whether
+            constructed generic type arguments are emitted, while <paramref name="omitGenericArity"/>
+            controls whether the generic arity marker (e.g. "`1") is appended.
+            </summary>
+        </member>
+        <member name="M:Microsoft.AspNetCore.OpenApi.Generated.DocumentationCommentIdHelper.NormalizeDocId(System.String)">
+            <summary>
+            Normalizes a documentation comment ID to match the compiler-style format.
+            Strips the return type suffix for ordinary methods but retains it for conversion operators.
+            </summary>
+            <param name="docId">The documentation comment ID to normalize.</param>
+            <returns>The normalized documentation comment ID.</returns>
+        </member>
+    </members>
+</doc>

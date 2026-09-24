@@ -12627,7 +12627,7 @@ public static class ActivityPubServerExtensions
 
         foreach (var obj in objects)
         {
-            if (obj is Note || obj is Article || obj is Question)
+            if (obj is Note || obj is Article || obj is Question || obj is Page)
             {
                 return true;
             }

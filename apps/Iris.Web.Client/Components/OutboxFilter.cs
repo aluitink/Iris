@@ -17,8 +17,8 @@ internal static class OutboxFilter
 {
     /// <summary>
     /// Whether an outbox item is a content item — a <c>Create</c> whose object is a <c>Note</c>,
-    /// <c>Article</c>, or <c>Question</c> (poll), or an <c>Announce</c> (boost). Social and
-    /// moderation activities return <c>false</c>.
+    /// <c>Article</c>, <c>Question</c> (poll), <c>Page</c> (Lemmy-style long-form post), or an
+    /// <c>Announce</c> (boost). Social and moderation activities return <c>false</c>.
     /// </summary>
     public static bool IsContentItem(IObjectOrLink item)
     {
@@ -39,7 +39,7 @@ internal static class OutboxFilter
 
         foreach (var obj in objects)
         {
-            if (obj is Note || obj is Article || obj is Question)
+            if (obj is Note || obj is Article || obj is Question || obj is Page)
             {
                 return true;
             }
