@@ -114,6 +114,9 @@
     [Inject]
     private IJSRuntime Js { get; set; } = default!;
 
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
     /// <summary>
     /// The IRI of the object to engage with (like, boost, reply).
     /// </summary>
@@ -194,21 +197,24 @@
     }
 
     /// <summary>
-    /// Copies the object's permalink (the same URL the card's stretched link / "Open post" uses) to
-    /// the clipboard via <c>window.copyText</c> (wwwroot/js/clipboard.js) and flashes a "Copied"
-    /// confirmation on the button for a couple seconds. The permalink is the absolute object-detail
-    /// URL so it is shareable across instances. A clipboard failure (denied / non-secure context) is
-    /// swallowed — the button simply does not show "Copied" (no error surfaced, per the item).
+    /// Copies the object's permalink (the same front-end URL the card's stretched link / "Open post"
+    /// uses) to the clipboard via <c>window.copyText</c> (wwwroot/js/clipboard.js) and flashes a
+    /// "Copied" confirmation on the button for a couple seconds. The permalink is the absolute
+    /// front-end object-view URL (<c>{base}/object?iri=&lt;escaped IRI&gt;</c>, the same target as
+    /// <c>ObjectView.ObjectHref</c>) so a pasted link opens the Iris object view, not a raw
+    /// ActivityPub object IRI. A clipboard failure (denied / non-secure context) is swallowed — the
+    /// button simply does not show "Copied" (no error surfaced, per the item).
     /// </summary>
     private async Task CopyPermalinkAsync(Iri iri)
     {
-        // The object IRI is already absolute (e.g. https://host/ap/v1/u/alice/notes/X) — it is the
-        // object's canonical, shareable URL. Copying it directly (rather than the /object?iri= view
-        // URL) yields a permalink that resolves on any ActivityPub client, not just Iris.
+        // S107: copy the front-end object-view link (the same URL the card's stretched link navigates
+        // to), not the raw ActivityPub object IRI. BaseUri carries a trailing slash (e.g.
+        // https://iris.luit.ink/), so append object?iri=&lt;escaped IRI&gt; to match ObjectView.ObjectHref.
+        string permalink = $"{Nav.BaseUri}object?iri={Uri.EscapeDataString(iri.Value)}";
         bool ok;
         try
         {
-            ok = await Js.InvokeAsync<bool>("copyText", iri.Value);
+            ok = await Js.InvokeAsync<bool>("copyText", permalink);
         }
         catch
         {
