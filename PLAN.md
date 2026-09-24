@@ -15,7 +15,7 @@ S121 | OPEN-QA | dev2 | Media alt text: render author alt on img (gallery+lightb
 ## OPEN
 
 S122 | OPEN | agent-a | Profile Following tab empty after following community (s50qa Lemmy) — Communities tab shows it, but profile Following tab says "Not following anyone yet"
-
+S124 | OPEN | - | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
 ## CLOSED
 
 S119 | CLOSED | qa | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory — PASS: live qa-iris-a (wasm d8xp549r0o) s116rcv on s116snd profile sees Message btn, click -> /compose?dmTo=..s116snd, header "Messaging s116snd — direct", content "@s116snd", visibility=direct+disabled; fresh acct s119qa /messages empty-state "Find someone to message" -> /directory; 0 console errors
