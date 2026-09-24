@@ -26,7 +26,7 @@ Role: turn one OPEN item into a merged, tested fix in a dev worktree.
 
 ## Do not
 
-- Do not touch OPEN-QA, NEW, CLOSED items.
+- Do not touch OPEN-QA or CLOSED items.
 - Do not fix two items in one turn. One item, then stop.
 - Do not edit PLAN desc lines. Only status/owner for your item.
 - Do not commit in root except the merge commit.

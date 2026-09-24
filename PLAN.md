@@ -11,13 +11,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S85 | OPEN | - | Notifications page never refreshes while open: reload on UnreadCountChanged
-
-## NEW
-
-S82 | NEW | - | community feed renders non-content items (Delete/Follow) as empty post cards
-S83 | NEW | - | Article edit silently fails (Note edit works)
-S86 | NEW | - | Profile Likes tab renders raw IRI link instead of post content
-S87 | NEW | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
+S82 | OPEN | - | community feed renders non-content items (Delete/Follow) as empty post cards
+S83 | OPEN | - | Article edit silently fails (Note edit works)
+S86 | OPEN | - | Profile Likes tab renders raw IRI link instead of post content
+S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 
 ## CLOSED
 

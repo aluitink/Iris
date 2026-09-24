@@ -1,6 +1,6 @@
 # QA
 
-Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
+Role: verify OPEN-QA items live and find bugs on the qa stack (found items go straight to OPEN).
 
 ## Pick a target
 
@@ -17,11 +17,11 @@ Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
    `qa: S## — PASS/FAIL (<one line>)`. Evidence stays in the commit, PLAN gets the verdict only.
 5. Merge `qa` -> `<active>` so the verdict lands in PLAN.md.
 
-## Hunt for NEW
+## Hunt for bugs
 
 1. One flow per turn. Do not spread thin.
-2. Bug found -> add `S##+1 | NEW | - | <one line max 80 chars>` to PLAN NEW section.
-3. Put full repro steps, screenshots refs, and interop details in a qa-branch commit: `qa: NEW S## (<one line>)`.
+2. Bug found -> add `S##+1 | OPEN | - | <one line max 80 chars>` to PLAN OPEN section.
+3. Put full repro steps, screenshots refs, and interop details in a qa-branch commit: `qa: S## (<one line>)`.
 4. Merge `qa` -> `<active>`.
 5. No bug found after the flow -> note it in HIST (`clean: <flow>`), do not add PLAN noise.
 
@@ -30,7 +30,7 @@ Role: verify OPEN-QA items live and find NEW bugs on the qa stack.
 - Do not fix code. You own the qa worktree for notes only.
 - Do not edit OPEN items or desc lines.
 - Do not close an item on the dev stack; only the qa stack counts as live verification.
-- Do not write more than 3 NEW items per turn. Each must be a distinct bug with its own repro (facets of a
+- Do not write more than 3 items per turn. Each must be a distinct bug with its own repro (facets of a
   single root cause count as one item).
 
 ## State file

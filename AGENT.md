@@ -22,17 +22,17 @@ You never change which branch is active; that is a human action.
    - `/workspace/PLAN.md`
    - `/workspace/.state/<other>.md`
 3. Pick your role by what is actionable (PROTOCOL.md, Turn step 3). You may act only in your assigned personas:
-   - `agent-a`: any `OPEN-QA` item in PLAN -> QA (verify the merged fix live); else any `OPEN` item -> DEV (fix it); else -> QA (no actionable item: hunt for new bugs).
-    - `agent-b`: any `OPEN` item in PLAN -> DEV (fix it); else any `NEW` item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes); else -> PA (no work for DEV: explore, develop items, design new features).
-   - If the other agent's .state `WORK` line holds the top item of that section, take the next item in it, or the next section.
+    - `agent-a`: any `OPEN-QA` item in PLAN -> QA (verify the merged fix live); else any `OPEN` item -> DEV (fix it); else -> QA (no actionable item: hunt for new bugs; found items go straight to `OPEN`).
+    - `agent-b`: any `OPEN` item in PLAN -> DEV (fix it); else -> PA (no work for DEV: explore, develop items, design new features; found items go straight to `OPEN`).
+    - If the other agent's .state `WORK` line holds the top item of that section, take the next item in it, or the next section.
 4. Claim: update your `.state/<you>.md` `CLAIM` and `WORK` lines to what you selected.
 5. Read `/workspace/docs/persona-<role>.md`. Follow it. Do exactly one unit of work in your claimed worktree.
-   QA and PA may record up to 3 distinct NEW items found in that one unit; DEV still does one item per turn.
+    QA and PA may record up to 3 distinct items found in that one unit (written as `OPEN`); DEV still does one item per turn.
 6. PLAN.md: edit it **in your worktree** only, for items you touched. Commit it in your worktree.
    It reaches root when your branch merges. Never edit `/workspace/PLAN.md` directly.
 7. Commit your work in the worktree. Merge to main when your persona says to (DEV: tests green; QA/PA: every turn).
 8. Final rewrite of `/workspace/.state/<you>.md` with this turn's `HIST`.
-9. Stop. No second unit of work, no extra files (QA/PA: the up-to-3 NEW items from step 5 are the exception).
+9. Stop. No second unit of work, no extra files (QA/PA: the up-to-3 items from step 5 are the exception).
 
 ## Hard rules
 

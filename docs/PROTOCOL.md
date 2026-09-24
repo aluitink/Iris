@@ -26,19 +26,18 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
 3. Pick role by what is actionable, within your pin (agent-a: DEV|QA; agent-b: DEV|PA):
     - agent-a: any OPEN-QA item -> QA (verify the merged fix live);
       else any OPEN item -> DEV (fix it);
-      else -> QA (no actionable item: hunt for new bugs on the qa stack).
+      else -> QA (no actionable item: hunt for new bugs on the qa stack; found items go straight to OPEN).
     - agent-b: any OPEN item -> DEV (fix it);
-      else any NEW item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes);
-      else -> PA (no work for DEV: explore, design new features, propose improvements).
-    PA is not limited to empty-PLAN turns. Both agents may be DEV in the same turn:
-    they hold different dev worktrees, so there is no collision.
+      else -> PA (no work for DEV: explore, design new features, propose improvements; found items go straight to OPEN).
+    Both agents may be DEV in the same turn: they hold different dev worktrees, so there is no collision.
+    There is no review layer: items found by QA or PA are written as OPEN and worked by DEV next.
 4. Your role's worktree is fixed by the pin:
    - agent-a: DEV -> `dev1`, QA -> `qa`. agent-b: DEV -> `dev2`, PA -> `pa`.
    - Write your `CLAIM` for it in your `.state` file (Claims section below still applies to the PLAN item you take).
    - If no role is selectable, write an idle `.state` file and stop. Idle is a valid turn.
 5. Update `.state/<you>.md` `CLAIM` and `WORK` lines to your selection.
 6. Do ONE unit of work (docs/persona-<role>.md) in your claimed worktree. QA and PA may record up to 3
-   distinct NEW items found in that unit (see the persona files); DEV does one item per turn.
+    distinct items found in that unit (written as OPEN; see the persona files); DEV does one item per turn.
 7. Edit PLAN.md **in your worktree** for items you touched. Commit in the worktree.
 8. Merge to `<active>` when your role's merge rule above is met.
 9. Final rewrite of `.state/<you>.md` with this turn's `HIST`.
@@ -84,7 +83,7 @@ HIST: merged S51 | verified S52 | fixed S54
 
 ## PLAN.md format (hard)
 
-Sections, in order: `## GOAL`, `## OPEN`, `## NEW`, `## CLOSED`.
+Sections, in order: `## GOAL`, `## OPEN`, `## CLOSED`.
 
 Every item is one line:
 
@@ -93,9 +92,8 @@ S55 | OPEN | dev1 | post edit UI stale + delete silent no-op
 ```
 
 - `id` — S + number, never reused, never renumbered.
-- `status` — one of: NEW, OPEN, OPEN-QA, CLOSED.
-  - NEW = found by QA or proposed by PA, not yet accepted.
-  - OPEN = accepted, ready for a dev.
+- `status` — one of: OPEN, OPEN-QA, CLOSED.
+  - OPEN = found or proposed, ready for a dev.
   - OPEN-QA = fix merged to root, awaiting live verification.
   - CLOSED = verified live.
 - `owner` — worktree id, or `-`.
@@ -103,12 +101,12 @@ S55 | OPEN | dev1 | post edit UI stale + delete silent no-op
 
 ### Status flow
 
-QA finds bug -> `NEW`. PA accepts (or dev claims) -> `OPEN`. Dev fixes in worktree, merges to root -> `OPEN-QA`. QA verifies live -> `CLOSED` (moved to CLOSED section).
+QA or PA finds/proposes an item -> `OPEN`. Dev fixes in worktree, merges to root -> `OPEN-QA`. QA verifies live -> `CLOSED` (moved to CLOSED section).
 
 ## Size caps (self-cleaning)
 
 - PLAN.md: max 120 lines total.
-- OPEN + NEW: max 15 open items. If adding an item exceeds 15, the oldest CLOSED line is deleted first; if still over, the item is not added.
+- OPEN: max 15 open items. If adding an item exceeds 15, the oldest CLOSED line is deleted first; if still over, the item is not added.
 - CLOSED: max 25 lines. When a new item is closed, the oldest CLOSED line is deleted.
 - `.state/<agent>.md`: max 12 lines (see format).
 - Rule: a write that would exceed a cap MUST delete something first. No exceptions, no archives, no "keep for reference".
