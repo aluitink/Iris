@@ -105,20 +105,24 @@ else
     {
         <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
         <ActorListPanel
+            @ref="FollowersPanel"
             Client="@OutboxClient"
             CollectionIri="@FollowersIri"
             Title="Followers"
-            EmptyMessage="No followers yet." />
+            EmptyMessage="No followers yet."
+            FollowChanged="@OnFollowingSetChangedAsync" />
         </div>
     }
     else if (ActiveTab == "following")
     {
         <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
         <ActorListPanel
+            @ref="FollowingPanel"
             Client="@OutboxClient"
             CollectionIri="@FollowingIri"
             Title="Following"
-            EmptyMessage="Not following anyone yet." />
+            EmptyMessage="Not following anyone yet."
+            FollowChanged="@OnFollowingSetChangedAsync" />
         </div>
     }
     else if (ActiveTab == "communities")
@@ -365,6 +369,27 @@ else
 
     private List<string>? FollowRequestActors { get; set; }
     private int? FollowRequestCount { get; set; }
+
+    private ActorListPanel? FollowersPanel { get; set; }
+    private ActorListPanel? FollowingPanel { get; set; }
+
+    /// <summary>
+    /// Re-fetches the Followers/Followers panels after a follow/unfollow changed the following set
+    /// (S84). The panel refreshes itself for its own follow buttons; this handler covers a follow
+    /// issued from elsewhere (directory, actor detail) while a panel tab is open, so the open panel
+    /// also reflects the new state without a full reload.
+    /// </summary>
+    private async Task OnFollowingSetChangedAsync()
+    {
+        if (ActiveTab == "followers" && FollowersPanel is { } followers)
+        {
+            await followers.RefreshAsync();
+        }
+        else if (ActiveTab == "following" && FollowingPanel is { } following)
+        {
+            await following.RefreshAsync();
+        }
+    }
     private bool FollowRequestsLoading { get; set; }
     private string? FollowRequestError { get; set; }
     private bool IsDecidingFollowRequest { get; set; }

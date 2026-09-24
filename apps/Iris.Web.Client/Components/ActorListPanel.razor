@@ -47,7 +47,7 @@
                     @foreach (var entry in Items)
                     {
                         <ActorCard Actor="@entry.Doc" ActorId="@entry.IriValue" ShowModeration="false">
-                            <FollowButton TargetActor="@entry.Doc" />
+                            <FollowButton TargetActor="@entry.Doc" FollowChanged="@OnEntryFollowChangedAsync" />
                         </ActorCard>
                     }
                 </div>
@@ -94,6 +94,14 @@
     [Parameter]
     public HttpClient? AnonymousHttpClient { get; set; }
 
+    /// <summary>
+    /// Raised after a follow/unfollow from one of the panel's own <c>FollowButton</c>s. The
+    /// default implementation refreshes the panel (bypassing the client's collection-page cache)
+    /// so the list reflects the new following/followers state without a full page reload (S84).
+    /// </summary>
+    [Parameter]
+    public EventCallback FollowChanged { get; set; }
+
     private List<ActorEntry>? Items { get; set; }
     private bool HasMore { get; set; }
     private bool LoadingMore { get; set; }
@@ -118,6 +126,60 @@
         }
     }
 
+    /// <summary>
+    /// Re-fetches the collection from the start (bypassing the client's collection-page cache) and
+    /// re-renders. Callers invoke this after a mutation that changes the collection's contents —
+    /// e.g. a follow/unfollow that changes the following set the panel displays (S84). A plain
+    /// re-render would not help: <see cref="OnParametersSet"/> only re-loads when the
+    /// <c>CollectionIri</c> itself changes, and the client caches collection pages, so without a
+    /// cache-bypassing re-fetch the panel keeps showing the pre-mutation contents.
+    /// </summary>
+    public async Task RefreshAsync()
+    {
+        if (!HasAnyClient || CollectionIri is null)
+        {
+            return;
+        }
+
+        Items = null;
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        try
+        {
+            await LoadPageAsync(bypassCache: true);
+            await HydrateAsync();
+        }
+        catch (Exception)
+        {
+            LoadError = "Failed to load. Please try again.";
+        }
+
+        if (Items is null && LoadError is null)
+        {
+            Items = [];
+        }
+
+        try
+        {
+            StateHasChanged();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task OnEntryFollowChangedAsync()
+    {
+        // A follow/unfollow from this panel changed the collection. Refresh (cache-bypassing) so
+        // the list updates in place, then notify the parent (e.g. Profile) if it supplies a handler.
+        await RefreshAsync();
+        if (FollowChanged.HasDelegate)
+        {
+            await FollowChanged.InvokeAsync();
+        }
+    }
+
     private async Task LoadInitialAsync()
     {
         Items = null;
@@ -126,7 +188,10 @@
         _resumeFrom = null;
         try
         {
-            await LoadPageAsync();
+            // Bypass the client's collection-page cache on the initial load: the following/followers
+            // set can change between visits (a follow/unfollow from the directory or actor detail),
+            // and the 30 s page cache would otherwise serve the pre-mutation page (S84).
+            await LoadPageAsync(bypassCache: true);
             await HydrateAsync();
         }
         catch (Exception)
@@ -172,28 +237,28 @@
         }
     }
 
-    private async Task LoadPageAsync()
+    private async Task LoadPageAsync(bool bypassCache = false)
     {
         if (_resumeFrom is { } resume)
         {
-            await LoadPageInnerAsync(resume);
+            await LoadPageInnerAsync(resume, bypassCache);
             return;
         }
 
         if (CollectionIri is { } first)
         {
-            await LoadPageInnerAsync(first);
+            await LoadPageInnerAsync(first, bypassCache);
         }
     }
 
-    private async Task LoadPageInnerAsync(Iri pageIri)
+    private async Task LoadPageInnerAsync(Iri pageIri, bool bypassCache)
     {
 
         var irIs = new List<Iri>();
 
         if (Client is { } client)
         {
-            var query = new CollectionQuery(Limit: 10, BypassCache: false);
+            var query = new CollectionQuery(Limit: 10, BypassCache: bypassCache);
             await foreach (var page in client.GetCollectionAsync(pageIri, query, CancellationToken.None))
             {
                 foreach (var item in page.Items)
