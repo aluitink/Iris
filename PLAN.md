@@ -13,6 +13,8 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 S102 | OPEN | - | Home Communities tab shows Posts content, should show followed communities content
 S103 | OPEN | - | Profile needs ability to upload a banner image
+S104 | OPEN | - | Profile, not all tabs show proper content
+S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
 ## CLOSED
 
 S99 | CLOSED | qa | No theme/dark-mode setting in Settings (no Appearance section) — PASS: live qa-iris-a (s95qa) Settings>Appearance tab present; Dark default (data-theme=null, ls dark); switch Light -> data-theme="light" + ls light + PUT {theme:"light"} + GET round-trips + DB NotificationPrefsJson {"Theme":"light"}; hard reload -> early-paint light (no dark flash), Light radio pre-checked from server; revert Dark -> data-theme removed + DB {"Theme":"dark"}; 0 console errors
