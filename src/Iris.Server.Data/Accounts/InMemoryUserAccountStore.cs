@@ -129,6 +129,7 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
                 {
                     DisabledTypes = [.. prefs.DisabledTypes],
                     MutedActors = [.. prefs.MutedActors],
+                    Theme = prefs.Theme,
                 };
         }
         return Task.CompletedTask;

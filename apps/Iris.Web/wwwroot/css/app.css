@@ -27,6 +27,39 @@
     --media-bg: rgba(0, 0, 0, 0.05);
 }
 
+/* Light theme (S99): the user's Appearance setting (Settings → Content → Appearance) applies
+   data-theme="light" to <html>; every component already reads these tokens, so overriding the
+   set here re-skins the whole app. :root stays dark, so an unstyled first paint (before the
+   early script runs) is the dark default. */
+:root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --surface: #ffffff;
+    --surface-inset: #eef0f3;
+    --text: #1b1e24;
+    --fg: #1b1e24;
+    --muted: #5c6675;
+    --accent: #2f66e0;
+    --accent-warm: #2757c4;
+    --border: #d8dce3;
+    --border-strong: #b6bec9;
+    --hover: #eef0f3;
+    --card: #ffffff;
+    --danger: #c0392b;
+    --danger-fg: #a93226;
+    --danger-bg: #fbeeed;
+    --danger-border: #e6b8b2;
+    --warning: #9a7b1e;
+    --success: #1f8a4c;
+    --btn-fg: #ffffff;
+    --overlay-bg: rgba(30, 33, 40, 0.5);
+    --overlay-fg: #ffffff;
+    --overlay-fg-dim: rgba(255, 255, 255, 0.7);
+    --overlay-surface: rgba(255, 255, 255, 0.25);
+    --overlay-surface-hover: rgba(255, 255, 255, 0.4);
+    --media-bg: rgba(0, 0, 0, 0.05);
+}
+
 /* Spacing scale (Phase D design tokens): a 4px-base ramp (--space-1..7) plus the
    off-ramp values actually in use (--space-25/35/45/55/60/65/90/125). All rem
    spacing values in the stylesheet are migrated onto these tokens, so a spacing

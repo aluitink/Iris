@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S99 | OPEN | - | No theme/dark-mode setting in Settings (no Appearance section)
+S99 | OPEN-QA | dev2 | No theme/dark-mode setting in Settings (no Appearance section) — FIXED: per-account Appearance/Theme setting. Server: NotificationPreferences.Theme (dark|light) + NotificationPrefsRequest.Theme; GET /local/v1/account/notification-preferences returns theme, PUT stores it (normalized: anything but "light" -> "dark"), round-tripped via InMemoryUserAccountStore. Client: new Settings "Appearance" tab (Dark/Light radios) that applies data-theme="light" on <html> optimistically + PUTs the pref + persists to localStorage. Light theme = :root[data-theme="light"] token overrides in app.css (components already read the tokens, so it re-skins the app); an early <head> script in index.html applies the saved theme before first paint (no dark flash), dark = unstyled default. LIVE dev2 (s97verify): theme applies + persists (DB NotificationPrefsJson {"Theme":"light"}), GET round-trips, reverting to dark works, early-paint light on hard reload, Content-tab notif toggle does NOT clobber theme, 0 console errors. No new tests (UI + additive model field; verified live per protocol). Full suite 1521/1496 pass/25 skip/0 fail
 S96 | OPEN-QA | dev1 | Search local-only; add cross-instance post search over followed remote outboxes
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 
