@@ -10,12 +10,12 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S85 | OPEN-QA | dev2 | Notifications page never refreshes while open: reload on UnreadCountChanged (live dev2: s85b follow → s85a page stayed "No notifications yet" while API showed 1/unread=1; fix re-fetches list on UnreadCountChanged; 2499/2499 tests green)
 S83 | OPEN-QA | dev2 | Article edit silently fails (Note edit works) (fix: type-preserving UpdateObjectAsync; 1512 tests green)
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 
 ## CLOSED
 
+S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
 S86 | OPEN-QA | dev1 | Profile Likes tab renders raw IRI link instead of post content
 S82 | OPEN-QA | dev1 | community feed filters to content items (ContentItems.IsContentPost) — no empty post cards
 S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris-a follow+unfollow refresh panel, 0 console errors
@@ -48,8 +48,3 @@ S59 | CLOSED | dev2 | signable-actor metric counted remote actors (PASS: local-o
 
 S58 | CLOSED | dev1 | admin dashboard surfaces dead letters + signable-actor gap (PASS: /admin clean)
 
-S50 | CLOSED | dev2 | home feed omits author's own cross-post Page (PASS: live feed shows cross-post)
-
-S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PASS: fed tests green)
-
-S53 | CLOSED | dev2 | community-scoped search returned 0 — PASS: search + feed return content
