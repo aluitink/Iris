@@ -17,7 +17,7 @@ S108 | OPEN-QA | dev2 | Profile - Your posts pages through a ton of content to f
 ## OPEN
 
 S107 | OPEN-QA | dev2 | Copied links for a post should generate a front end link instead of an Activity Pub object link — FIXED: EngagementBar Copy link now copies the front-end object-view URL ({base}/object?iri=&lt;escaped IRI&gt;, same target as the card's stretched "Open post" link) instead of the raw ActivityPub object IRI. Live dev2: copied link = https://dev2-iris-a.luit.ink/object?iri=... (was .../ap/v1/u/s105a/notes/...), navigates to object view, "Copied" flash intact. QA: click Copy link on any post, verify clipboard has /object?iri= URL (not /ap/v1/u/... IRI) and it opens the object view.
-S109 | OPEN | - | When viewing on object in any object view feed stream (home/profile/likes/shares), I should be able to play a video without it redirecting to the object specific page. When I try to click play it sends acts as if I opened the object.
+S109 | OPEN-QA | dev2 | Video in feed streams redirects to object page on play click instead of playing in-place — FIXED (CSS): .media-player was missing from the .object-item--clickable z-index:1 list (stale .object-media class was there instead), so the video/audio player sat below the stretched link (z-index:0) and clicks hit the link. Replaced .object-media with .media-player. QA: create a post with a video attachment, in the home feed click the video play button — it should play in-place, not navigate to the object page.
 S110 | OPEN | - | Home feed is producing a lot of calls to /actor/flags repeatedly, do we need a new iris extension property to place on the object?
 ## CLOSED
 

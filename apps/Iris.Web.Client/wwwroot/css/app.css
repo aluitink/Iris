@@ -857,7 +857,7 @@ ul.object-list li {
 .object-item--clickable .object-emojis,
 .object-item--clickable .engagement-bar,
 .object-item--clickable .vote-bar,
-.object-item--clickable .object-media,
+.object-item--clickable .media-player,
 .object-item--clickable .object-title,
 .object-item--clickable .object-boost-by {
     position: relative;
