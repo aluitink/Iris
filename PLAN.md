@@ -10,15 +10,16 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S110 | OPEN-QA | dev2 | Home feed made one /flags call per ObjectView (N posts = N calls) to restore Report state — FIXED: ObjectView now uses UiContext.GetModerationStateAsync (cached per-circuit, 2min TTL) instead of a direct GetFlagsAsync per object. Live dev2: 2 posts = 1 flags call (was 2). No new iris extension property needed. QA: open home feed with N posts, count /flags network calls — should be 1, not N.
+
 ## OPEN
 
 S111 | OPEN | - | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab
 S112 | OPEN | - | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav
 S113 | OPEN | - | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button
-S109 | OPEN-QA | dev2 | Video in feed streams redirects to object page on play click instead of playing in-place — FIXED (CSS): .media-player was missing from the .object-item--clickable z-index:1 list (stale .object-media class was there instead), so the video/audio player sat below the stretched link (z-index:0) and clicks hit the link. Replaced .object-media with .media-player. QA: create a post with a video attachment, in the home feed click the video play button — it should play in-place, not navigate to the object page.
-S110 | OPEN-QA | dev2 | Home feed made one /flags call per ObjectView (N posts = N calls) to restore Report state — FIXED: ObjectView now uses UiContext.GetModerationStateAsync (cached per-circuit, 2min TTL) instead of a direct GetFlagsAsync per object. Live dev2: 2 posts = 1 flags call (was 2). No new iris extension property needed. QA: open home feed with N posts, count /flags network calls — should be 1, not N.
 ## CLOSED
 
+S109 | CLOSED | qa | Video in feed streams redirects to object page on play click instead of playing in-place — PASS: live qa-iris-a video post in home feed; .media-player computed z-index:1/position:relative, .object-card-link (stretched) z-index:0/absolute; clicked video center -> URL stayed /home (no object-page nav); served app.css .media-player in z-index:1 group, stale .object-media gone; 0 console errors
 S107 | CLOSED | qa | Copied links for a post should generate a front end link instead of an Activity Pub object link — PASS: live qa-iris-a Copy link on 2 posts copies front-end /object?iri= URL (not AP IRI), matches stretched "Open post" href, opens object view; 0 console errors
 S106 | CLOSED | qa | Notifications page too wide on mobile (horizontal scroll) — PASS: live qa-iris-a 390px no h-scroll (docScrollW=390), long display name ellipsized, .notif-card-wrapper min-width:0; desktop 1280px unchanged; 0 console errors
 S105 | CLOSED | qa | Home feed post is missing user posts; profile "Your posts" tab should show only own posts — PASS: live qa-iris-a (s105qa follows s105follow; s105qa own post S105-QA-OWN-POST-3MVW8 + s105follow posts S105-FOLLOW-POST-7XK9Z pre-follow & S105-FOLLOW-POST-2-AFTERFOLLOW-9TQP4 post-follow). Server GET /ap/v1/u/s105qa/outbox?type=content totalItems=1 (own Create only, attributedTo s105qa); unfiltered outbox keeps followed/foreign (Follow + own Create, s105follow posts federate via inbox); Profile "Your posts" tab = 1 listitem (own post only, no s105follow posts); home feed shows all 3 (own+followed, not regressed); 0 console errors.
@@ -43,4 +44,4 @@ S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
 S86 | CLOSED | qa | Likes tab renders raw IRI instead of post content — PASS: shows post cards
-S82 | CLOSED | qa | community feed filters to content items (ContentItems.IsContentPost) — PASS: live qa-iris-a new community s82qa, Note post + in-community Like; feed shows 1 content card, Like excluded (no empty card), 0 console errors
+
