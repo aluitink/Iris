@@ -207,14 +207,15 @@ dotnet test --logger "console;verbosity=detailed" 2>&1 | tee .tmp/<you>/test-$(d
 - A test failing for a reason outside your item: note `BLOCKED: <reason>` in your .state and pick the next item
   (see Failure handling).
 
-## Tests (when to write new ones)
+## Tests (no new tests)
 
-- Default: maintain existing tests. Fix them when behavior you intentionally changed makes them fail;
-  extend an existing test in the item's area when it already covers the flow.
-- Create a NEW test only when it is critical: no existing test fails without the fix (the fix is
-  otherwise unguarded) and the failure mode is real (not theoretical). One new test per item, at most.
-- Never add tests that duplicate an existing test's coverage, and never add test scaffolding for code
-  you did not change this turn.
+- No new tests. Maintain existing tests only: fix one when a behavior you intentionally changed makes
+  it fail, and extend an existing test in the item's area only when it already covers the flow.
+- Never create a new test file, a new test project, or test scaffolding for code you did not change
+  this turn. If a fix would be unguarded by tests, verify it live (e.g. Playwright against the dev
+  stack) and note that verification in the commit body / PLAN.md instead of adding a test.
+- No UI/component (bUnit) test projects: the UI changes too rapidly for them to pay for themselves.
+  If one was created in error, remove it and its solution entry.
 
 ## Failure handling
 
