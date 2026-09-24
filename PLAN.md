@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S106 | OPEN-QA | dev1 | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll — FIXED (CSS): .notif-card-wrapper (the .notif-cards grid item) now has min-width:0 so a long unbreakable display name in the notification header (white-space:nowrap) can no longer set the grid item's automatic minimum wider than the column; the name's overflow:hidden/ellipsis truncates instead. Live dev1-iris-a 390px: before docScrollWidth 686 (hasHScroll), after 390 (no h-scroll), name ellipsized, card 366px in 390px viewport; desktop 1280px unchanged.
 ## OPEN
 
 S107 | OPEN-QA | dev2 | Copied links for a post should generate a front end link instead of an Activity Pub object link — FIXED: EngagementBar Copy link now copies the front-end object-view URL ({base}/object?iri=&lt;escaped IRI&gt;, same target as the card's stretched "Open post" link) instead of the raw ActivityPub object IRI. Live dev2: copied link = https://dev2-iris-a.luit.ink/object?iri=... (was .../ap/v1/u/s105a/notes/...), navigates to object view, "Copied" flash intact. QA: click Copy link on any post, verify clipboard has /object?iri= URL (not /ap/v1/u/... IRI) and it opens the object view.
@@ -18,6 +17,7 @@ S109 | OPEN-QA | dev2 | Video in feed streams redirects to object page on play c
 S110 | OPEN | - | Home feed is producing a lot of calls to /actor/flags repeatedly, do we need a new iris extension property to place on the object?
 ## CLOSED
 
+S106 | CLOSED | qa | Notifications page too wide on mobile (horizontal scroll) — PASS: live qa-iris-a 390px no h-scroll (docScrollW=390), long display name ellipsized, .notif-card-wrapper min-width:0; desktop 1280px unchanged; 0 console errors
 S105 | CLOSED | qa | Home feed post is missing user posts; profile "Your posts" tab should show only own posts — PASS: live qa-iris-a (s105qa follows s105follow; s105qa own post S105-QA-OWN-POST-3MVW8 + s105follow posts S105-FOLLOW-POST-7XK9Z pre-follow & S105-FOLLOW-POST-2-AFTERFOLLOW-9TQP4 post-follow). Server GET /ap/v1/u/s105qa/outbox?type=content totalItems=1 (own Create only, attributedTo s105qa); unfiltered outbox keeps followed/foreign (Follow + own Create, s105follow posts federate via inbox); Profile "Your posts" tab = 1 listitem (own post only, no s105follow posts); home feed shows all 3 (own+followed, not regressed); 0 console errors.
 S108 | CLOSED | qa | Profile "Your posts" pages through tons of content; outbox should be lean (only actor's objects) — PASS: same fix as S105 (identical OutboxItemIsAuthoredBy predicate on ?type=content/ ?type=reply). Live qa-iris-a: ?type=content returns only actor-authored content (totalItems=1, own post), profile "Your posts" tab no longer pages through followed/foreign posts; unfiltered outbox unchanged. 0 console errors.
 S104 | CLOSED | qa | Profile tabs — Replies tab empty for users whose replies sit past PagedCollection's 3-page top-up cap — PASS: live qa-iris-a (s101hunt2) Replies tab renders 2 replies w/ 'In reply to' context; server ?type=reply totalItems=2 (excludes 7 non-reply outbox items), first link carries ?type=reply (pagination preserves filter); ?type=content totalItems=4 unchanged; unfiltered=9; 0 console errors
@@ -42,4 +42,3 @@ S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-p
 S86 | CLOSED | qa | Likes tab renders raw IRI instead of post content — PASS: shows post cards
 S82 | CLOSED | qa | community feed filters to content items (ContentItems.IsContentPost) — PASS: live qa-iris-a new community s82qa, Note post + in-community Like; feed shows 1 content card, Like excluded (no empty card), 0 console errors
 S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris-a follow+unfollow refresh panel, 0 console errors
-S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
