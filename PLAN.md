@@ -10,14 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S121 | OPEN-QA | dev2 | Media alt text: render author alt on img (gallery+lightbox). RichAttachment+Alt (read from attachment ExtensionData["alt"] in GetRichAttachments); MediaGallery emits alt=ImageAlt(att) preferring author alt, falling back to name/media URL. Live dev2: object-page img now carries alt+title (fallback name "s112-tiny.png"); new build confirmed (title now present). Tests: +GetRichAttachments ImageWithAlt/ImageWithoutAlt unit; +NoteWithMediaAndAltText_ReadBoundarySurfacesAltForGalleryRenderer +NoteWithMediaNoAltText_ReadBoundaryAltIsNull integration; full suite 1502 green
 
 ## OPEN
 
-S122 | OPEN | agent-a | Profile Following tab empty after following community (s50qa Lemmy) — Communities tab shows it, but profile Following tab says "Not following anyone yet"
 S124 | OPEN | - | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
 ## CLOSED
 
+S121 | CLOSED | qa | Media alt text: render author alt on img (gallery+lightbox) — PASS: live qa-iris-a (wasm t1q33tso4m) s116snd profile shows S118 post with img alt="S118-QA-ALT-TEXT-TEST: A red circle on a blue field" (author alt, not filename); 0 console errors
 S119 | CLOSED | qa | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory — PASS: live qa-iris-a (wasm d8xp549r0o) s116rcv on s116snd profile sees Message btn, click -> /compose?dmTo=..s116snd, header "Messaging s116snd — direct", content "@s116snd", visibility=direct+disabled; fresh acct s119qa /messages empty-state "Find someone to message" -> /directory; 0 console errors
 
 S120 | CLOSED | qa | DM inbox: UI-posted Direct messages don't appear in /messages (received or sent) — PASS: live qa-iris-a (build fcfd6302) s116rcv /messages shows received DM from s116snd (create 06GDASKRST5DDV19MYZ2FXV7JM), s116snd /messages shows sent DM to s116rcv; 0 console errors both sides
