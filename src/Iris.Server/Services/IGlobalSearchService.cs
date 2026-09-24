@@ -54,7 +54,12 @@ public interface IGlobalSearchService
     /// request. When set, non-public content (followers-only or direct) not addressed to that actor is
     /// excluded from the content results; when null, only public content is returned. Actors are
     /// unaffected (a directory entry is about a person, not a specific post). This is the
-    /// audience/visibility filter (closes the Phase 136.18 / 139.2-s5 gap for the search surface).</param>
+    /// audience/visibility filter (closes the Phase 136.18 / 139.2-s5 gap for the search surface). When
+    /// set AND the implementation has a followed-feed service (S96 cross-instance post search), the
+    /// content results additionally include the requester's followed <em>remote</em> posts that match the
+    /// query (walked from the follows' outboxes over the wire), de-duplicated against the local content.
+    /// When null (anonymous), the search is local-only (no cross-instance pass — there is no requester
+    /// whose follows to walk).</param>
     /// <returns>A task that completes with the matching items (actors first, then content objects, each
     /// sub-list sorted by IRI). Each item is an <see cref="IObjectOrLink"/>; callers pattern-match
     /// (an <see cref="Actor"/> or a content <see cref="IObject"/>).</returns>

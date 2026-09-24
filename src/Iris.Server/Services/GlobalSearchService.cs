@@ -29,6 +29,7 @@ public sealed class GlobalSearchService : IGlobalSearchService
 {
     private readonly IPersistenceProvider _persistence;
     private readonly Iri? _instanceBase;
+    private readonly IFollowFeedService? _followFeed;
 
     /// <summary>
     /// Initializes a new global search service over the given persistence provider.
@@ -37,10 +38,16 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// <param name="instanceBase">The instance's base IRI (e.g. <c>https://iris.example</c>), used to
     /// distinguish local actors from cached remote actors by IRI prefix. When null, the store's
     /// <c>preferredUsername</c> heuristic is used as a fallback.</param>
-    public GlobalSearchService(IPersistenceProvider persistence, Iri? instanceBase = null)
+    /// <param name="followFeed">The followed-feed service (S96 cross-instance post search). When non-null
+    /// and the request carries a signed-in requester, the search additionally returns the requester's
+    /// followed <em>remote</em> posts that match the query (walked from the follows' outboxes over the
+    /// wire by the feed service). When null (a host without the feed service, or a unit test), the search
+    /// is local-only (the prior behavior).</param>
+    public GlobalSearchService(IPersistenceProvider persistence, Iri? instanceBase = null, IFollowFeedService? followFeed = null)
     {
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         _instanceBase = instanceBase;
+        _followFeed = followFeed;
     }
 
     /// <inheritdoc/>
@@ -179,6 +186,23 @@ public sealed class GlobalSearchService : IGlobalSearchService
                 .Where(o => VisibilityFilter.IsVisibleTo(o, requesterIri))
                 .Where(o => !hasType || ItemMatchesType(o, typeFilter!))
                 .ToList();
+
+            // S96 (cross-instance post search): the local content pass above only sees what THIS instance
+            // has stored (its own posts + remote posts delivered into the inbox). A post a user follows on
+            // a remote instance that has NOT been delivered here (e.g. a community post a user follows,
+            // which the remote delivers as an Announce the inbox does not store) is absent from the local
+            // store, so the search would miss it. When there is a signed-in requester AND the followed-feed
+            // service is available, add the requester's followed REMOTE posts that match the query: the
+            // feed service already walks the follows' outboxes over the wire (F-14 / S92), filtered by the
+            // same content/name substring and the same audience/visibility rules. Only items NOT already in
+            // the local content results (de-duplicated by object IRI) and authored by a REMOTE actor (not on
+            // this instance's base) are appended — the requester's own posts and local follows are already
+            // in the local pass (or are the requester's own outbox) and must not be double-counted.
+            if (requesterIri is { } requester && _followFeed is { } feed)
+            {
+                contentMatches.AddRange(
+                    await GetCrossInstanceContentAsync(requester, normalized, hasType, typeFilter, contentMatches, ct).ConfigureAwait(false));
+            }
         }
 
         var total = actorTotal + contentMatches.Count;
@@ -201,6 +225,168 @@ public sealed class GlobalSearchService : IGlobalSearchService
         }
 
         return (results, total);
+    }
+
+    /// <summary>
+    /// S96 (cross-instance post search): returns the requester's followed <em>remote</em> posts that match
+    /// <paramref name="normalized"/> and are NOT already in <paramref name="existing"/>. These are the posts the
+    /// requester follows on remote instances that have not been delivered into this instance's object store
+    /// (so the local content pass does not see them). The followed-feed service walks the follows' outboxes
+    /// over the wire (F-14 / S92) and applies the same content/name substring and audience/visibility
+    /// filters, so only genuinely new remote content is returned.
+    /// </summary>
+    /// <remarks>
+    /// Each feed item is unwrapped to its embedded content object (a <c>Create</c>/<c>Announce</c> carries
+    /// the note in its <c>object</c>; a delivered post is wrapped in a synthetic <c>Create</c>). Items that
+    /// are tombstones, actors (matched by the actor pass), or communities <c>Group</c> (matched by the
+    /// community pass) are skipped. An item whose content-object IRI is already in
+    /// <paramref name="existing"/> (the local content results) is dropped (de-duplication — the local copy
+    /// is preferred). An item authored by a LOCAL actor (IRI on the instance base, or no instance base to
+    /// compare against and the author is a local store actor) is dropped — only REMOTE posts are the new
+    /// surface the local pass does not cover. When the instance base is unknown, every feed item is treated
+    /// as remote (the conservative stance: better a possible duplicate the client de-dups by IRI than a
+    /// missed remote post). A feed failure contributes nothing (a broken follow must not fail the search).
+    /// </remarks>
+    /// <param name="requester">The signed-in requesting actor (whose follows' outboxes are walked).</param>
+    /// <param name="normalized">The normalized (trimmed) query, or null/whitespace for "list everything".</param>
+    /// <param name="hasType">Whether a type filter is active.</param>
+    /// <param name="typeFilter">The active type filter (e.g. <c>"Note"</c>), when <paramref name="hasType"/>.</param>
+    /// <param name="existing">The local content results already matched (used to de-duplicate by object IRI
+    /// and to decide which items are genuinely new).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task<IReadOnlyList<IObject>> GetCrossInstanceContentAsync(
+        Iri requester,
+        string? normalized,
+        bool hasType,
+        string? typeFilter,
+        IReadOnlyList<IObject> existing,
+        CancellationToken ct)
+    {
+        IReadOnlyList<IObjectOrLink> feed;
+        try
+        {
+            feed = await _followFeed!.GetFeedAsync(
+                requester,
+                string.IsNullOrWhiteSpace(normalized) ? null : normalized!,
+                requesterIri: requester,
+                ct: ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // A feed failure (a broken/unreachable follow, a signing error) must not fail the search —
+            // the local results are returned as-is (the same "contributes nothing" stance the feed itself
+            // takes for a single broken follow, 147.2).
+            return [];
+        }
+
+        var instancePrefix = _instanceBase?.ToString().TrimEnd('/');
+        var seen = new HashSet<string>(
+            existing.Select(o => o.ResolveObjectIri()?.ToString() ?? string.Empty),
+            StringComparer.OrdinalIgnoreCase);
+
+        var matches = new List<IObject>();
+        foreach (var item in feed)
+        {
+            // Unwrap the feed item to its embedded content object (a Create/Announce carries the note in
+            // its `object`; a plain object is its own content). Skip non-content (social activities such as
+            // Like/Follow have no embedded object to surface as a post).
+            var content = UnwrapContentObject(item);
+            if (content is null || content is Tombstone || content is Group)
+            {
+                continue;
+            }
+
+            var objectIri = content.ResolveObjectIri();
+            if (objectIri is not { } objectIriValue)
+            {
+                continue;
+            }
+
+            // De-duplicate against the local content results (the local copy is preferred) and against
+            // items already collected in this pass.
+            if (!seen.Add(objectIriValue.ToString()))
+            {
+                continue;
+            }
+
+            // Keep only REMOTE posts: an author on this instance's base is local (already covered by the
+            // local content pass or the requester's own outbox). When the instance base is unknown, every
+            // author is treated as remote (conservative — see the remarks).
+            if (instancePrefix is { Length: > 0 } prefix && IsLocalAuthor(content, prefix))
+            {
+                continue;
+            }
+
+            // Apply the same audience/visibility + type filters the local content pass applies, so a
+            // remote followers-only / direct post does not surface to an unintended viewer.
+            if (!VisibilityFilter.IsVisibleTo(content, requester))
+            {
+                continue;
+            }
+
+            if (hasType && !ItemMatchesType(content, typeFilter!))
+            {
+                continue;
+            }
+
+            matches.Add(content);
+        }
+
+        return matches;
+    }
+
+    /// <summary>
+    /// Unwraps a feed item (an ActivityStreams activity or a plain object) to the embedded content object
+    /// it represents: for a <c>Create</c>/<c>Announce</c> (or any activity), the first embedded
+    /// <see cref="IObject"/> that is itself not an activity (the note); for a plain non-activity object,
+    /// the object itself. Returns null when the item carries no embedded content (a link-only reference, a
+    /// social activity with no object, or a <see cref="Link"/>).
+    /// </summary>
+    private static IObject? UnwrapContentObject(IObjectOrLink item)
+    {
+        if (item is not IObject obj)
+        {
+            return null; // a bare Link (no embedded document) has no searchable content
+        }
+
+        if (obj is not Activity activity)
+        {
+            return obj; // a plain object (a delivered note) is its own content
+        }
+
+        foreach (var referenced in activity.Object ?? [])
+        {
+            if (referenced is IObject refObj && refObj is not Activity)
+            {
+                return refObj;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// True when the content object's author (<c>attributedTo</c>) is a LOCAL actor — its IRI starts with the
+    /// instance base <paramref name="prefix"/>. An author that is a local <see cref="Actor"/>/
+    /// <see cref="Group"/> object (not just a link) is local by construction.
+    /// </summary>
+    private static bool IsLocalAuthor(IObject content, string prefix)
+    {
+        foreach (var author in content.AttributedTo ?? [])
+        {
+            if (author is Actor || author is Group)
+            {
+                return true;
+            }
+
+            var iriValue = author.ResolveObjectIri()?.ToString() ?? string.Empty;
+            if (iriValue.Length > 0 && iriValue.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S94 | OPEN | - | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply
-S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
+S96 | OPEN-QA | dev1 | Search local-only; add cross-instance post search over followed remote outboxes
 
 ## CLOSED
 

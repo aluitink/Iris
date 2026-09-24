@@ -515,7 +515,15 @@ public static class ActivityPubServerExtensions
         {
             var persistence = sp.GetRequiredService<IPersistenceProvider>();
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
-            return new GlobalSearchService(persistence, options.BaseUri);
+            // S96: cross-instance post search. The followed-feed service already walks the requester's
+            // remote follows' outboxes over the wire (F-14 / S92 machinery); the search reuses it to add
+            // the requester's followed remote posts to the local content results. It is resolved lazily so
+            // a host that does not register IFollowFeedService (or a unit test that builds the search with
+            // persistence only) gets local-only search with no cross-instance pass.
+            return new GlobalSearchService(
+                persistence,
+                options.BaseUri,
+                sp.GetService<IFollowFeedService>());
         });
 
         // Followed feed (F-14): computes an actor's home timeline (the union of the actor's local and
