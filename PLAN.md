@@ -10,9 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S121 | OPEN-QA | dev2 | Media alt text: render author alt on img (gallery+lightbox). RichAttachment+Alt (read from attachment ExtensionData["alt"] in GetRichAttachments); MediaGallery emits alt=ImageAlt(att) preferring author alt, falling back to name/media URL. Live dev2: object-page img now carries alt+title (fallback name "s112-tiny.png"); new build confirmed (title now present). Tests: +GetRichAttachments ImageWithAlt/ImageWithoutAlt unit; +NoteWithMediaAndAltText_ReadBoundarySurfacesAltForGalleryRenderer +NoteWithMediaNoAltText_ReadBoundaryAltIsNull integration; full suite 1502 green
+
 ## OPEN
 
-S121 | OPEN | - | Media alt text: UI doesn't render alt on img tag (RichAttachment has no Alt prop; gallery+lightbox use att.Name)
 S122 | OPEN | agent-a | Profile Following tab empty after following community (s50qa Lemmy) — Communities tab shows it, but profile Following tab says "Not following anyone yet"
 
 ## CLOSED
