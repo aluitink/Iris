@@ -11,6 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
+S102 | OPEN | - | Home Communities tab shows Posts content, should show followed communities content
 
 ## CLOSED
 
