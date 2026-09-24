@@ -10,9 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
+S97 | OPEN | - | Lemmy post Replies tab empty though header shows N comments (S43 skips walk)
+S98 | OPEN | - | Communities page local-only; no cross-instance community discovery
+S99 | OPEN | - | No theme/dark-mode setting in Settings (no Appearance section)
 S94 | OPEN-QA | dev2 | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply — FIXED: RewriteOutboundAudienceAsync Create-case now APPENDS Iri.Public (full IRI https://www.w3.org/ns/activitystreams#Public) to the activity-level to+cc for a reply to a public parent. Root cause: Lemmy CreateOrUpdateNote requires to+cc on the Create AND verify_is_public does set.contains(&public()) where public() is the full-IRI Url — compact as:Public didn't match -> ObjectIsNotPublic 400. cc also backfilled (was empty: no remote followers for a remote-parent reply -> untagged-enum deserialization fail). New test IrisReplyToLemmyPage_DeliveredCreate_CarriesCc_Audience; full suite 1489 pass. LIVE: dev2 s94dev replied to Lemmy /post/2 -> comment id 1 landed (path 0.1, by s94dev); duplicate re-delivery 400 "Unknown" at insert_received_activity (expected: comment already exists)
 S96 | OPEN-QA | dev1 | Search local-only; add cross-instance post search over followed remote outboxes
-S93 | OPEN | - | Like/Boost btns ignore existing state on load; re-click duplicates Like/Announce
 
 ## CLOSED
 
