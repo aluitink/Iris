@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S125 | OPEN-QA | dev2 | Home: signed-in Local tab shows instance public timeline (now authless-only)
 
 ## OPEN
 
 S124 | OPEN | agent-a | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
+S125 | OPEN | - | Home: signed-in Local tab shows instance public timeline (now authless-only)
 S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 ## CLOSED
