@@ -218,7 +218,9 @@ public sealed class ActorCountRefreshService : BackgroundService
     /// <summary>
     /// Counts the content posts in an actor's outbox using the same classification as the read-time
     /// <c>CountPostsAsync</c> in <see cref="ActivityPubServerExtensions"/>: an <see cref="Announce"/>
-    /// (boost) or a <see cref="Create"/> whose object is a <see cref="Note"/> or <see cref="Article"/>.
+    /// (boost) or a <see cref="Create"/> whose object is a <see cref="Note"/>, <see cref="Article"/>,
+    /// <see cref="Page"/> (Lemmy cross-post), or <see cref="Question"/> (poll). S79: <see cref="Page"/>
+    /// and <see cref="Question"/> were previously omitted.
     /// </summary>
     private static async Task<int> CountPostsAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
     {
@@ -241,7 +243,7 @@ public sealed class ActorCountRefreshService : BackgroundService
             {
                 foreach (var obj in objects)
                 {
-                    if (obj is Note || obj is Article)
+                    if (obj is Note || obj is Article || obj is Page || obj is Question)
                     {
                         count++;
                         break;
