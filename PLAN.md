@@ -16,7 +16,7 @@ S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost 
 
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
-S86 | OPEN-QA | dev1 | Profile Likes tab renders raw IRI link instead of post content
+S86 | CLOSED | qa | Likes tab renders raw IRI instead of post content — PASS: shows post cards
 S82 | OPEN-QA | dev1 | community feed filters to content items (ContentItems.IsContentPost) — no empty post cards
 S84 | CLOSED | qa | Profile Following tab stale after follow: PASS: live qa-iris-a follow+unfollow refresh panel, 0 console errors
 S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
