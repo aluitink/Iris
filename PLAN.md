@@ -12,11 +12,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S115 | OPEN-QA | dev2 | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts with that tag — DONE (TagTimeline.razor @page /tag/{Tag} content-only Note search + empty/error states; MentionLinkify.LinkifyPlain hashtag href -> relative /tag/{name}; Compose bake-time hashtagHref -> /tag/{name}); live dev2: new post's #s115tag2 href=/tag/%23s115tag2, /tag/%23s115tag2 renders "1 post(s)" + the post, /tag/emptytag123 shows "No posts… yet", 0 console errors; MentionLinkifyTests 13/13
 S117 | OPEN-QA | dev2 | Mention autocomplete: @ in compose shows matching accounts to pick from — FIXED (autocomplete was implemented but AcceptAutocomplete set the C# Content prop without a value binding on the uncontrolled <textarea>, so the accepted @handle never reached the DOM). Added value="@(Content)" to #compose-content so code-set Content syncs to the DOM. Live dev2: type @s112 -> popover w/ "s112lb | S112 Lightbox", click -> content "@s112lb "; #s115 hashtag accept still works; plain typing unaffected; 0 console errors; 1527 tests pass
-S118 | OPEN-QA | dev2 | Media alt text: compose lets you set alt text on image attachments; serialized to Image alt — DONE (alt-text input per image attachment in compose; MediaAttachment +AltText; ComposeNote + BuildCommunityAttachments set Image alt via ExtensionData[alt]); tests: NoteWithMediaAndAltText_CarriesAltInPublicDocument (alt round-trips to public doc) + blank-alt-dropped pass; live dev2 compose loads 0 console errors
+S116 | OPEN-QA | dev1 | DM inbox: /messages lists Direct posts you sent/received; add nav link — DONE (Messages.razor @page /messages All/Received/Sent tabs + Mark-all-read; GET /local/v1/messages merges received-direct (inbox) + sent-direct (outbox) deduped newest-first paged {items,totalItems,nextPage,readAt}; POST /local/v1/messages/read advances UserAccount.MessagesReadAt cursor; IriExtensions.IsDirectMessage (directed to[] + empty cc); nav "Messages" link; new migration 20260924000000_AddMessagesReadAt). Live dev1: /messages renders tabs+empty state, GET+POST /local/v1/messages(/read) 200; MessagesIntegrationTests 3/3 (DM listed+public excluded, unauth->/login, read advances cursor); full suite 1527+134 green
 
 ## OPEN
 
-S116 | OPEN | - | DM inbox: /messages lists Direct posts you sent/received; add nav link
+S118 | OPEN | - | Media alt text: compose lets you set alt text on image attachments; serialized to Image alt
 ## CLOSED
 
 S114 | CLOSED | qa | Edit/Delete own posts from feed card — PASS: live qa-iris-a (wasm kzz9lgxzn4) own post shows .engagement-more menu w/ Edit+Delete; Edit deep-link -> prefilled editor + Save; Delete confirm -> tombstone "Deleted post"; 0 console errors
