@@ -10,10 +10,12 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab — FIXED (S111): added IBookmarkStore (in-memory + file-backed + EF Core over Edges table, new EdgeKind.Bookmark=19, no migration), server endpoints POST/GET /local/v1/u/{handle}/bookmarks, client BookmarkAsync/UnbookmarkAsync/GetBookmarksAsync, EngagementBar bookmark button (toggle), Profile Bookmarks tab (lazy-load list). QA: click bookmark on a post (icon fills), reload page, bookmark persists; Profile > Bookmarks tab lists bookmarked posts; unbookmark removes it.
+
 ## OPEN
 
-S111 | OPEN | - | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab
 S112 | OPEN-QA | dev2 | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav — FIXED (CSS): .media-gallery-item was missing from the .object-item--clickable z-index:1 list (stale .media-player class was there instead), so image clicks hit the stretched object-card-link (z-index:0) and navigated to the object page instead of opening the lightbox. Added z-index:1 to .media-gallery-item. QA: click a post image in the home feed — lightbox overlay opens (Close button visible), URL stays /home, Close button dismisses overlay; 0 console errors.
+S114 | OPEN | - | Edit/Delete own posts from feed card: EngagementBar on ObjectView (feed cards) has Like/Boost/Bookmark/Reply/Copy/Moderation but no Edit or Delete for the author's own posts (these exist only on ObjectDetail page). Add Edit + Delete buttons to the EngagementBar more-options menu when the post author is the current user; Edit navigates to /object?iri=...#edit or opens inline editor, Delete confirms + calls DELETE endpoint.
 ## CLOSED
 
 S113 | CLOSED | dev2 | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button — VERIFIED (already implemented): live dev2 CW text post shows .object-sensitive banner (summary "S113-CW-TEST" + "This content may be sensitive." + Show btn), content blur(8px) until Show (filter none after); CW+media post media-gallery-wrap blur(8px) until Show; 0 console errors
