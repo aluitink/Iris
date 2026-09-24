@@ -1671,6 +1671,61 @@ public sealed class FeedServiceTests
         Assert.Equal(2, allAgain.Count);
     }
 
+    [Fact]
+    public async Task Feed_QueryFilter_MatchesNestedAnnounceWrappedCreate()
+    {
+        // S96: a remote community post arrives NESTED — an Announce whose object is a Create whose
+        // object is the actual post (a Lemmy community post is an Announce of a Create of a Page/Note).
+        // A query that matches only the embedded post's content (two levels deep) must still surface the
+        // item. The pre-S96 FilterFeed inspected only the item itself and ONE referenced object (the
+        // empty Create), so it never saw the post's content and dropped the item from a query-filtered
+        // feed — which is why cross-instance search for a token in a nested post returned nothing.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddNestedPost(persistence, bob, "nested-1", "S96 nested post content UNIQUE-TOKEN-9Q");
+            // A second, non-matching nested post (sanity: the filter is not matching everything).
+            AddNestedPost(persistence, bob, "nested-2", "unrelated content");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+
+        // Unfiltered: both nested posts are in the feed.
+        var all = await service.GetFeedAsync(alice, threadDepth: 1);
+        Assert.Equal(2, all.Count);
+
+        // Query matching ONLY the deeply-nested post's content surfaces exactly that item.
+        var filtered = await service.GetFeedAsync(alice, query: "UNIQUE-TOKEN-9Q", threadDepth: 1);
+        Assert.Single(filtered);
+        Assert.Contains("nested-1", IdOf(filtered[0]));
+    }
+
+    /// <summary>
+    /// Seeds a NESTED feed item into <paramref name="actorIri"/>'s outbox: an <c>Announce</c> whose
+    /// <c>object</c> is a <c>Create</c> whose <c>object</c> is a <see cref="Note"/> with
+    /// <paramref name="content"/> — the exact shape a remote (Lemmy) community post takes in a followed
+    /// outbox (the post's content is two activity levels deep).
+    /// </summary>
+    private static void AddNestedPost(InMemoryPersistenceProvider persistence, Iri actorIri, string suffix, string content)
+    {
+        var noteIri = $"https://{LocalHost}/notes/{suffix}";
+        var note = new Note { Id = noteIri, Content = [content] };
+        persistence.Activities.AddToOutboxAsync(actorIri, new Announce
+        {
+            Id = noteIri,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [new Create
+            {
+                Id = noteIri,
+                Actor = [new Link { Href = new Uri(actorIri.Value) }],
+                Object = [note],
+            }],
+        }).GetAwaiter().GetResult();
+    }
+
     // --- S36 repro: home feed omits the actor's own post when the outbox is polluted with
     // --- actor-document activity -------------------------------------------------------
 

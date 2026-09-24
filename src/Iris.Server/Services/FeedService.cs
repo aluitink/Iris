@@ -668,32 +668,49 @@ public sealed class FeedService : IFollowFeedService
         var matches = new List<IObjectOrLink>();
         foreach (var item in feed)
         {
-            if (item is IObject obj)
+            if (item is IObject obj && MatchesQueryAtAnyDepth(obj, normalized))
             {
-                var activityMatches =
-                    ContainsInStrings(obj.Content, normalized) || ContainsInStrings(obj.Name, normalized);
-                var nestedMatches = false;
-                if (obj is Activity activity)
-                {
-                    foreach (var referenced in activity.Object ?? [])
-                    {
-                        if (referenced is IObject refObj &&
-                            (ContainsInStrings(refObj.Content, normalized) || ContainsInStrings(refObj.Name, normalized)))
-                        {
-                            nestedMatches = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (activityMatches || nestedMatches)
-                {
-                    matches.Add(item);
-                }
+                matches.Add(item);
             }
         }
 
         return matches;
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="obj"/> (or any content object it embeds, at any nesting depth)
+    /// has a <c>content</c> or <c>name</c> that contains <paramref name="query"/> as a substring
+    /// (case-insensitive).
+    /// </summary>
+    /// <remarks>
+    /// S96: the match recurses through nested activities, not just one level. A community post delivered
+    /// from a remote instance arrives nested (an <c>Announce</c> whose <c>object</c> is a <c>Create</c>
+    /// whose <c>object</c> is the actual <c>Page</c>/note), so the post's content sits TWO levels deep.
+    /// A single-level match (the pre-S96 behavior) only inspected the item itself and one referenced
+    /// object — it saw the <c>Announce</c> and the empty <c>Create</c>, never the <c>Page</c> — and dropped
+    /// the post from a query-filtered feed (so cross-instance search for a token in a nested post returned
+    /// nothing). Recursing reaches the embedded content object at any depth, mirroring the recursive
+    /// unwrap in <c>GlobalSearchService.UnwrapContentObject</c>.
+    /// </remarks>
+    private static bool MatchesQueryAtAnyDepth(IObject obj, string query)
+    {
+        if (ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query))
+        {
+            return true;
+        }
+
+        if (obj is Activity activity)
+        {
+            foreach (var referenced in activity.Object ?? [])
+            {
+                if (referenced is IObject refObj && MatchesQueryAtAnyDepth(refObj, query))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
