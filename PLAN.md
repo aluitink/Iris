@@ -11,11 +11,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S94 | OPEN | - | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply
-S95 | OPEN-QA | dev1 | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404
 S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
 
 ## CLOSED
 
+S95 | CLOSED | qa | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404 — PASS: live qa-iris-a 404->"No account found on host", 502->"Could not reach", real acct resolves; 0 unexpected console errors
 S93 | CLOSED | dev1 | Like/Boost btns ignore existing state on load; re-click duplicates Like/Announce — FIXED (EngagementBar): server renders iris:isLiked/isShared ONLY when true (false omitted), so GetIsLiked/GetIsShared are 'true' or null(absent); old fast path treated null as 'not liked', so a fresh nav to the object page within the doc cache TTL (max-age=60) after a like/boost served the stale pre-like doc -> 0/unpressed btn + duplicate Like/Announce on re-click. Now when signed in and either per-requester state is absent, the bar re-derives the viewer's net like/boost (+minted ids) from the authoritative /likes+/shares collections (shared per-object engagement cache), keeping the cacheable counts; both-present or signed-out uses them directly. Live dev1: s93b liked s93a's post, fresh nav -> Like btn pressed/count 1 (was 0/unpressed); re-click UN-likes (1->0, no dup); Boost btn pressed on fresh nav; 0 console errors. Needs fresh WASM bundle (browser cache)
 S92 | CLOSED | dev2 | Lemmy interop: iris user follows lemmy community; posts reach iris home feed — ALREADY WORKS (no code change): live dev2, logged-in s87clean followed Lemmy community /c/s92interop via /actor?iri= Follow btn (Edges Kind 10+11 recorded); Lemmy post /post/1 ("S92 test post / hello from lemmy for S92 iris interop", author lemmyadmin, boosted-by s92interop) surfaces in iris home feed BOTH merged (Posts) + Communities tabs. Post reaches feed via signed live outbox walk (FetchRemoteOutboxAsync); no inbox Create stored (Lemmy delivers community post as Announce). Screenshot s92-homefeed-lemmy-post.png
 S90 | CLOSED | qa | Mark edited posts: show "edited" label on objects that were updated via Update — PASS: live qa-iris-a 6 edited posts render "edited {time}" (was "updated"), fresh WASM bundle, 0 console errors
@@ -40,7 +40,6 @@ S71 | CLOSED | qa | community ns#followersCount reads Follow not CommunityFollow
 S66 | CLOSED | qa | federated boost count wrong on receiving instance — NOT REPRODUCED: qa live B-boost of A note shows ns#sharedCount=1 on home A (count correct; likely misread of top-level vs ns# key)
 S70 | CLOSED | qa | note edit not federated: shared inbox dropped Update (owner remote) + audience was collection (fix: fan out to local followers + merge followers into cc) — PASS: 12/12 shared inbox tests + live dev1 verification
 S69 | CLOSED | qa | direct note not federated via UI /outbox (fix: local inbox leg + Note type preservation) — PASS: 3/3 S69 tests + live direct note post (HTTP 202) on qa stack
-S68 | CLOSED | qa | poll not stored locally on remote (IRI 404; no vote UI) — PASS: attributedTo rewrite fix verified live on qa stack
 
 
 
