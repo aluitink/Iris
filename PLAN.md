@@ -13,7 +13,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S124 | OPEN | - | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
+S124 | OPEN | agent-a | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
 ## CLOSED
 
 S121 | CLOSED | qa | Media alt text: render author alt on img (gallery+lightbox) — PASS: live qa-iris-a (wasm t1q33tso4m) s116snd profile shows S118 post with img alt="S118-QA-ALT-TEXT-TEST: A red circle on a blue field" (author alt, not filename); 0 console errors
