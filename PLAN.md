@@ -15,6 +15,7 @@ S118 | OPEN-QA | dev2 | Media alt text: compose lets you set alt text on image a
 
 ## OPEN
 
+S119 | OPEN | - | Send a DM from a profile: "Message" button on ActorDetail/Profile (next to Follow) deep-links to /compose?dmTo=<actorIri>; compose reads the dmTo param, forces Direct visibility, seeds content with "@handle " so the recipient lands in `to` (BuildAudience direct path) — mirrors Mastodon "Message" / Lemmy "Send message"; Messages inbox empty state gets a "Start a conversation" link to /directory to pick someone
 ## CLOSED
 
 S117 | CLOSED | qa | Mention autocomplete: @ in compose shows matching accounts — PASS: live qa-iris-a (wasm q165eix1rz) type @s117 -> popover "s117target | S117 Target Name", click -> "@s117target" in DOM + popover closed; hashtag #s117 accept still works; post persisted w/ mention link; 0 console errors
