@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S85 | OPEN | - | Notifications page never refreshes while open: reload on UnreadCountChanged
+S85 | OPEN-QA | dev2 | Notifications page never refreshes while open: reload on UnreadCountChanged (live dev2: s85b follow → s85a page stayed "No notifications yet" while API showed 1/unread=1; fix re-fetches list on UnreadCountChanged; 2499/2499 tests green)
 
 ## NEW
 
