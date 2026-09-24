@@ -16,7 +16,13 @@ namespace Iris.Core.Compose;
 /// <param name="ContentType">The stored media's <c>Content-Type</c> (e.g. <c>image/png</c>,
 /// <c>video/mp4</c>) — set as the attachment's <c>mediaType</c>.</param>
 /// <param name="FileName">The uploaded file's original name — set as the attachment's <c>name</c>.</param>
-public sealed record MediaAttachment(Iri MediaIri, string ContentType, string? FileName);
+/// <param name="AltText">
+/// Optional descriptive alternative text for an image attachment (the ActivityStreams <c>alt</c> term —
+/// an accessibility convention Mastodon/Pleroma/Lemmy expose in their compose UIs). Set only on an
+/// <see cref="Image"/> attachment via its <c>ExtensionData</c> (the library does not model <c>alt</c> as a
+/// property); ignored (not set) when null/whitespace or on a non-image attachment.
+/// </param>
+public sealed record MediaAttachment(Iri MediaIri, string ContentType, string? FileName, string? AltText = null);
 
 /// <summary>
 /// Builds an authored <see cref="Note"/> from raw authoring inputs (22.3 US-11: a note with optional
@@ -278,6 +284,7 @@ public static class ComposeNote
                 MediaType = entry.ContentType,
             };
             SetAttachmentName(image, entry.FileName);
+            SetAttachmentAlt(image, entry.AltText);
             return image;
         }
 
@@ -302,6 +309,22 @@ public static class ComposeNote
         if (fileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(fileName))
         {
             attachment.Name = [fileName];
+        }
+    }
+
+    /// <summary>
+    /// Sets an image attachment's <c>alt</c> (alternative text, the accessibility convention) from
+    /// <paramref name="altText"/>, leaving it unset (null) when the text is null or whitespace (a blank
+    /// alt yields no <c>alt</c> entry on the wire). Written into <c>ExtensionData</c> because the
+    /// ActivityStreams library does not model <c>alt</c> as a property (Rule 6 — the same representation
+    /// used for <c>sensitive</c> and <c>source</c> above).
+    /// </summary>
+    private static void SetAttachmentAlt(ActivityObject attachment, string? altText)
+    {
+        if (altText is { Length: > 0 } && !string.IsNullOrWhiteSpace(altText))
+        {
+            attachment.ExtensionData ??= new Dictionary<string, JsonElement>();
+            attachment.ExtensionData["alt"] = JsonSerializer.SerializeToElement(altText);
         }
     }
 }

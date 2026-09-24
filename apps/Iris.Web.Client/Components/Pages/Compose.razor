@@ -88,8 +88,21 @@
             {
                 var index = i;
                 <div class="compose-attach-item">
-                    <span class="compose-attach-name">@Attachments[index].Name</span>
-                    <button type="button" class="compose-attach-remove" aria-label="Remove attachment" @onclick="() => RemoveAttachment(index)" disabled="@Busy">✕</button>
+                    <div class="compose-attach-row">
+                        <span class="compose-attach-name">@Attachments[index].Name</span>
+                        <button type="button" class="compose-attach-remove" aria-label="Remove attachment" @onclick="() => RemoveAttachment(index)" disabled="@Busy">✕</button>
+                    </div>
+                    @if (IsImageAttachment(index))
+                    {
+                        <label class="compose-attach-alt">
+                            <span class="compose-attach-alt-label">Alt text</span>
+                            <input class="compose-attach-alt-input" type="text"
+                                   value="@(index < AttachmentAltText.Count ? AttachmentAltText[index] : string.Empty)"
+                                   @oninput="e => OnAltTextInput(index, e)"
+                                   placeholder="Describe this image for screen readers"
+                                   maxlength="500" disabled="@Busy" />
+                        </label>
+                    }
                 </div>
             }
         </div>
@@ -1230,6 +1243,13 @@
     private List<IBrowserFile> Attachments { get; set; } = [];
 
     /// <summary>
+    /// The per-attachment alternative text (the accessibility <c>alt</c> for images), held parallel to
+    /// <see cref="Attachments"/> by index. Only image attachments expose an input; non-image entries stay
+    /// null/empty. Cleared in lockstep with <see cref="Attachments"/> on add, remove, and post.
+    /// </summary>
+    private List<string> AttachmentAltText { get; set; } = [];
+
+    /// <summary>
     /// The maximum attachment size accepted per file (10 MiB — matches the server's upload cap); an
     /// oversized file is rejected by the server with <c>413</c>.
     /// </summary>
@@ -1278,6 +1298,7 @@
             }
 
             Attachments.Add(file);
+            AttachmentAltText.Add(string.Empty);
         }
     }
 
@@ -1289,7 +1310,35 @@
         if (index >= 0 && index < Attachments.Count)
         {
             Attachments.RemoveAt(index);
+            if (index < AttachmentAltText.Count)
+            {
+                AttachmentAltText.RemoveAt(index);
+            }
         }
+    }
+
+    /// <summary>
+    /// Whether the attachment at <paramref name="index"/> is an image (its <c>type</c> starts with
+    /// <c>image/</c>) — only images expose an alt-text input (alt text is an image-accessibility
+    /// convention; video/audio/document carry no alt).
+    /// </summary>
+    private bool IsImageAttachment(int index)
+        => index >= 0 && index < Attachments.Count
+           && Attachments[index].ContentType is { Length: > 0 } t
+           && t.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Records the alt text typed for the attachment at <paramref name="index"/> (the accessibility
+    /// <c>alt</c> serialized onto the image attachment at post time).
+    /// </summary>
+    private void OnAltTextInput(int index, Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        if (index < 0 || index >= AttachmentAltText.Count)
+        {
+            return;
+        }
+
+        AttachmentAltText[index] = e.Value?.ToString() ?? string.Empty;
     }
 
     /// <summary>
@@ -1379,12 +1428,19 @@
             // attachment. An upload that fails (null result) is skipped — the remaining files still
             // attach (a single flaky upload does not drop the whole post's media).
             var media = new List<MediaAttachment>();
-            foreach (var file in Attachments.Where(f => f.Size > 0))
+            for (var i = 0; i < Attachments.Count; i++)
             {
+                var file = Attachments[i];
+                if (file.Size <= 0)
+                {
+                    continue;
+                }
+
                 var uploaded = await UploadAttachmentAsync(actorId, file);
                 if (uploaded is not null)
                 {
-                    media.Add(new MediaAttachment(uploaded.MediaIri, uploaded.ContentType, uploaded.FileName));
+                    var altText = i < AttachmentAltText.Count ? AttachmentAltText[i] : null;
+                    media.Add(new MediaAttachment(uploaded.MediaIri, uploaded.ContentType, uploaded.FileName, altText));
                 }
             }
 
@@ -1463,6 +1519,7 @@
                 IsSensitive = false;
                 SensitiveSummary = string.Empty;
                 Attachments = [];
+                AttachmentAltText = [];
                 PollQuestion = string.Empty;
                 PollOptions = ["", ""];
                 PollDurationMinutes = 1440;
@@ -1790,6 +1847,11 @@
                 if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
                 {
                     image.Name = [m.FileName];
+                }
+                if (m.AltText is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.AltText))
+                {
+                    image.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    image.ExtensionData["alt"] = System.Text.Json.JsonSerializer.SerializeToElement(m.AltText);
                 }
                 attachments.Add(image);
             }

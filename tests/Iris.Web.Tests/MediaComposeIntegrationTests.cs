@@ -138,6 +138,59 @@ public sealed class MediaComposeIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task NoteWithMediaAndAltText_CarriesAltInPublicDocument()
+    {
+        var media = await UploadAsync();
+        var client = BuildSignedClient(_actorIri, _actorKey);
+        var note = ComposeNote.Build(
+            _actorIri,
+            "A picture with alt text",
+            to: [Public],
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName, "A red circle on a blue field")]);
+
+        var result = await client.PostNoteAsync(_actorIri, note);
+        Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
+
+        var (objectIri, _) = await FindCreatedNoteAsync("A picture with alt text");
+        Assert.NotNull(objectIri);
+
+        var http = _server.CreateClient();
+        var response = await http.GetAsync(objectIri!.ToString());
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+
+        // The public document's Image attachment carries the author-supplied alt text (S118).
+        Assert.Contains("\"alt\":\"A red circle on a blue field\"", json);
+    }
+
+    [Fact]
+    public async Task NoteWithMediaAndBlankAltText_CarriesNoAltInPublicDocument()
+    {
+        var media = await UploadAsync();
+        var client = BuildSignedClient(_actorIri, _actorKey);
+        var note = ComposeNote.Build(
+            _actorIri,
+            "A picture without alt text",
+            to: [Public],
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName, "   ")]);
+
+        var result = await client.PostNoteAsync(_actorIri, note);
+        Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
+
+        var (objectIri, _) = await FindCreatedNoteAsync("A picture without alt text");
+        Assert.NotNull(objectIri);
+
+        var http = _server.CreateClient();
+        var response = await http.GetAsync(objectIri!.ToString());
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync();
+
+        // A blank alt is dropped (no `alt` entry on the wire) — the image still carries its mediaType.
+        Assert.DoesNotContain("\"alt\"", json);
+        Assert.Contains("\"mediaType\":\"image/png\"", json);
+    }
+
+    [Fact]
     public async Task NoteWithoutMedia_HasNoAttachment()
     {
         var client = BuildSignedClient(_actorIri, _actorKey);
