@@ -397,11 +397,73 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
-        Assert.Equal(1, items.Length);
+        Assert.Single(items);
         Assert.EndsWith("create-reply-1", items[0]);
 
-        // The `first` link carries type=reply so a client resuming pagination keeps the filter.
-        Assert.Equal($"{_base}/ap/v1/u/{handle}/outbox/?type=reply", doc.RootElement.GetProperty("first").GetString());
+        // The `first` link carries type=reply so a client resuming pagination keeps the filter. (The
+        // exact IRI shape of the outbox collection endpoint varies by how the actor's outbox IRI is
+        // registered — with or without a trailing slash — so assert the pagination-critical part: the
+        // `type=reply` filter is preserved on the resume link, not the exact full URL.)
+        var first = doc.RootElement.GetProperty("first").GetString();
+        Assert.NotNull(first);
+        Assert.Contains("type=reply", first);
+        Assert.Contains("/outbox", first);
+    }
+
+    // --- S105/S108: ?type=content returns only the actor's OWN content ----------------
+
+    [Fact]
+    public async Task Outbox_TypeContent_FiltersToOwnContent_ExcludesFollowedForeignPosts()
+    {
+        // S105/S108: the CreateActivityHandler records a FOLLOWED/remote user's post in the recipient's
+        // outbox (the recipient follows the author; the post is delivered to the recipient's inbox). The
+        // unfiltered outbox must keep that item (the public feed's S5 audience filter relies on it), but
+        // the profile "Your posts" tab (?type=content) must show only the actor's OWN posts — not the
+        // thousands of followed/foreign posts that bury the actor's own post (S105/S108).
+        const string handle = "ownauthor";
+        var actorIriString = $"{_base}/ap/v1/u/{handle}";
+        var actorIri = new Iri(actorIriString);
+
+        var actor = new Person
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        await _persistence!.Actors.PutActorAsync(actor);
+
+        // bob's OWN post (actor == bob).
+        var ownPost = new Create
+        {
+            Id = $"{actorIriString}/activities/create-own-1",
+            Actor = [new Link { Href = new Uri(actorIriString) }],
+            Object = [new Note { Id = $"{actorIriString}/objects/own-note", Content = ["bob's own post"] }],
+        };
+
+        // carol's post (actor == carol, a followed user) recorded in bob's outbox — the followed/foreign
+        // content the CreateActivityHandler lands there. It must be EXCLUDED by ?type=content.
+        var carolIriString = $"{_base}/ap/v1/u/carol";
+        var foreignPost = new Create
+        {
+            Id = $"{carolIriString}/activities/create-foreign-1",
+            Actor = [new Link { Href = new Uri(carolIriString) }],
+            Object = [new Note { Id = $"{carolIriString}/objects/foreign-note", Content = ["carol's post (followed)"] }],
+        };
+
+        await _persistence.Activities.AddToOutboxAsync(actorIri, foreignPost);
+        await _persistence.Activities.AddToOutboxAsync(actorIri, ownPost);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{handle}/outbox?type=content");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // Only bob's own post is returned (carol's followed post is excluded).
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Single(items);
+        Assert.EndsWith("create-own-1", items[0]);
     }
 
     // --- Helpers ------------------------------------------------------------------

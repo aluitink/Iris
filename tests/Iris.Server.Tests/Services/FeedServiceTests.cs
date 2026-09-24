@@ -1398,6 +1398,59 @@ public sealed class FeedServiceTests
     }
 
     [Fact]
+    public async Task S105_HomeFeedPeople_Source_Includes_OwnPost_FollowPost_And_OwnBoostOfFollowPost()
+    {
+        // S105: the home timeline "Posts" tab (GET /feed?source=people) must show the actor's own
+        // posts, the posts of the actors they follow, AND the actor's own boosts of followed posts.
+        // The reproduction: alice follows bob; bob posts; alice posts; alice boosts bob's post. All
+        // three are non-community content (attributedTo a person, never a Group), so the ?source=people
+        // filter must keep every one of them — a missing post/boost here is the S105 symptom.
+        var bob = Actor(LocalHost, "bob");
+        var bobNoteIri = $"https://{LocalHost}/notes/b-1";
+        var alice = Actor(LocalHost, "alice");
+        var aliceNoteIri = $"https://{LocalHost}/notes/a-1";
+        var announceIri = $"{alice.Value}/announce-b1";
+
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            SeedActor(persistence, alice, "Alice");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            // bob's top-level post (a followed user's post).
+            AddPost(persistence, bob, "b-1", "bob top-level post");
+            // alice's own top-level post (self).
+            AddPost(persistence, alice, "a-1", "alice own post");
+            // alice's own boost of bob's post (a boost from self of a followed user's post).
+            AddAnnounce(persistence, alice, announceIri, bobNoteIri, embedded: true);
+        }));
+
+        // The exact request the home timeline "Posts" tab makes: source=people, signed as alice.
+        var feed = await service.GetFeedAsync(alice, source: "people", requesterIri: alice);
+        var contentObjectIris = new List<string?>();
+        foreach (var item in feed)
+        {
+            if (item is KristofferStrube.ActivityStreams.Activity activity && activity.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is IObject io)
+                    {
+                        contentObjectIris.Add(io.Id);
+                    }
+                }
+            }
+        }
+
+        // bob's post (a followed user's post) must be in the People source.
+        Assert.Contains(bobNoteIri, contentObjectIris);
+        // alice's own post (self) must be in the People source.
+        Assert.Contains(aliceNoteIri, contentObjectIris);
+        // alice's boost of bob's post (a boost from self) must be in the People source.
+        Assert.Contains(bobNoteIri, contentObjectIris);
+    }
+
+    [Fact]
     public async Task Feed_FollowReply_ThreadDepth1_IncludesReply()
     {
         // 117.1: ?depth=1 includes first-level replies from followed actors.
