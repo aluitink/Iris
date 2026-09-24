@@ -11,9 +11,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 
 S103 | OPEN-QA | dev2 | Profile banner image upload — FIXED (9e4e1402): EditProfileForm banner section + Profile sets AS image; server merges image (set/clear); live dev2 s103banner upload persisted + rendered, remove cleared; 0 console errors, suite 0 failed
+S104 | OPEN-QA | dev2 | Profile tabs — Replies tab empty for users whose replies sit past PagedCollection's 3-page top-up cap (read UNFILTERED outbox). FIXED: server ?type=reply outbox filter (ContentItems.IsContentReply) + client RepliesIri=outbox?type=reply; live dev2 s103banner posted+replied -> Replies tab shows the reply (In reply to original), ?type=reply totalItems=1 (excludes top post), Posts tab unchanged; 0 console errors, suite 0 failed
 ## OPEN
 
-S104 | OPEN | - | Profile, not all tabs show proper content
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
 S106 | OPEN | - | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
 ## CLOSED

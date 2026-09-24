@@ -83,7 +83,7 @@ else
         <div role="tabpanel" id="panel-replies" aria-labelledby="tab-replies">
         <PagedCollection
             Client="@OutboxClient"
-            CollectionIri="@OutboxIri"
+            CollectionIri="@RepliesIri"
             PageSize="10"
             ShowRefreshButton="true"
             ItemFilter="IsReply"
@@ -287,6 +287,17 @@ else
     private Iri? PostsIri
         => Session.ActorId is { } actor ? new Iri($"{actor.OutboxOf().Value}?type=content") : null;
 
+    /// <summary>
+    /// S104: the "Replies" tab requests the outbox with <c>?type=reply</c> so the server serves only
+    /// the user's own replies. Without this the tab read the UNFILTERED outbox (PageSize 10) and
+    /// filtered client-side; for a user whose outbox has more than a few pages of social activities
+    /// before any reply, PagedCollection's filtered top-up (capped at 3 extra pages) never reaches the
+    /// replies and the tab wrongly shows "No replies to your posts yet." Mirrors the S78 <c>?type=content</c>
+    /// fix for the "Your posts" tab.
+    /// </summary>
+    private Iri? RepliesIri
+        => Session.ActorId is { } actor ? new Iri($"{actor.OutboxOf().Value}?type=reply") : null;
+
     private Iri? InboxIri
         => Session.ActorId is { } actor ? actor.InboxOf() : null;
 
@@ -311,27 +322,13 @@ else
     /// the user's own author — not just "is a reply" — is what keeps other people's replies out of the
     /// Replies tab (93.3).
     /// </summary>
-    private bool IsReply(IObjectOrLink item)
-    {
-        if (item is not Activity activity)
-        {
-            return false;
-        }
-
-        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
-        if (type != "Create")
-        {
-            return false;
-        }
-
-        var embedded = activity.Object?.FirstOrDefault() as IObject;
-        if (embedded?.InReplyTo?.Any() != true)
-        {
-            return false;
-        }
-
-        return OutboxFilter.IsOwnContentItem(item, Session.ActorId);
-    }
+    /// <summary>
+    /// S104: filters the (already reply-scoped) outbox to the signed-in user's <em>own</em> replies.
+    /// The tab now requests <c>?type=reply</c> (see <see cref="RepliesIri"/>) so the server serves only
+    /// content replies; this author-scoped check keeps a mirrored remote reply (authored by another
+    /// actor) out of the tab. Delegates to the shared <see cref="OutboxFilter.IsOwnContentReply"/>.
+    /// </summary>
+    private bool IsReply(IObjectOrLink item) => OutboxFilter.IsOwnContentReply(item, Session.ActorId);
 
     /// <summary>
     /// Filters the outbox to the signed-in user's **own** content items: a <c>Create</c> of a

@@ -10323,11 +10323,15 @@ public static class ActivityPubServerExtensions
         // Delete) and mirrored remote content buries the user's own posts deep in the collection, and the
         // client's PagedCollection top-up (capped at 3 extra pages) never reaches them — the "Your posts"
         // tab renders empty even though the outbox has hundreds of items. The client's Profile.razor "Your
-        // posts" tab now requests ?type=content so the server serves only the relevant items.
+        // posts" tab now requests ?type=content so the server serves only the relevant items. S104: the
+        // same gap existed for the "Replies" tab, which filtered the UNFILTERED outbox client-side; ?type=reply
+        // now serves only the user's own replies so that tab need not page through the whole outbox.
         var contentType = context.Request.Query["type"].ToString();
-        if (collectionName == "outbox" && contentType == "content")
+        if (collectionName == "outbox" && contentType is "content" or "reply")
         {
-            items = items.Where(OutboxItemIsContent).ToList();
+            items = items
+                .Where(item => contentType == "content" ? OutboxItemIsContent(item) : OutboxItemIsReply(item))
+                .ToList();
         }
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
@@ -10335,12 +10339,12 @@ public static class ActivityPubServerExtensions
         var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{actorIri}/{collectionName}");
-        // S78: include the type filter in the cache key so filtered and unfiltered pages are cached
-        // separately (a ?type=content page and an unfiltered page are different documents).
-        var cacheKeyIri = collectionName == "outbox" && contentType == "content"
+        // S78/S104: include the type filter in the cache key so filtered and unfiltered pages are cached
+        // separately (a ?type=content or ?type=reply page and an unfiltered page are different documents).
+        var cacheKeyIri = collectionName == "outbox" && contentType is "content" or "reply"
             ? (page == 1
-                ? new Iri($"{collectionIri.Value}/?type=content")
-                : new Iri($"{collectionIri.Value}/?page={page}&type=content"))
+                ? new Iri($"{collectionIri.Value}/?type={contentType}")
+                : new Iri($"{collectionIri.Value}/?page={page}&type={contentType}"))
             : (page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}"));
 
         // Read (or render on a miss) through the local collection-page response cache. For the outbox,
@@ -10365,7 +10369,7 @@ public static class ActivityPubServerExtensions
                     itemsToRender,
                     supportsRefresh: true,
                     namespaceIri: ns,
-                    extraQuery: collectionName == "outbox" && contentType == "content" ? "type=content" : null);
+                    extraQuery: collectionName == "outbox" && contentType is "content" or "reply" ? $"type={contentType}" : null);
             },
             ct).ConfigureAwait(false);
 
@@ -12750,8 +12754,17 @@ public static class ActivityPubServerExtensions
     /// single shared <see cref="ContentItems.IsContentPost"/> so the content-type set (Note, Article,
     /// Page, Question) stays in one place with the client and the post counter.
     /// </summary>
-    private static bool OutboxItemIsContent(IObjectOrLink item)
-        => ContentItems.IsContentPost(item);
+        private static bool OutboxItemIsContent(IObjectOrLink item)
+            => ContentItems.IsContentPost(item);
+
+        /// <summary>
+        /// S104: whether an outbox item is a reply (a <c>Create</c> of a content object with an
+        /// <c>inReplyTo</c>), used by the <c>?type=reply</c> outbox filter so the profile "Replies" tab
+        /// receives only the items it renders. Delegates to the shared
+        /// <see cref="ContentItems.IsContentReply"/> so the reply classification lives in one place.
+        /// </summary>
+        private static bool OutboxItemIsReply(IObjectOrLink item)
+            => ContentItems.IsContentReply(item);
 
     /// <summary>
     /// Parses a <c>?limit</c> query value into a bounded page size (default

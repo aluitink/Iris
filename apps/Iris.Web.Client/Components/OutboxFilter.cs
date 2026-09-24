@@ -58,6 +58,44 @@ internal static class OutboxFilter
     }
 
     /// <summary>
+    /// Whether an outbox item is a content <em>reply</em> (a <c>Create</c> of a Note/Article/Page/
+    /// Question with an <c>inReplyTo</c>) authored by a specific actor — the profile "Replies" tab
+    /// (S104). The server now serves these via <c>?type=reply</c> (so the tab need not page through the
+    /// whole outbox); this author-scoped check is the client-side counterpart that keeps the tab
+    /// showing the user's own replies (a bare content check would also surface mirrored remote replies).
+    /// When <paramref name="authorIri"/> is <c>null</c> the author check is skipped.
+    /// </summary>
+    public static bool IsOwnContentReply(IObjectOrLink item, Iri? authorIri)
+    {
+        if (!IsContentReply(item))
+        {
+            return false;
+        }
+
+        if (authorIri is null)
+        {
+            return true;
+        }
+
+        if (item is not Activity activity)
+        {
+            return false;
+        }
+
+        var actorId = ResolveActorIri(activity.Actor);
+        var expected = authorIri.ToLibraryId();
+        return string.Equals(actorId, expected, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether an outbox item is a content reply (a <c>Create</c> of a Note/Article/Page/Question with an
+    /// <c>inReplyTo</c>). Delegates to the shared <see cref="ContentItems.IsContentReply"/> so the reply
+    /// set cannot drift from the server's <c>?type=reply</c> filter.
+    /// </summary>
+    public static bool IsContentReply(IObjectOrLink item)
+        => ContentItems.IsContentReply(item);
+
+    /// <summary>
     /// Resolves the IRI of the first resolvable actor reference in an ActivityStreams actor
     /// collection. An <c>actor</c> on a wire activity is a bare IRI string (a <see cref="ILink"/>)
     /// in the common case — e.g. Iris's own server emits <c>"actor": "https://…/u/andrew"</c> — but

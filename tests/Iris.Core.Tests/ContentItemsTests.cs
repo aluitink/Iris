@@ -59,6 +59,48 @@ public class ContentItemsTests
         Assert.False(ContentItems.IsContentPost(new Like { Actor = [new Link { Href = new Uri("https://a.test/u/a") }], Object = [new Link { Href = new Uri("https://a.test/n/1") }] }));
     }
 
+    [Theory]
+    [InlineData("note")]
+    [InlineData("article")]
+    [InlineData("page")]
+    [InlineData("question")]
+    public void CreateOfContentReply_IsContentReply(string kind)
+    {
+        var obj = ContentObject(kind) as IObject;
+        obj!.InReplyTo = [new Link { Href = new Uri("https://a.test/n/parent") }];
+        var create = CreateOf(obj);
+
+        Assert.True(ContentItems.IsContentReply(create));
+    }
+
+    [Fact]
+    public void CreateOfTopLevelPost_IsNotContentReply()
+    {
+        // A plain (non-reply) post is not a reply even though it is a content post.
+        var create = CreateOf(ContentObject("note"));
+
+        Assert.True(ContentItems.IsContentPost(create));
+        Assert.False(ContentItems.IsContentReply(create));
+    }
+
+    [Fact]
+    public void AnnounceOfReply_IsNotContentReply()
+    {
+        // Boosting someone else's reply is a boost (content post), not a reply the user authored.
+        var reply = new Note { InReplyTo = [new Link { Href = new Uri("https://a.test/n/parent") }] };
+        var announce = new Announce { Object = [reply] };
+
+        Assert.True(ContentItems.IsContentPost(announce));
+        Assert.False(ContentItems.IsContentReply(announce));
+    }
+
+    [Fact]
+    public void SocialActivities_AreNotContentReplies()
+    {
+        Assert.False(ContentItems.IsContentReply(new Like { Actor = [new Link { Href = new Uri("https://a.test/u/a") }], Object = [new Link { Href = new Uri("https://a.test/n/1") }] }));
+        Assert.False(ContentItems.IsContentReply(new Follow { Actor = [new Link { Href = new Uri("https://a.test/u/a") }], Object = [new Link { Href = new Uri("https://a.test/u/b") }] }));
+    }
+
     private static IObjectOrLink ContentObject(string kind) => kind switch
     {
         "note" => new Note { Content = ["hello"] },

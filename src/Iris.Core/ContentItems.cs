@@ -50,6 +50,35 @@ public static class ContentItems
         return item is IObject bare && IsContentObject(bare);
     }
 
+    /// <summary>
+    /// Whether an outbox item is a <c>Create</c> of a content object that is a <em>reply</em> — i.e.
+    /// the created object carries an <c>inReplyTo</c>. Used by the profile "Replies" tab (S104) via the
+    /// server's <c>?type=reply</c> outbox filter so the tab receives only the user's own replies and
+    /// does not have to page through the entire (mixed, social-activity-dominated) outbox to find them.
+    /// An <c>Announce</c> of a reply is still a boost (not a reply the user authored), so it returns
+    /// <c>false</c>; a bare reply object (a server that publishes the object unwrapped) is accepted.
+    /// </summary>
+    public static bool IsContentReply(IObjectOrLink item)
+    {
+        if (item is Create create && create.Object is { } objects)
+        {
+            foreach (var reference in objects)
+            {
+                if (reference is IObject obj && IsContentObject(obj) && HasInReplyTo(obj))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return item is IObject bare && IsContentObject(bare) && HasInReplyTo(bare);
+    }
+
+    private static bool HasInReplyTo(IObject obj)
+        => obj.InReplyTo is { } inReplyTo && inReplyTo.Any();
+
     private static bool IsContentObject(IObject obj)
         => obj is Note or Article or Page or Question;
 }

@@ -348,6 +348,62 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
+    // --- S104: ?type=reply filters the outbox to the user's own replies -------------
+
+    [Fact]
+    public async Task Outbox_TypeReply_FiltersToRepliesOnly()
+    {
+        // Seed a new actor with one top-level post and one reply (a Create of a Note with inReplyTo).
+        // ?type=reply must return only the reply (totalItems 1), and the page IRIs must carry the
+        // type=reply parameter so subsequent pages preserve the filter — the same contract ?type=content
+        // gives the "Your posts" tab, now extended so the "Replies" tab need not page the whole outbox.
+        const string handle = "replyauthor";
+        var actorIriString = $"{_base}/ap/v1/u/{handle}";
+        var actorIri = new Iri(actorIriString);
+
+        var actor = new Person
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        await _persistence!.Actors.PutActorAsync(actor);
+
+        var topPost = new Create
+        {
+            Id = $"{actorIriString}/activities/create-post-1",
+            Actor = [new Link { Href = new Uri(actorIriString) }],
+            Object = [new Note { Id = $"{actorIriString}/objects/note-post", Content = ["a top-level post"] }],
+        };
+        var reply = new Create
+        {
+            Id = $"{actorIriString}/activities/create-reply-1",
+            Actor = [new Link { Href = new Uri(actorIriString) }],
+            Object = [new Note
+            {
+                Id = $"{actorIriString}/objects/note-reply",
+                Content = ["a reply"],
+                InReplyTo = [new Link { Href = new Uri($"{actorIriString}/objects/note-post") }],
+            }],
+        };
+        await _persistence.Activities.AddToOutboxAsync(actorIri, topPost);
+        await _persistence.Activities.AddToOutboxAsync(actorIri, reply);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{handle}/outbox?type=reply");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(1, items.Length);
+        Assert.EndsWith("create-reply-1", items[0]);
+
+        // The `first` link carries type=reply so a client resuming pagination keeps the filter.
+        Assert.Equal($"{_base}/ap/v1/u/{handle}/outbox/?type=reply", doc.RootElement.GetProperty("first").GetString());
+    }
+
     // --- Helpers ------------------------------------------------------------------
 
     /// <summary>
