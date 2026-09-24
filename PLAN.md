@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 S89 | OPEN | - | Post edit persists; signed GET serves stale pre-edit content (object+profile)
 
 ## CLOSED
 
+S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) — NOT REPRODUCED: live dev2 (post-S83 build) fresh acct s87clean UI-only (type bio+click checkbox+Save) → POST /ap/v1/u/s87clean/outbox 202 Update{type:Person,bio,icon:[]}, server GET confirms summary+manuallyApprovesFollowers persisted; s87repro acct same; both /profile button + ?edit=true deep-link paths work; form prefills on fresh load. Save DOES call API + persist; no repro, no code change
 S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
