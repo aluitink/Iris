@@ -1393,9 +1393,11 @@
             var hashtags = DetectHashtags(rawContent);
             var mentionArg = mentions.Count > 0 ? mentions : null;
             var hashtagArg = hashtags.Count > 0 ? hashtags : null;
-            // A hashtag tag's href points at this instance's hashtag search (so a reader's tap on the
-            // hashtag lands on the instance's search results for that tag).
-            Func<string, string?> hashtagHref = name => $"{new Uri(actorId.Value).GetLeftPart(UriPartial.Authority)}/search?q={Uri.EscapeDataString(name)}";
+            // A hashtag tag's href points at this instance's hashtag timeline (the relative /tag/{name}
+            // Blazor route), so a reader's tap on the hashtag lands on the dedicated page that lists this
+            // instance's posts carrying that tag. The name keeps its leading '#' (the route param
+            // normalizes it back), and is URI-escaped so a tag with unusual characters round-trips cleanly.
+            Func<string, string?> hashtagHref = name => $"/tag/{Uri.EscapeDataString(name)}";
 
             // 73.3: the audience the chosen visibility maps to (public / followers / direct). Replies and
             // community posts ignore this (a reply stays public; a community post's audience is the

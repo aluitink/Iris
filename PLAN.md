@@ -10,9 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S115 | OPEN-QA | dev2 | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts with that tag — DONE (TagTimeline.razor @page /tag/{Tag} content-only Note search + empty/error states; MentionLinkify.LinkifyPlain hashtag href -> relative /tag/{name}; Compose bake-time hashtagHref -> /tag/{name}); live dev2: new post's #s115tag2 href=/tag/%23s115tag2, /tag/%23s115tag2 renders "1 post(s)" + the post, /tag/emptytag123 shows "No posts… yet", 0 console errors; MentionLinkifyTests 13/13
+
 ## OPEN
 
-S115 | OPEN | - | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts with that tag
 S116 | OPEN | - | DM inbox: /messages lists Direct posts you sent/received; add nav link
 S117 | OPEN | - | Mention autocomplete: @ in compose shows matching accounts to pick from
 ## CLOSED
