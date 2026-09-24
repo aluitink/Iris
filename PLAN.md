@@ -10,10 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab — FIXED (S111): added IBookmarkStore (in-memory + file-backed + EF Core over Edges table, new EdgeKind.Bookmark=19, no migration), server endpoints POST/GET /local/v1/u/{handle}/bookmarks, client BookmarkAsync/UnbookmarkAsync/GetBookmarksAsync, EngagementBar bookmark button (toggle), Profile Bookmarks tab (lazy-load list). QA: click bookmark on a post (icon fills), reload page, bookmark persists; Profile > Bookmarks tab lists bookmarked posts; unbookmark removes it.
 
 ## OPEN
 
+S111 | OPEN | - | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab
 S114 | OPEN | - | Edit/Delete own posts from feed card: EngagementBar on ObjectView (feed cards) has Like/Boost/Bookmark/Reply/Copy/Moderation but no Edit or Delete for the author's own posts (these exist only on ObjectDetail page). Add Edit + Delete buttons to the EngagementBar more-options menu when the post author is the current user; Edit navigates to /object?iri=...#edit or opens inline editor, Delete confirms + calls DELETE endpoint.
 ## CLOSED
 
