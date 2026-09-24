@@ -14,6 +14,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## NEW
 
 S82 | NEW | - | community feed renders non-content items (Delete/Follow) as empty post cards
+S83 | NEW | - | Article edit silently fails (Note edit works)
 
 ## CLOSED
 
