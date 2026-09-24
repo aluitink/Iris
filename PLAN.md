@@ -10,13 +10,15 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S118 | OPEN-QA | dev2 | Media alt text: compose lets you set alt text on image attachments; serialized to Image alt — DONE (alt-text input per image attachment in compose; MediaAttachment +AltText; ComposeNote + BuildCommunityAttachments set Image alt via ExtensionData[alt]); tests: NoteWithMediaAndAltText_CarriesAltInPublicDocument (alt round-trips to public doc) + blank-alt-dropped pass; live dev2 compose loads 0 console errors
-
 ## OPEN
 
 S119 | OPEN | - | Send a DM from a profile: "Message" button on ActorDetail/Profile (next to Follow) deep-links to /compose?dmTo=<actorIri>; compose reads the dmTo param, forces Direct visibility, seeds content with "@handle " so the recipient lands in `to` (BuildAudience direct path) — mirrors Mastodon "Message" / Lemmy "Send message"; Messages inbox empty state gets a "Start a conversation" link to /directory to pick someone
 S120 | OPEN | qa | DM inbox: UI-posted Direct messages don't appear in /messages (received or sent). QA FAIL (full round-trip): s116snd posted Direct DM to @s116rcv via UI (Compose→PostNoteAsync, HTTP 202); DM delivered to s116rcv inbox (visible in Notifications as "S116 Snd posted @s116rcv S116-QA-DM-ROUNDTRIP-2") but /messages shows "No messages yet" for s116rcv. ROOT CAUSE: IsDirectMessage (IriExtensions.cs:1181) returns false if cc has ANY audience entry, but Compose.BuildAudience sets cc=author's followers for Direct visibility (Compose.razor:1587), and RewriteOutboundAudienceAsync (ActivityPubServerExtensions.cs:7047) merges followers into the stored note's cc — so UI-posted DMs always have non-empty cc and are excluded. The S116 integration test (MessagesIntegrationTests.cs) passes because it posts with no cc (ComposeNote.Build(bob.Iri, "...", to:[aliceIri]), bob has no followers) — it never exercises the UI path where cc is populated. FIX: IsDirectMessage should treat a note as a DM when to[] contains a non-public/non-followers/non-community actor IRI, regardless of cc contents (cc=followers is a normal Direct convention per Mastodon/Pleroma). Update MessagesIntegrationTests to post a DM with cc populated (e.g. a followers collection or a named actor in cc) to cover the UI path.
+S121 | OPEN | - | Media alt text: UI doesn't render alt on img tag (RichAttachment has no Alt prop; gallery+lightbox use att.Name)
+
 ## CLOSED
+
+S118 | CLOSED | qa | Media alt text: compose lets you set alt text on image attachments; serialized to Image alt — PASS (alt round-trips to public doc; blank alt dropped; 0 console errors)
 
 S117 | CLOSED | qa | Mention autocomplete: @ in compose shows matching accounts — PASS: live qa-iris-a (wasm q165eix1rz) type @s117 -> popover "s117target | S117 Target Name", click -> "@s117target" in DOM + popover closed; hashtag #s117 accept still works; post persisted w/ mention link; 0 console errors
 S115 | CLOSED | qa | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts — PASS: live qa-iris-a (wasm q165eix1rz) #s115qatag href=/tag/%23s115qatag, timeline "1 post(s)" + card, empty tag "No posts… yet", 0 console errors
