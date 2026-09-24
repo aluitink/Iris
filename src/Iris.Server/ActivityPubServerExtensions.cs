@@ -10677,9 +10677,16 @@ public static class ActivityPubServerExtensions
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = new Iri($"{actorIri.Value}/feed");
+        // S102: carry the ?source filter in the page IRIs (first/next/last) so a client that follows
+        // the collection's `first` link (the Iris WASM client's GetCollectionAsync does exactly this)
+        // re-fetches the SAME filtered feed. Without it the `first` link drops ?source, the follow-up
+        // page is served unfiltered (the full merged feed), and the Home Communities tab ends up
+        // showing the user's own personal posts (the Posts-tab content) instead of the followed
+        // communities' content. Absent ?source (the default merged feed) keeps the back-compat shape.
         var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
             supportsRefresh: true, supportsQuery: true, supportsType: true, supportsDepth: true,
-            namespaceIri: ns);
+            namespaceIri: ns,
+            extraQuery: source.Length > 0 ? $"source={source}" : null);
 
         // The feed is served through the server-side per-actor feed cache (30s TTL); a ?refresh=true
         // bypass forces a rebuild. The Cache-Control header tells intermediates the same.
@@ -12510,6 +12517,21 @@ public static class ActivityPubServerExtensions
         // end (AS2.0 `OrderedCollection.last`).
         var lastIri = pageCount > 1 ? PageIri(collectionIri.Value, pageCount, extraQuery) : collectionIri.Value;
 
+        // S102: the `first` link must carry the same query filter the client requested (e.g.
+        // ?source=communities), because the Iris WASM client's GetCollectionAsync follows the
+        // collection's `first` link to fetch the first page — if `first` dropped the filter, the
+        // follow-up read was served UNFILTERED (the full merged feed) and the Home Communities tab
+        // showed the user's own personal posts (the Posts-tab content). It is emitted WITHOUT a
+        // trailing slash ({base}?{extraQuery}, not {base}/?{extraQuery}) so it exactly matches the
+        // collection IRI the client already fetched: the client's fast path
+        // (pageIri.Equals(collectionId) → reuse the fetched document) then applies, so no second
+        // request is issued AND the filter is preserved. (PageIri's page-1 form uses a trailing
+        // slash, which would both break that equality and 404 against the /feed route, so it is not
+        // used here.) Back-compat: an absent extraQuery keeps `first` as the bare collection IRI.
+        var firstIri = string.IsNullOrEmpty(extraQuery)
+            ? collectionIri.Value
+            : $"{collectionIri.Value}?{extraQuery}";
+
         if (page == 1)
         {
             // Page 1 is the collection document itself: it carries its own first page of items and a
@@ -12523,7 +12545,7 @@ public static class ActivityPubServerExtensions
                 type: "OrderedCollection",
                 slice: slice,
                 total: total,
-                first: collectionIri.Value,
+                first: firstIri,
                 last: lastIri,
                 partOf: null,
                 startIndex: null,
