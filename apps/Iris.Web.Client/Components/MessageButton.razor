@@ -1,0 +1,57 @@
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
+
+@* Only offer "Message" for a signed-in user, on someone else's profile, and only for a person (not a
+   community/Group — a Group has no personal inbox for a DM to land in). *@
+@if (CanMessage)
+{
+    <a class="button button--secondary message-button"
+       href="@DmHref"
+       title="Send a direct message">Message</a>
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Parameter]
+    public IObjectOrLink? TargetActor { get; set; }
+
+    private bool CanMessage
+    {
+        get
+        {
+            if (Session.ActorId is not { } me)
+            {
+                return false;
+            }
+
+            if (TargetActor is not IObject { Id: { Length: > 0 } targetId })
+            {
+                return false;
+            }
+
+            if (TargetActor is Group)
+            {
+                return false;
+            }
+
+            return !string.Equals(me.Value, targetId, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private string DmHref
+    {
+        get
+        {
+            if (TargetActor is IObject { Id: { Length: > 0 } id })
+            {
+                return $"compose?dmTo={Uri.EscapeDataString(id)}";
+            }
+
+            return "/compose";
+        }
+    }
+}

@@ -30,6 +30,7 @@ else
     <div class="actor-detail-header">
         <ActorCard Actor="ActorDoc" ActorId="@(ActorDoc.Id)" ShowModeration="true" ShowStats="false" ShowSummary="true">
             <FollowButton TargetActor="ActorDoc" />
+            <MessageButton TargetActor="ActorDoc" />
         </ActorCard>
         @if (!IsSelf && !Session.IsSignedIn)
         {
