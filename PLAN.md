@@ -11,6 +11,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 
+## NEW
+
+S82 | NEW | - | community feed renders non-content items (Delete/Follow) as empty post cards
+
 ## CLOSED
 
 S81 | CLOSED | qa | 4 divergent content-item copies unified into Iris.Core.ContentItems — PASS: live qa-iris-a ?type=content 2 items, postsCount=2, actor page Posts(2), 0 console errors
