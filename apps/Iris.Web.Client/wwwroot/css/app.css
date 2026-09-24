@@ -2777,6 +2777,34 @@ ul.object-list li {
     color: var(--btn-fg);
 }
 
+.directory-filters {
+    display: inline-flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.directory-select {
+    appearance: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    padding: var(--space-35) var(--space-3);
+    cursor: pointer;
+    transition: border-color 0.12s ease;
+}
+
+.directory-select:hover {
+    border-color: var(--muted);
+}
+
+.directory-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .directory-cards {
     display: flex;
     flex-direction: column;
