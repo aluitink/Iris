@@ -120,6 +120,29 @@ QA or PA finds/proposes an item -> `OPEN`. Dev fixes in worktree, merges to root
 - Never edit docs/*.md. PLAN.md, persona files, and PROTOCOL.md are human-maintained at the root;
   agents edit PLAN.md only inside their worktree.
 
+## Temp files
+
+- All scratch files (test output, temp data, build artifacts, scratch scripts) go in `/workspace/.tmp/<you>/`
+  (e.g. `.tmp/agent-a/`, `.tmp/agent-b/`). Create the directory if it does not exist.
+- `.tmp/` is gitignored. Never commit temp files. Never leave scratch files in a worktree or the root.
+
+## Tools
+
+When you need to inspect code or binary behavior, use the cheapest tool first:
+
+1. **Read the source in the git repo.** The repo contains the full source for all first-party projects.
+   Grep, read, and trace it before reaching for anything else.
+2. **`ilspycmd` (global tool).** For third-party or framework assemblies you cannot read from source,
+   use `ilspycmd` to decompile a specific type or method.
+   Install once: `dotnet tool install -g ilspycmd`
+   The binary lives at `~/.dotnet/tools/ilspycmd` — add it to PATH if the command is not found:
+   `export PATH="$PATH:$HOME/.dotnet/tools"`
+   Example: `ilspycmd -t Namespace.TypeName /path/to/assembly.dll`
+3. **Reflection probe project (last resort).** Only if neither of the above is sufficient
+   (e.g. you need to exercise runtime behavior, not just read signatures), build a small probe
+   project in `.tmp/<you>/` that loads the assembly and reflects over it. Delete the probe
+   project when you are done; never commit it.
+
 ## Startup (human, before each loop session)
 
 Run from root, in order:
@@ -164,7 +187,7 @@ The full suite is slow. Run it ONCE and capture the complete output to a file; d
 re-check a single test or to change a filter — parse the captured file instead.
 
 ```
-dotnet test --logger "console;verbosity=detailed" 2>&1 | tee /tmp/test-<you>-$(date +%Y%m%d-%H%M%S).txt
+dotnet test --logger "console;verbosity=detailed" 2>&1 | tee .tmp/<you>/test-$(date +%Y%m%d-%H%M%S).txt
 ```
 
 - `<you>` is your thread name (`agent-a` or `agent-b`), so each agent's runs are isolated from the
@@ -173,7 +196,7 @@ dotnet test --logger "console;verbosity=detailed" 2>&1 | tee /tmp/test-<you>-$(d
 - The exit code tells you pass/fail. The file holds every result: each test's name, status, and any
   failure message or stack trace.
 - To find a specific test or failure, search your own latest file (e.g.
-  `grep -n "Failed\|Passed\|Skipped" /tmp/test-<you>-*.txt | tail`)
+  `grep -n "Failed\|Passed\|Skipped" .tmp/<you>/test-*.txt | tail`)
   — do not re-run the suite with a different `--filter` or `--trait` just to see one thing.
 - The everyday fast run excludes the slow category: `dotnet test --trait "Category!=Slow"`. The full suite
   (what the merge gate requires) is the plain `dotnet test` above.
