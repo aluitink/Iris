@@ -206,9 +206,100 @@ public sealed class MessagesIntegrationTests : IDisposable
         Assert.NotNull(account?.MessagesReadAt);
     }
 
+    [Fact]
+    public async Task DmWithMention_CarriesToAudienceAndMentionTag_LandsInInbox()
+    {
+        // S119 — the wire shape a "Message" (dmTo) compose produces: a Direct note whose content seeds
+        // "@alice " and whose audience is to:[alice] + a Mention tag for alice. Verify the note carries
+        // the recipient in `to`, carries a Mention tag, is NOT public, and lands in alice's /messages.
+        var http = await BuildAuthenticatedHttpAsync();
+        var persistence = GetPersistence();
+
+        var bob = await SeedActorAsync("bob");
+        var bobClient = BuildSignedClient(bob.Iri, bob.Key);
+        var dmNote = ComposeNote.Build(
+            bob.Iri,
+            "@alice hi from the message button",
+            to: [_aliceIri],
+            mentions: [_aliceIri]);
+        var dmPosted = await bobClient.PostNoteAsync(bob.Iri, dmNote);
+        Assert.True(dmPosted.IsSuccess, $"DM post should succeed, got HTTP {(int)dmPosted.StatusCode}: {dmPosted.Body}");
+
+        // The stored object must be a direct message: alice in `to` (the DM recipient), the public NOT
+        // in `to`, and a Mention tag for alice (the @handle convention the dmTo compose seeds).
+        var stored = FindStoredObject(persistence, bob.Iri, "hi from the message button");
+        Assert.NotNull(stored);
+        Assert.True(stored!.IsDirectMessage(), "The DM note must be classified as a direct message.");
+        var toIris = (stored.To ?? Enumerable.Empty<IObjectOrLink>())
+            .Select(e => e.ResolveObjectIri()?.Value ?? string.Empty)
+            .ToList();
+        Assert.Contains(_aliceIri.Value, toIris);
+        Assert.DoesNotContain("https://www.w3.org/ns/activitystreams#Public", toIris);
+        // A Mention tag carries the recipient in its `Href` (ComposeNote.Build sets Href, not Id).
+        // The @handle mention round-trips through the object store as a tag whose href is the recipient
+        // (a Mention with only `href` deserializes as a Link). Assert a tag carries alice's IRI.
+        var tagIris = (stored.Tag ?? Enumerable.Empty<IObjectOrLink>())
+            .Select(t => t.ResolveObjectIri()?.Value ?? (t is Link l ? l.Href?.ToString() : null) ?? string.Empty)
+            .ToList();
+        Assert.Contains(_aliceIri.Value, tagIris);
+
+        // Deliver to alice's inbox and assert /messages surfaces it.
+        var create = ExtractCreateFromOutbox(persistence, bob.Iri, "hi from the message button");
+        await persistence.Activities.AddToInboxAsync(_aliceIri, create);
+        var response = await http.GetAsync("/local/v1/messages");
+        Assert.True(response.IsSuccessStatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+        Assert.Contains("hi from the message button", body);
+    }
+
     // --- Helpers ------------------------------------------------------------------------
 
     private static readonly Iri Public = new("https://www.w3.org/ns/activitystreams#Public");
+
+    /// <summary>
+    /// Scans <paramref name="actorIri"/>'s outbox for the <c>Create</c> whose embedded object's content
+    /// contains <paramref name="contentFragment"/>, returning the stored object (looked up by IRI) so the
+    /// assertions read the canonical stored form (a Direct note's public doc is 404 to anonymous readers).
+    /// </summary>
+    private static IObject? FindStoredObject(IPersistenceProvider persistence, Iri actorIri, string contentFragment)
+    {
+        var outbox = persistence.Activities.GetOutboxAsync(actorIri).GetAwaiter().GetResult();
+        foreach (var item in outbox)
+        {
+            if (item is not Create create || create.Object is not { } objects)
+            {
+                continue;
+            }
+
+            var embedded = objects.FirstOrDefault() as IObject;
+            if (embedded?.Content is null)
+            {
+                continue;
+            }
+
+            var content = string.Join(" ", embedded.Content);
+            if (!content.Contains(contentFragment, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (embedded.Id is { Length: > 0 } id)
+            {
+                var resolved = new Iri(id);
+                if (persistence.Objects.TryGetObjectAsync(resolved, out var found).GetAwaiter().GetResult()
+                    && found is not null)
+                {
+                    return found;
+                }
+            }
+
+            return embedded;
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Seeds a local user account for alice (password "alice", hashed with the app's

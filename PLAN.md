@@ -11,10 +11,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 
 S120 | OPEN-QA | dev1 | DM inbox: UI-posted Direct messages don't appear in /messages (received or sent)
+S119 | OPEN-QA | dev2 | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory. Live dev2: alice profile shows Message btn, click -> /compose?dmTo=..alice, header "Messaging alice — direct", content "@alice ", visibility=direct+disabled, posted OK (creates IRI minted), 0 console errors; MessagesIntegrationTests +DmWithMention (to:[alice]+mention tag+IsDirectMessage+lands in /messages) 4/4; full suite green
 
 ## OPEN
 
-S119 | OPEN | - | Send a DM from a profile: "Message" button on ActorDetail/Profile (next to Follow) deep-links to /compose?dmTo=<actorIri>; compose reads the dmTo param, forces Direct visibility, seeds content with "@handle " so the recipient lands in `to` (BuildAudience direct path) — mirrors Mastodon "Message" / Lemmy "Send message"; Messages inbox empty state gets a "Start a conversation" link to /directory to pick someone
 S121 | OPEN | - | Media alt text: UI doesn't render alt on img tag (RichAttachment has no Alt prop; gallery+lightbox use att.Name)
 
 ## CLOSED

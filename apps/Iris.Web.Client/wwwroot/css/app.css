@@ -3498,6 +3498,19 @@ ul.object-list li {
     font-size: var(--font-size-base);
 }
 
+.compose-dm-context {
+    margin-bottom: var(--space-3);
+}
+
+.compose-dm-to {
+    margin: 0;
+    font-size: var(--font-size-base);
+}
+
+.message-button {
+    white-space: nowrap;
+}
+
 .page-header-row {
     display: flex;
     align-items: center;

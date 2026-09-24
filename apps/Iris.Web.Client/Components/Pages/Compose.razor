@@ -48,6 +48,14 @@
             </p>
         </div>
     }
+    @if (DmToIri is { } dIri)
+    {
+        <div class="compose-dm-context">
+            <p class="compose-dm-to">
+                Messaging <a href="@($"/actor?iri={Uri.EscapeDataString(dIri.Value)}")">@(DmToHandle ?? "…")</a> — direct, only they can see it
+            </p>
+        </div>
+    }
     <label for="compose-content">Content</label>
     <div class="compose-autocomplete-wrap">
         <textarea id="compose-content" class="compose-content" rows="4"
@@ -120,7 +128,8 @@
             </select>
             @if (CommunityIri is null)
             {
-                <select class="compose-visibility-select" @bind="Visibility" disabled="@Busy">
+                <select class="compose-visibility-select" @bind="Visibility" disabled="@(Busy || DmToIri is not null)"
+                        title="@(DmToIri is not null ? "Direct messages are always private to the recipient" : null)">
                     <option value="public">Public</option>
                     <option value="followers">Followers</option>
                     <option value="direct">Direct</option>
@@ -250,6 +259,35 @@
     [SupplyParameterFromQuery(Name = "community")]
     private string? CommunityParam { get; set; }
 
+    [SupplyParameterFromQuery(Name = "dmTo")]
+    private string? DmToParam { get; set; }
+
+    /// <summary>
+    /// The recipient actor IRI for a direct message (from the <c>dmTo</c> query parameter), when set.
+    /// When present the compose is pre-addressed as a Direct DM to that actor: visibility is forced to
+    /// <c>direct</c> and the content is seeded with <c>@handle </c> so the recipient is included in the
+    /// post's <c>to</c> audience (see <see cref="BuildAudience"/>). Mirrors the "Message" button on a
+    /// profile.
+    /// </summary>
+    private Iri? DmToIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(DmToParam) || !Iri.TryParse(DmToParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The DM recipient's preferred username (fetched asynchronously), shown in the "Messaging …"
+    /// header. Null until resolved.
+    /// </summary>
+    private string? DmToHandle { get; set; }
+
     /// <summary>
     /// The community IRI the post targets (from the <c>community</c> query parameter), when set.
     /// When present, the post is attributed to both the author and the community, and addressed
@@ -349,6 +387,70 @@
         if (CommunityIri is { } cIri && CommunityName is null)
         {
             await LoadCommunityNameAsync(cIri);
+        }
+
+        if (DmToIri is { } dIri && DmToHandle is null)
+        {
+            await LoadDmRecipientAsync(dIri);
+        }
+    }
+
+    /// <summary>
+    /// Resolves the <c>dmTo</c> recipient: fetches the actor's preferred username, forces the
+    /// visibility to <c>direct</c>, and seeds the content with <c>@handle </c> (when empty) so the
+    /// recipient lands in the post's <c>to</c> audience. Non-fatal: if the actor cannot be resolved the
+    /// compose still posts as a normal Direct note (the user can add the mention manually).
+    /// </summary>
+    private async Task LoadDmRecipientAsync(Iri iri)
+    {
+        Visibility = "direct";
+
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var obj = await client.GetObjectAsync(iri);
+            if (obj is Actor actor)
+            {
+                var handle = !string.IsNullOrWhiteSpace(actor.PreferredUsername)
+                    ? actor.PreferredUsername
+                    : LastPathSegment(iri.Value);
+                DmToHandle = handle;
+
+                if (string.IsNullOrWhiteSpace(Content) && !string.IsNullOrWhiteSpace(handle))
+                {
+                    Content = $"@{handle} ";
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: fall back to the raw last path segment for the header + seed.
+            var fallback = LastPathSegment(iri.Value);
+            if (!string.IsNullOrWhiteSpace(fallback))
+            {
+                DmToHandle = fallback;
+                if (string.IsNullOrWhiteSpace(Content))
+                {
+                    Content = $"@{fallback} ";
+                }
+            }
+        }
+    }
+
+    private static string LastPathSegment(string iri)
+    {
+        try
+        {
+            var segments = new Uri(iri).AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : iri;
+        }
+        catch
+        {
+            return iri;
         }
     }
 
