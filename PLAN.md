@@ -12,7 +12,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S89 | OPEN | - | Post edit persists; signed GET serves stale pre-edit content (object+profile)
 S90 | OPEN | - | Mark edited posts: show "edited" label on objects that were updated via Update
-S91 | OPEN | - | Post permalink: copy shareable URL button on object card + clipboard success state
+S91 | OPEN | - | Copy post permalink button on object card + clipboard "Copied" success state
 S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
 
 ## CLOSED
