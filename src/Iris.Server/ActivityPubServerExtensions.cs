@@ -6962,6 +6962,27 @@ public static class ActivityPubServerExtensions
                         var publicIri = new Iri("as:Public");
                         embeddedAo.To = MergeAudience(embeddedAo.To, [resolvedParent, publicIri]);
                         embeddedAo.Cc = MergeAudience(embeddedAo.Cc, [resolvedParent]);
+
+                        // S94 (Lemmy interop, reply Create 400): Lemmy's comment receiver (CreateOrUpdateNote)
+                        // requires BOTH `to` and `cc` on the Create activity (neither has a serde default), and
+                        // its `verify` runs `verify_is_public(&to, &cc)` against the ACTIVITY-level audience. A
+                        // reply to a remote parent usually has no remote followers, so the follower-based cc
+                        // (line 6926) is empty and the activity's to/cc name only the parent — failing both the
+                        // untagged-enum deserialization and the public check.
+                        //
+                        // CRITICAL: the activity-level public sentinel MUST be the full IRI
+                        // (https://www.w3.org/ns/activitystreams#Public), not the compact `as:Public` form.
+                        // Lemmy's `verify_is_public` does `set.contains(&public())` where `public()` is the
+                        // full-IRI `Url`; the compact `as:Public` string does NOT match (a bare `as:` scheme
+                        // is not the activitystreams namespace), so the check fails with ObjectIsNotPublic.
+                        // Iris's own `Iri.Public` is the full IRI, so APPEND it to the activity-level to/cc
+                        // (preserving the follower set already merged in at line 6926 and the parent merged at
+                        // line 6942). The cc is the carbon-copy (secondary) audience — adding the full-IRI
+                        // public sentinel there does not change delivery and is consistent with the embedded
+                        // note's visibility (the note already carries the public sentinel). Harmless to
+                        // Iris/Mastodon receivers (they tolerate the extra sentinel / extra cc entries).
+                        create.Cc = MergeAudience(create.Cc, [Iri.Public]);
+                        create.To = MergeAudience(create.To, [Iri.Public]);
                     }
                 }
                 break;
