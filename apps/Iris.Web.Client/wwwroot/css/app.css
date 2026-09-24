@@ -2241,6 +2241,39 @@ ul.object-list li {
     border-color: var(--muted);
 }
 
+.compose-attach-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-25);
+}
+
+.compose-attach-alt {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    max-width: 16rem;
+}
+
+.compose-attach-alt-label {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+}
+
+.compose-attach-alt-input {
+    font-size: var(--font-size-sm);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+}
+
+.compose-attach-alt-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .compose-hint {
     margin-top: var(--space-45);
     font-size: var(--font-size-sm);
