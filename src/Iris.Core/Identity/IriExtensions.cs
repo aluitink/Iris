@@ -1161,24 +1161,20 @@ public static class IriExtensions
     }
 
     /// <summary>
-    /// Reports whether an object is a <em>direct message</em> (S116): its <c>to</c> audience names at
-    /// least one directed recipient (a single actor — not the public sentinel, not a followers
-    /// collection, not a community broadcast) and its <c>cc</c> audience is empty, so the object is
-    /// visible only to the named recipients. Objects with no <c>to</c>/<c>cc</c> at all, public posts
-    /// (the public sentinel in <c>to</c> or <c>cc</c>), unlisted posts (a <c>/followers</c> collection
-    /// in <c>to</c>), and community cross-posts (a <c>/c/</c> community in <c>to</c>) are not direct
-    /// messages.
+    /// Reports whether an object is a <em>direct message</em> (S116, S120): its <c>to</c> audience names
+    /// at least one directed recipient (a single actor — not the public sentinel, not a followers
+    /// collection, not a community broadcast). The <c>cc</c> audience is deliberately ignored: a direct
+    /// message's <c>cc</c> commonly carries the author's followers (the Mastodon/Pleroma Direct
+    /// convention, and what <c>Compose.BuildAudience</c> + <c>RewriteOutboundAudienceAsync</c> emit), so
+    /// requiring an empty <c>cc</c> would exclude every UI-posted DM. Public posts (the public sentinel
+    /// in <c>to</c>), unlisted posts (a <c>/followers</c> collection in <c>to</c>), and community
+    /// cross-posts (a <c>/c/</c> community in <c>to</c>) are not direct messages.
     /// </summary>
     /// <param name="obj">The object to inspect. May be null.</param>
     /// <returns><see langword="true"/> when the object is a direct message; otherwise <see langword="false"/>.</returns>
     public static bool IsDirectMessage(this IObject? obj)
     {
         if (obj is null)
-        {
-            return false;
-        }
-
-        if (HasAudienceEntry(obj.Cc))
         {
             return false;
         }
@@ -1197,24 +1193,6 @@ public static class IriExtensions
                 {
                     return true;
                 }
-            }
-        }
-
-        return false;
-    }
-
-    private static bool HasAudienceEntry(IEnumerable<IObjectOrLink>? entries)
-    {
-        if (entries is null)
-        {
-            return false;
-        }
-
-        foreach (var entry in entries)
-        {
-            if (entry.ResolveObjectIri() is not null)
-            {
-                return true;
             }
         }
 

@@ -111,10 +111,17 @@ public sealed class MessagesIntegrationTests : IDisposable
         var publicPosted = await ap.PostNoteAsync(_aliceIri, publicNote);
         Assert.True(publicPosted.IsSuccess, $"Public post should succeed, got HTTP {(int)publicPosted.StatusCode}");
 
-        // bob (a fresh local actor) DMs alice.
+        // bob (a fresh local actor) DMs alice. The cc carries bob's followers collection — the same
+        // audience the UI emits (Compose.BuildAudience sets cc=author's followers for Direct visibility,
+        // and RewriteOutboundAudienceAsync merges it into the stored note's cc). S120: IsDirectMessage
+        // must treat this as a DM despite the non-empty cc.
         var bob = await SeedActorAsync("bob");
         var bobClient = BuildSignedClient(bob.Iri, bob.Key);
-        var dmNote = ComposeNote.Build(bob.Iri, "hello alice, this is a DM", to: [_aliceIri]);
+        var dmNote = ComposeNote.Build(
+            bob.Iri,
+            "hello alice, this is a DM",
+            to: [_aliceIri],
+            cc: [new Iri($"{bob.Iri.Value}/followers")]);
         var dmPosted = await bobClient.PostNoteAsync(bob.Iri, dmNote);
         Assert.True(dmPosted.IsSuccess, $"DM post should succeed, got HTTP {(int)dmPosted.StatusCode}: {dmPosted.Body}");
 
