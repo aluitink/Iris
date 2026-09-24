@@ -16,6 +16,7 @@ S118 | OPEN-QA | dev2 | Media alt text: compose lets you set alt text on image a
 
 ## OPEN
 
+S119 | OPEN | - | Send a DM from a profile: "Message" button on ActorDetail/Profile (next to Follow) deep-links to /compose?dmTo=<actorIri>; compose reads the dmTo param, forces Direct visibility, seeds content with "@handle " so the recipient lands in `to` (BuildAudience direct path) — mirrors Mastodon "Message" / Lemmy "Send message"; Messages inbox empty state gets a "Start a conversation" link to /directory to pick someone
 ## CLOSED
 
 S115 | CLOSED | qa | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts — PASS: live qa-iris-a (wasm q165eix1rz) #s115qatag href=/tag/%23s115qatag, timeline "1 post(s)" + card, empty tag "No posts… yet", 0 console errors
