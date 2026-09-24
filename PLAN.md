@@ -11,9 +11,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 
 S100 | OPEN-QA | dev2 | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — FIXED (ccf5f122, merged 884eabb0). Part1: BuildInstanceName caps instance name to 20 chars (Lemmy site.name varchar(20)); live dev2 root deref name 'iris-dev2-iris-a.lui' (len 20), Lemmy site row created (len 20), no 'value too long' in logs. Part2: deliveredTo dedup in CreateActivityHandler so a reply's Create IRI is not delivered twice to the same shared inbox (S47 to[] + S62 parent-author both targeted lemmyadmin -> Lemmy insert_received_activity 400); reply from s100dev to /post/1 landed (comment id 4, threaded, single delivery). Full suite 0 failed. NOTE: residual 400 on MEMBER reply is Lemmy's own announce of the member comment (community::announce::receive re-inserts the Create IRI -> 400) — Lemmy-side quirk, comment lands correctly.
+S102 | OPEN-QA | dev1 | Home Communities tab showed Posts content (own posts) — FIXED (ba67d4f8): server feed `first` link dropped ?source=, so the WASM client's follow-up read was served unfiltered (full merged feed) and the own post leaked into the Communities tab. Now the `first` link carries ?source={source} (no trailing slash, matches the fetched IRI -> client fast path, no 2nd request). Live dev1: Communities tab shows empty state (own post excluded), Posts tab still shows it, network only ?source=communities/?source=people. 2 new regression tests; 1498/1498 green
 ## OPEN
 
-S102 | OPEN | - | Home Communities tab shows Posts content, should show followed communities content
 S103 | OPEN | - | Profile needs ability to upload a banner image
 S104 | OPEN | - | Profile, not all tabs show proper content
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
