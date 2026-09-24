@@ -7277,31 +7277,25 @@ public static class ActivityPubServerExtensions
         var count = 0;
         foreach (var item in items)
         {
-            if (item is Announce)
+            if (CountPostsHelper.IsContentPost(item))
             {
                 count++;
-                continue;
-            }
-
-            if (item is not Create create)
-            {
-                continue;
-            }
-
-            if (create.Object is { } objects)
-            {
-                foreach (var obj in objects)
-                {
-                    if (obj is Note || obj is Article || obj is Page || obj is Question)
-                    {
-                        count++;
-                        break;
-                    }
-                }
             }
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// S81: the per-actor <c>postsCount</c> content classification, shared by the read-time
+    /// <see cref="CountPostsAsync"/> and the background pre-compute in
+    /// <see cref="Iris.Server.Stores.ActorCountRefreshService"/>. Delegates to the single shared
+    /// <see cref="ContentItems.IsContentPost"/> so the count matches the rendered posts list.
+    /// </summary>
+    internal static class CountPostsHelper
+    {
+        public static bool IsContentPost(IObjectOrLink item)
+            => ContentItems.IsContentPost(item);
     }
 
     /// <summary>
@@ -12602,39 +12596,13 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// S78: whether an outbox item is a content item — a <c>Create</c> whose embedded object is a
-    /// <c>Note</c>, <c>Article</c>, or <c>Question</c> (poll), or an <c>Announce</c> (boost). Social
-    /// and moderation activities (Follow, Like, Undo, Delete, Accept, Reject, Flag, Block) return
-    /// <c>false</c>. Used by the <c>?type=content</c> outbox filter so the "Your posts" tab receives
-    /// only the items it needs to render.
+    /// S78: whether an outbox item is a content item, used by the <c>?type=content</c> outbox filter
+    /// so the "Your posts" tab receives only the items it needs to render. S81: delegates to the
+    /// single shared <see cref="ContentItems.IsContentPost"/> so the content-type set (Note, Article,
+    /// Page, Question) stays in one place with the client and the post counter.
     /// </summary>
     private static bool OutboxItemIsContent(IObjectOrLink item)
-    {
-        if (item is Announce)
-        {
-            return true;
-        }
-
-        if (item is not Create create)
-        {
-            return false;
-        }
-
-        if (create.Object is not { } objects)
-        {
-            return false;
-        }
-
-        foreach (var obj in objects)
-        {
-            if (obj is Note || obj is Article || obj is Question)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => ContentItems.IsContentPost(item);
 
     /// <summary>
     /// Parses a <c>?limit</c> query value into a bounded page size (default

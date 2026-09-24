@@ -1,3 +1,4 @@
+using Iris.Core;
 using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 
@@ -17,36 +18,13 @@ internal static class OutboxFilter
 {
     /// <summary>
     /// Whether an outbox item is a content item — a <c>Create</c> whose object is a <c>Note</c>,
-    /// <c>Article</c>, or <c>Question</c> (poll), or an <c>Announce</c> (boost). Social and
-    /// moderation activities return <c>false</c>.
+    /// <c>Article</c>, <c>Page</c> (Lemmy cross-post), or <c>Question</c> (poll), an <c>Announce</c>
+    /// (boost), or a bare content object. Social and moderation activities return <c>false</c>. S81:
+    /// delegates to the single shared <see cref="Iris.Core.ContentItems.IsContentPost"/> so the
+    /// content-type set cannot drift from the home feed or the server.
     /// </summary>
     public static bool IsContentItem(IObjectOrLink item)
-    {
-        if (item is Announce)
-        {
-            return true;
-        }
-
-        if (item is not Create create)
-        {
-            return false;
-        }
-
-        if (create.Object is not { } objects)
-        {
-            return false;
-        }
-
-        foreach (var obj in objects)
-        {
-            if (obj is Note || obj is Article || obj is Question)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+        => ContentItems.IsContentPost(item);
 
     /// <summary>
     /// Whether an outbox item is a content item (<see cref="IsContentItem"/>) **authored by a

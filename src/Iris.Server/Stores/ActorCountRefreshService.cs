@@ -220,7 +220,8 @@ public sealed class ActorCountRefreshService : BackgroundService
     /// <c>CountPostsAsync</c> in <see cref="ActivityPubServerExtensions"/>: an <see cref="Announce"/>
     /// (boost) or a <see cref="Create"/> whose object is a <see cref="Note"/>, <see cref="Article"/>,
     /// <see cref="Page"/> (Lemmy cross-post), or <see cref="Question"/> (poll). S79: <see cref="Page"/>
-    /// and <see cref="Question"/> were previously omitted.
+    /// and <see cref="Question"/> were previously omitted. S81: both copies delegate to the single
+    /// shared <see cref="ContentItems.IsContentPost"/> via <see cref="ActivityPubServerExtensions.CountPostsHelper"/>.
     /// </summary>
     private static async Task<int> CountPostsAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
     {
@@ -228,27 +229,9 @@ public sealed class ActorCountRefreshService : BackgroundService
         var count = 0;
         foreach (var item in items)
         {
-            if (item is Announce)
+            if (ActivityPubServerExtensions.CountPostsHelper.IsContentPost(item))
             {
                 count++;
-                continue;
-            }
-
-            if (item is not Create create)
-            {
-                continue;
-            }
-
-            if (create.Object is { } objects)
-            {
-                foreach (var obj in objects)
-                {
-                    if (obj is Note || obj is Article || obj is Page || obj is Question)
-                    {
-                        count++;
-                        break;
-                    }
-                }
             }
         }
 
