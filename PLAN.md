@@ -15,6 +15,8 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 S82 | NEW | - | community feed renders non-content items (Delete/Follow) as empty post cards
 S83 | NEW | - | Article edit silently fails (Note edit works)
+S84 | NEW | - | Profile Following tab stale after follow: ActorListPanel doesn't refresh on FollowChanged (fix: wire FollowChanged to re-fetch following collection, same pattern as Communities tab)
+S85 | NEW | - | Notifications page loads once on init, never refreshes while open (badge polls 60s but page item list is static; fix: subscribe to UnreadCountChanged to re-load)
 
 ## CLOSED
 
