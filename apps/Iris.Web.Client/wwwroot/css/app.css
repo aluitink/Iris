@@ -3878,7 +3878,15 @@ body > #app {
 }
 
 .notif-card-wrapper {
-    /* Each notification is a card, matching the feed's ObjectView card style */
+    /* Each notification is a card, matching the feed's ObjectView card style. */
+    /* S106 — this div is the grid item of the .notif-cards grid. Grid items default to
+       min-width: auto, so an unbreakable descendant (a very long display name in the
+       notification header, which renders white-space: nowrap) sets the item's automatic
+       minimum to the name's full width — wider than the column. The card then grows past
+       the viewport and scrolls the whole page sideways on mobile. min-width: 0 lets the
+       track shrink to the container width so the name's overflow:hidden/ellipsis truncates
+       instead. */
+    min-width: 0;
 }
 
 .notification-card {
