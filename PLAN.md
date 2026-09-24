@@ -14,6 +14,10 @@ S114 | OPEN-QA | dev2 | Edit/Delete own posts from feed card: EngagementBar on O
 S111 | OPEN-QA | dev1 | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab — FIXED (UiContext bookmark cache + EngagementBar seeding + Profile ObjectView cards); live dev1: bookmarked post persists aria-pressed=true after reload; Bookmarks tab renders full post card; unbookmark clears; 1527 tests pass
 
 ## OPEN
+
+S115 | OPEN | - | Hashtag timeline: #tag in a post links to /tag/{tag} listing posts with that tag
+S116 | OPEN | - | DM inbox: /messages lists Direct posts you sent/received; add nav link
+S117 | OPEN | - | Mention autocomplete: @ in compose shows matching accounts to pick from
 ## CLOSED
 
 S112 | CLOSED | qa | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav — PASS: live qa-iris-a created S112-QA-IMAGE-POST (1x1 PNG via compose); clicked .media-gallery-item img in home feed -> .lightbox-overlay opens w/ Close btn (×), URL stayed /home (no object-page nav); Close dismissed overlay (0 elements); same on profile Your-posts tab; deployed /css/app.css .media-gallery-item z-index:1 confirmed live; 0 console errors
@@ -41,5 +45,4 @@ S91 | CLOSED | qa | Copy post permalink button on object card + clipboard "Copie
 S89 | CLOSED | qa | Post edit persists; signed GET serves stale pre-edit content (object+profile) — PASS: live qa-iris-a edited note GET no-cache, outbox?type=content shows edited v2; never-edited note keeps max-age=60,swr=300
 S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) — NOT REPRODUCED: live dev2 (post-S83 build) fresh acct s87clean UI-only (type bio+click checkbox+Save) → POST /ap/v1/u/s87clean/outbox 202 Update{type:Person,bio,icon:[]}, server GET confirms summary+manuallyApprovesFollowers persisted; s87repro acct same; both /profile button + ?edit=true deep-link paths work; form prefills on fresh load. Save DOES call API + persist; no repro, no code change
 S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
-S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 
