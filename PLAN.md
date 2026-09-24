@@ -10,13 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S89 | OPEN-QA | dev1 | Post edit persists; signed GET serves stale pre-edit content (object+profile) — FIXED (dev1 9a71cdd7): (A) object-doc GET emits no-cache for edited objects (non-null `updated`), never-edited keep max-age=60,swr=300; (B) EnrichCollectionItemsAsync re-resolves current content from IObjectStore instead of frozen Create-embedded snapshot (home feed + Your posts); (C) Update branch invalidates outbox?type=content page cache + follow-feed cache. E2E test S89_EditedNote green (signed wire path); full Server suite 1488 pass/0 fail
 S90 | OPEN | - | Mark edited posts: show "edited" label on objects that were updated via Update
 S91 | OPEN-QA | dev2 | Copy post permalink button on object card + clipboard "Copied" success state
 S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
 
 ## CLOSED
 
+S89 | CLOSED | qa | Post edit persists; signed GET serves stale pre-edit content (object+profile) — PASS: live qa-iris-a edited note GET no-cache, outbox?type=content shows edited v2; never-edited note keeps max-age=60,swr=300
 S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) — NOT REPRODUCED: live dev2 (post-S83 build) fresh acct s87clean UI-only (type bio+click checkbox+Save) → POST /ap/v1/u/s87clean/outbox 202 Update{type:Person,bio,icon:[]}, server GET confirms summary+manuallyApprovesFollowers persisted; s87repro acct same; both /profile button + ?edit=true deep-link paths work; form prefills on fresh load. Save DOES call API + persist; no repro, no code change
 S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
@@ -45,9 +45,9 @@ S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PA
 
 S62 | CLOSED | qa | reply to remote parent now notifies parent author (PASS: live s56qa->s58qa)
 
-S61 | CLOSED | qa | admin bootstrap reads APP_ADMIN__* env (config fallback) (PASS)
 
-S60 | CLOSED | qa | dead letters: admin list/replay (PASS: route+auth live; bodies via TestServer)
+
+
 
 
 
