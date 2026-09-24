@@ -13,9 +13,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S124 | OPEN | - | When the user posts, the feed flip completely to only the users content. The posts should be a combination of users posts/boosts/likes and followed actors posts/boosts/likes ordered by publish time.
+S125 | OPEN | - | Home: signed-in Local tab shows instance public timeline (now authless-only)
+S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
+S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
+S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
 ## CLOSED
 
+S124 | CLOSED | qa | Feed flip after post — FALSE POSITIVE (stale WASM cache, same root cause as S122): live qa-iris-a (wasm t1q33tso4m) s116rcv follows s116snd, posts S124-TEST-POST-FROM-RCV; feed shows both s116rcv's post (newest) + s116snd's S118 post (1h ago), ordered by publish time; server logs confirm 4 items built (Create=4); 0 console errors
 S121 | CLOSED | qa | Media alt text: render author alt on img (gallery+lightbox) — PASS: live qa-iris-a (wasm t1q33tso4m) s116snd profile shows S118 post with img alt="S118-QA-ALT-TEXT-TEST: A red circle on a blue field" (author alt, not filename); 0 console errors
 S119 | CLOSED | qa | Send a DM from a profile: "Message" button on ActorDetail (next to Follow, hidden for self/Group) -> /compose?dmTo=<actorIri>; compose reads dmTo (LoadDmRecipientAsync: forces Visibility=direct + disabled, seeds Content "@handle ", "Messaging X" header); Messages empty-state "Find someone to message" -> /directory — PASS: live qa-iris-a (wasm d8xp549r0o) s116rcv on s116snd profile sees Message btn, click -> /compose?dmTo=..s116snd, header "Messaging s116snd — direct", content "@s116snd", visibility=direct+disabled; fresh acct s119qa /messages empty-state "Find someone to message" -> /directory; 0 console errors
 
