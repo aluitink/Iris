@@ -89,4 +89,9 @@ public interface IPersistenceProvider
     /// IRI an object's attachment references.
     /// </summary>
     public IMediaStore Media { get; }
+
+    /// <summary>
+    /// The bookmark store: the <c>bookmarker → bookmarkedObject</c> edges (S111).
+    /// </summary>
+    public IBookmarkStore Bookmarks { get; }
 }

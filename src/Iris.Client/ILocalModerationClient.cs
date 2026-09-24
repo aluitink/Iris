@@ -456,4 +456,33 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not found).</returns>
     public Task<DeliveryResult> DeleteCommunityAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Bookmarks an object (S111): a local, owner-only request to the actor's own instance
+    /// (<c>POST /local/v1/u/{handle}/bookmarks/{objectIri}</c>) that records the bookmark edge.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor bookmarking.</param>
+    /// <param name="objectIri">The IRI of the object to bookmark.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle).</returns>
+    public Task<DeliveryResult> BookmarkAsync(Iri actorId, Iri objectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a bookmark (S111): the inverse of <see cref="BookmarkAsync(Iri, Iri, CancellationToken)"/>
+    /// — <c>POST /local/v1/u/{handle}/bookmarks/{objectIri}?unbookmark=true</c>.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor removing the bookmark.</param>
+    /// <param name="objectIri">The IRI of the bookmarked object.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle).</returns>
+    public Task<DeliveryResult> UnbookmarkAsync(Iri actorId, Iri objectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the actor's bookmarks (S111): <c>GET /local/v1/u/{handle}/bookmarks</c>.
+    /// Returns a JSON array of bookmarked object IRIs.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor whose bookmarks are listed.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the response body (a JSON array of object IRIs).</returns>
+    public Task<DeliveryResult> GetBookmarksAsync(Iri actorId, CancellationToken ct = default);
 }

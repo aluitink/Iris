@@ -1477,6 +1477,12 @@ public static class ActivityPubServerExtensions
         // catch-all of the absolute IRI of the relay being subscribed to.
         localGroup.MapPost("/u/{handle}/relays/{**target}", LocalRelayHandler).WithName("local-relay-endpoint");
 
+        // Local bookmark (person): POST /local/v1/u/{handle}/bookmarks/{target} — a local actor bookmarks
+        // an object (S111); the same route with ?unbookmark=true removes it. GET /local/v1/u/{handle}/bookmarks
+        // lists the actor's bookmarks. {target} is a catch-all of the absolute IRI of the object being bookmarked.
+        localGroup.MapPost("/u/{handle}/bookmarks/{**target}", LocalBookmarkHandler).WithName("local-bookmark-endpoint");
+        localGroup.MapGet("/u/{handle}/bookmarks", LocalListBookmarksHandler).WithName("local-list-bookmarks-endpoint");
+
         // Local mute (community): POST /local/v1/c/{name}/mutes/{target} — a community's operator records
         // a community-scoped mute (the community hides a member's content from its unified feed without
         // severing the membership); the same route with ?unmute=true removes it. The community's IRI is
@@ -2812,6 +2818,113 @@ public static class ActivityPubServerExtensions
         InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
 
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Records or removes a bookmark edge (S111). A local actor bookmarks an object
+    /// (POST /local/v1/u/{handle}/bookmarks/{target}); the same route with ?unbookmark=true
+    /// removes it. Owner-only (Basic auth or the Blazor WASM cookie).
+    /// </summary>
+    private static async Task<IResult> LocalBookmarkHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        var remove = context.Request.Query.TryGetValue("unbookmark", out var unbookmarkValues)
+            && unbookmarkValues.Count > 0
+            && string.Equals(unbookmarkValues[0], "true", StringComparison.OrdinalIgnoreCase);
+
+        if (remove)
+        {
+            await persistence.Bookmarks.RemoveBookmarkAsync(actorIri, target, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Bookmarks.RecordBookmarkAsync(actorIri, target, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Lists the actor's bookmarked objects (S111). Owner-only (Basic auth or the Blazor WASM cookie).
+    /// Returns 200 with a JSON array of object IRIs (sorted); 401 when the caller is not the actor;
+    /// 404 when the handle is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalListBookmarksHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var bookmarks = await persistence.Bookmarks.GetBookmarksAsync(actorIri, ct).ConfigureAwait(false);
+        var iriValues = bookmarks.Select(b => b.Value).ToArray();
+        return Results.Json(iriValues);
     }
 
     /// <summary>

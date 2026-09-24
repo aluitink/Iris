@@ -141,4 +141,9 @@ public enum EdgeKind
     /// downvotes).
     /// </summary>
     Dislike = 18,
+
+    /// <summary>
+    /// A bookmark edge: bookmarker → bookmarked object (the actor's bookmarks collection).
+    /// </summary>
+    Bookmark = 19,
 }

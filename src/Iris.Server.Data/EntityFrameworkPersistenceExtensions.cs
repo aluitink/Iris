@@ -75,6 +75,7 @@ public static class EntityFrameworkPersistenceExtensions
             sp.GetRequiredService<IDbContextFactory<IrisDbContext>>(),
             sp.GetRequiredService<EdgeStore>(),
             blobDir));
+        services.TryAddSingleton<EfBookmarkStore>();
 
         // The local browser-session account store (EF Core).
         services.TryAddSingleton<IUserAccountStore, EfUserAccountStore>();
@@ -111,7 +112,8 @@ public static class EntityFrameworkPersistenceExtensions
             sp.GetRequiredService<EfCommunityStore>(),
             sp.GetRequiredService<EfKeyStore>(),
             sp.GetRequiredService<EfMediaStore>(),
-            sp.GetRequiredService<EdgeStore>()));
+            sp.GetRequiredService<EdgeStore>(),
+            sp.GetRequiredService<EfBookmarkStore>()));
 
         return services;
     }

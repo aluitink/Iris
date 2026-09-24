@@ -217,6 +217,7 @@ public sealed class DegradedModeTests : IDisposable
         public ICommunityStore Communities => _inner.Communities;
         public IKeyStore Keys => _inner.Keys;
         public IMediaStore Media => _inner.Media;
+        public IBookmarkStore Bookmarks => _inner.Bookmarks;
         public IDislikeStore Dislikes => null!;
     }
 
