@@ -10,10 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
-
 ## CLOSED
 
+S92 | CLOSED | dev2 | Lemmy interop: iris user follows lemmy community; posts reach iris home feed — ALREADY WORKS (no code change): live dev2, logged-in s87clean followed Lemmy community /c/s92interop via /actor?iri= Follow btn (Edges Kind 10+11 recorded); Lemmy post /post/1 ("S92 test post / hello from lemmy for S92 iris interop", author lemmyadmin, boosted-by s92interop) surfaces in iris home feed BOTH merged (Posts) + Communities tabs. Post reaches feed via signed live outbox walk (FetchRemoteOutboxAsync); no inbox Create stored (Lemmy delivers community post as Announce). Screenshot s92-homefeed-lemmy-post.png
 S90 | CLOSED | qa | Mark edited posts: show "edited" label on objects that were updated via Update — PASS: live qa-iris-a 6 edited posts render "edited {time}" (was "updated"), fresh WASM bundle, 0 console errors
 S91 | CLOSED | qa | Copy post permalink button on object card + clipboard "Copied" success state — PASS: live qa-iris-a Copy link btn on every card, click writes object IRI to clipboard, "Copied" flashes 1.5s then reverts, 0 console errors
 S89 | CLOSED | qa | Post edit persists; signed GET serves stale pre-edit content (object+profile) — PASS: live qa-iris-a edited note GET no-cache, outbox?type=content shows edited v2; never-edited note keeps max-age=60,swr=300
