@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S110 | OPEN-QA | dev2 | Home feed made one /flags call per ObjectView (N posts = N calls) to restore Report state — FIXED: ObjectView now uses UiContext.GetModerationStateAsync (cached per-circuit, 2min TTL) instead of a direct GetFlagsAsync per object. Live dev2: 2 posts = 1 flags call (was 2). No new iris extension property needed. QA: open home feed with N posts, count /flags network calls — should be 1, not N.
 S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection — FIXED (S111): added IBookmarkStore (in-memory + file-backed + EF Core over Edges table, new EdgeKind.Bookmark=19, no migration), server endpoints POST/GET /local/v1/u/{handle}/bookmarks, client BookmarkAsync/UnbookmarkAsync/GetBookmarksAsync, EngagementBar bookmark button (toggle), Profile Bookmarks tab (lazy-load list). QA: click bookmark on a post (icon fills), reload page, bookmark persists; Profile > Bookmarks tab lists bookmarked posts; unbookmark removes it.
 
 ## OPEN
@@ -19,6 +18,7 @@ S112 | OPEN | - | Media lightbox: clicking a post image opens full-screen overla
 S113 | OPEN | - | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button
 ## CLOSED
 
+S110 | CLOSED | qa | Home feed made one /flags call per ObjectView (N posts = N calls) — PASS: live qa-iris-a fresh WASM (23f09rii0f) home feed 6 posts (4 own s106qview + 2 foreign s105follow) -> exactly 1 /flags + 1 /blocks + 1 /mutes (single cached WalkModerationAsync, 2min TTL), not N; initial 2-4 /flags was stale browser-cached OLD wasm (i0f4v109nu, now 404) until cache cleared; 0 console errors
 S109 | CLOSED | qa | Video in feed streams redirects to object page on play click instead of playing in-place — PASS: live qa-iris-a video post in home feed; .media-player computed z-index:1/position:relative, .object-card-link (stretched) z-index:0/absolute; clicked video center -> URL stayed /home (no object-page nav); served app.css .media-player in z-index:1 group, stale .object-media gone; 0 console errors
 S107 | CLOSED | qa | Copied links for a post should generate a front end link instead of an Activity Pub object link — PASS: live qa-iris-a Copy link on 2 posts copies front-end /object?iri= URL (not AP IRI), matches stretched "Open post" href, opens object view; 0 console errors
 S106 | CLOSED | qa | Notifications page too wide on mobile (horizontal scroll) — PASS: live qa-iris-a 390px no h-scroll (docScrollW=390), long display name ellipsized, .notif-card-wrapper min-width:0; desktop 1280px unchanged; 0 console errors
@@ -43,5 +43,4 @@ S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) �
 S88 | CLOSED | qa | Search "Actors only" filter lost on page reload / URL round-trip — PASS: live qa-iris-a ?q=&actors=1 reload keeps checkbox checked, 0 console errors
 S83 | CLOSED | qa | Article edit silently fails (Note edit works) — PASS: edit persists as Article
 S85 | CLOSED | qa | Notifications page never refreshes while open — PASS: in-page re-fetch works
-S86 | CLOSED | qa | Likes tab renders raw IRI instead of post content — PASS: shows post cards
 
