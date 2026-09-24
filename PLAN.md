@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S90 | OPEN-QA | dev1 | Mark edited posts: show "edited" label on objects that were updated via Update
 S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
 
 ## CLOSED
 
+S90 | CLOSED | qa | Mark edited posts: show "edited" label on objects that were updated via Update — PASS: live qa-iris-a 6 edited posts render "edited {time}" (was "updated"), fresh WASM bundle, 0 console errors
 S91 | CLOSED | qa | Copy post permalink button on object card + clipboard "Copied" success state — PASS: live qa-iris-a Copy link btn on every card, click writes object IRI to clipboard, "Copied" flashes 1.5s then reverts, 0 console errors
 S89 | CLOSED | qa | Post edit persists; signed GET serves stale pre-edit content (object+profile) — PASS: live qa-iris-a edited note GET no-cache, outbox?type=content shows edited v2; never-edited note keeps max-age=60,swr=300
 S87 | CLOSED | dev2 | Profile edit Save makes no API call (bio+checkbox lost) — NOT REPRODUCED: live dev2 (post-S83 build) fresh acct s87clean UI-only (type bio+click checkbox+Save) → POST /ap/v1/u/s87clean/outbox 202 Update{type:Person,bio,icon:[]}, server GET confirms summary+manuallyApprovesFollowers persisted; s87repro acct same; both /profile button + ?edit=true deep-link paths work; form prefills on fresh load. Save DOES call API + persist; no repro, no code change
@@ -41,7 +41,7 @@ S68 | CLOSED | qa | poll not stored locally on remote (IRI 404; no vote UI) — 
 S67 | CLOSED | qa | cross-instance mention: notify + search by mention (PASS: live qa-iris-a/b)
 S64 | CLOSED | qa | community Article post now in community feed (PASS: live qa-iris-a)
 
-S63 | CLOSED | qa | health check reports signable gap + signable_actors data (PASS: live qa-iris-a)
+
 
 
 
