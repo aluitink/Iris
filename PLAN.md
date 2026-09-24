@@ -13,6 +13,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S121 | OPEN | - | Media alt text: UI doesn't render alt on img tag (RichAttachment has no Alt prop; gallery+lightbox use att.Name)
+S122 | OPEN | - | Profile Following tab empty after following community (s50qa Lemmy) — Communities tab shows it, but profile Following tab says "Not following anyone yet"
 
 ## CLOSED
 
