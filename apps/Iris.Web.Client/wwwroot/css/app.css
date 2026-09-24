@@ -4081,6 +4081,7 @@ body > #app {
 
 .media-gallery-item {
     position: relative;
+    z-index: 1;
     cursor: pointer;
     overflow: hidden;
     aspect-ratio: 16 / 9;

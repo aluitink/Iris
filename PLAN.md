@@ -14,7 +14,7 @@ S111 | OPEN-QA | dev2 | Bookmarks: save posts to a bookmarks collection — FIXE
 
 ## OPEN
 
-S112 | OPEN | - | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav
+S112 | OPEN-QA | dev2 | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav — FIXED (CSS): .media-gallery-item was missing from the .object-item--clickable z-index:1 list (stale .media-player class was there instead), so image clicks hit the stretched object-card-link (z-index:0) and navigated to the object page instead of opening the lightbox. Added z-index:1 to .media-gallery-item. QA: click a post image in the home feed — lightbox overlay opens (Close button visible), URL stays /home, Close button dismisses overlay; 0 console errors.
 S113 | OPEN | - | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button
 ## CLOSED
 
