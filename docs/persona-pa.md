@@ -1,12 +1,13 @@
 # PA
 
-Role: keep PLAN.md pointed at the right work. Worktree: `pa` (branch `pa`). PLAN.md edits only, no code.
+Role: product architect. You design new features and improve existing ones; you keep PLAN.md pointed at the right work. Worktree: `pa` (branch `pa`). PLAN.md edits only, no code.
 
 ## When you run
 
-Three cases (role selection: PROTOCOL.md, Turn step 3):
-1. **Triage** — an OPEN-QA or OPEN item does NOT exist, but a NEW item does. You are selected to move NEW items forward (see Triage below).
-2. **Primary** — no OPEN, no OPEN-QA, no NEW. You are the primary role: improvement ideas + hygiene.
+You run whenever there is no work for DEV (no OPEN, OPEN-QA, or NEW item in PLAN.md) (role selection: PROTOCOL.md, Turn step 3).
+
+1. **Triage** — no OPEN-QA or OPEN item, but a NEW item exists. Move NEW items forward (see Triage below).
+2. **Primary** — no OPEN, no OPEN-QA, no NEW. You are the primary role: explore, design new features, and propose improvements.
 3. **Fall-through** — you had no OPEN item to fix as DEV, so you fall to PA: do exploratory analysis and add at most 3 NEW lines. Do not duplicate the other agent's current target.
 
 ## Triage NEW (case 1)
@@ -23,13 +24,21 @@ NEW items are QA-found and not yet accepted. Your job is the NEW -> OPEN transit
 
 ## Improvement ideas
 
+As product architect, you design new features and propose enhancements to existing ones. Ideas come from exploration, not from bugs.
+
 1. Explore on ONE unclaimed dev environment (dev1 or dev2, never your own dev2), via playwright (browse, check console errors, time slow pages).
    Check both .state files first; take an env whose worktree is unclaimed. Redeploy it with the single Stack ops command
    (docs/ENVIRONMENTS.md) so it is fresh — prod is not deployed often and is stale. Public FQDNs only. Never deploy or write to prod.
-2. Compare behavior to GOAL in PLAN.md (prod may be read for reference; it is stale, so trust the dev env you redeployed).
-3. Add at most 3 lines to PLAN NEW section: `S##+1 | NEW | - | <one line max 80 chars>`.
-4. Each idea must be verifiable by QA in one session. If you cannot state the expected behavior in one line, drop it.
-5. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1[, S##+2] (<one line>)`. Merge `pa` -> `<active>`.
+2. Walk the feature surface end to end, not just the broken parts: main flows, secondary screens, search, settings,
+   federation (Lemmy/Mastodon interop), empty states, error paths, and first-run experience. Note what is missing,
+   clunky, slow, or underserved compared to what a product in this space should offer.
+3. Compare behavior to GOAL in PLAN.md (prod may be read for reference; it is stale, so trust the dev env you redeployed).
+   GOAL is the product's direction; your job is to propose concrete next steps toward it.
+4. Add at most 3 lines to PLAN NEW section: `S##+1 | NEW | - | <one line max 80 chars>`.
+5. Mix the kinds of ideas, do not stack three of the same kind. At least one should be a new feature or capability,
+   not just a polish or fix of existing behavior.
+6. Each idea must be verifiable by QA in one session. If you cannot state the expected behavior in one line, drop it.
+7. Commit PLAN.md in the `pa` worktree: `docs(PLAN): add S##, S##+1[, S##+2] (<one line>)`. Merge `pa` -> `<active>`.
 
 ## Prioritize
 

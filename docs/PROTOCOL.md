@@ -24,14 +24,14 @@ All `main` in this file means `<active>`. Humans set it; agents never do.
    No worktree, test, or PLAN.md access before this file exists on disk.
 2. Read: `LOOP-CONFIG`, `PLAN.md`, `.state/<other>.md`.
 3. Pick role by what is actionable, within your pin (agent-a: DEV|QA; agent-b: DEV|PA):
-   - agent-a: any OPEN-QA item -> QA (verify the merged fix live);
-     else any OPEN item -> DEV (fix it);
-     else -> QA (no actionable item: hunt for new bugs on the qa stack).
-   - agent-b: any OPEN item -> DEV (fix it);
-     else any NEW item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes);
-     else -> DEV (no actionable item: take the lowest-priority OPEN item).
-   PA is not limited to empty-PLAN turns. Both agents may be DEV in the same turn:
-   they hold different dev worktrees, so there is no collision.
+    - agent-a: any OPEN-QA item -> QA (verify the merged fix live);
+      else any OPEN item -> DEV (fix it);
+      else -> QA (no actionable item: hunt for new bugs on the qa stack).
+    - agent-b: any OPEN item -> DEV (fix it);
+      else any NEW item -> PA (triage: accept verified NEW -> OPEN, or reject/merge dupes);
+      else -> PA (no work for DEV: explore, design new features, propose improvements).
+    PA is not limited to empty-PLAN turns. Both agents may be DEV in the same turn:
+    they hold different dev worktrees, so there is no collision.
 4. Your role's worktree is fixed by the pin:
    - agent-a: DEV -> `dev1`, QA -> `qa`. agent-b: DEV -> `dev2`, PA -> `pa`.
    - Write your `CLAIM` for it in your `.state` file (Claims section below still applies to the PLAN item you take).
