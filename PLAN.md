@@ -14,12 +14,12 @@ S100 | OPEN-QA | dev2 | Lemmy site-deref of Iris instance fails: value too long 
 S103 | OPEN-QA | dev2 | Profile banner image upload — FIXED (9e4e1402): EditProfileForm banner section + Profile sets AS image; server merges image (set/clear); live dev2 s103banner upload persisted + rendered, remove cleared; 0 console errors, suite 0 failed
 ## OPEN
 
-S102 | OPEN | - | Home Communities tab shows Posts content, should show followed communities content
 S104 | OPEN | - | Profile, not all tabs show proper content
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
 S106 | OPEN | - | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
 ## CLOSED
 
+S102 | CLOSED | qa | Home Communities tab showed Posts content (own posts) — PASS: live qa-iris-a (s101hunt2) own personal post S102QA-PERSONAL-4K7M shows in Posts tab (?source=people) but NOT in Communities tab (shows "No community posts yet" empty state, ?source=communities); network only ?source=people/?source=communities, no unfiltered /feed follow-up (server `first` link now carries ?source= -> client fast path); 0 console errors
 S99 | CLOSED | qa | No theme/dark-mode setting in Settings (no Appearance section) — PASS: live qa-iris-a (s95qa) Settings>Appearance tab present; Dark default (data-theme=null, ls dark); switch Light -> data-theme="light" + ls light + PUT {theme:"light"} + GET round-trips + DB NotificationPrefsJson {"Theme":"light"}; hard reload -> early-paint light (no dark flash), Light radio pre-checked from server; revert Dark -> data-theme removed + DB {"Theme":"dark"}; 0 console errors
 S96 | CLOSED | qa | Search local-only; add cross-instance post search over followed remote outboxes — PASS: live qa-iris-a signed-in s95qa (follows qa-lemmy s50qa) search ?q=S96XSEARCH-7Q4LZ returns the nested remote post/2 (Announce{Create{Page}}, not in local store) via cross-instance pass; opens + renders (lemmyadmin/s50qa); 0 console errors
 S98 | CLOSED | qa | Communities page local-only; no cross-instance community discovery — PASS: live qa-iris-a "All known" tab lists qa-lemmy s50qa (remote) + local s50qa-community; "All on this instance" excludes remote; 0 console errors
@@ -44,4 +44,3 @@ S80 | CLOSED | qa | actor page Posts omits Page cross-posts — PASS: live qa-ir
 S78 | CLOSED | qa | Profile - Your posts empty (outbox ?type=content filter) — PASS: live qa-iris-a new user post shows in Your posts tab, GET outbox?type=content 200, 0 console errors
 S77 | CLOSED | qa | home feed only showed own content (sort-by-date fix before MaxItems cap) — PASS: live qa-iris-a home feed shows own + followed content sorted newest-first, no console errors, 1483/1483 tests green
 S76 | CLOSED | qa | NRE in Iri.get_Value on empty-IRI mention tag — PASS: live qa-iris-a normal mention renders as link, no console errors, 1506/1506 tests green
-S72 | CLOSED | qa | Report button "Reported" state not restored on reload (fix: moderation cache walks /flags; QA PASS: live qa-iris-a, reported s67bob, navigate away/back, button shows "Reported ✓" disabled)
