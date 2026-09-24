@@ -10,11 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-## NEW
-
-S79 | NEW | - | actor doc postsCount counts only Note+Article; misses Page/Question (Lemmy posts, polls)
-S80 | NEW | - | profile + actor page Posts omit Page cross-posts (client filter lacks Page; home feed has it)
-S81 | NEW | - | client OutboxFilter + server postsCount are 3 divergent copies of one classification
+S79 | OPEN | - | actor postsCount counts only Note+Article; misses Page + Question (polls)
+S80 | OPEN | - | actor page Posts omits Page cross-posts (no ?type=content; filter lacks Page)
+S81 | OPEN | - | content-item classification exists as 4 divergent copies (client + 3 server)
 
 
 ## CLOSED
