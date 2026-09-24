@@ -198,6 +198,66 @@ public sealed class LemmyReplyToPostIntegrationTests : IDisposable
             l is Link link && link.Href == pageIri.Uri);
     }
 
+    /// <summary>
+    /// S94 (Lemmy interop, reply Create 400): Lemmy's comment receiver (CreateOrUpdateNote) requires
+    /// BOTH <c>to</c> and <c>cc</c> on the Create activity (neither has a serde default); an empty
+    /// <c>cc</c> fails the untagged-enum deserialization ("data did not match any variant of untagged
+    /// enum AnnouncableActivities") and the reply is dead-lettered, never landing on Lemmy. A reply to
+    /// a remote parent usually has no remote followers, so the follower-based cc is empty. This test
+    /// asserts the delivered reply Create carries a non-empty <c>cc</c> (backfilled from the embedded
+    /// note's cc — the parent author), so Lemmy's comment deserialization succeeds.
+    /// </summary>
+    [Fact]
+    public async Task IrisReplyToLemmyPage_DeliveredCreate_CarriesCc_Audience()
+    {
+        var pageIri = new Iri($"https://{AHost}/ap/v1/objects/page-{Guid.NewGuid():N}");
+        await _aPersistence.Objects.PutObjectAsync(new Page
+        {
+            Id = pageIri.Value,
+            Name = ["A Lemmy post"],
+            Content = ["<p>Post content</p>"],
+            AttributedTo = [new Link { Href = _bobActorIri.Uri }],
+        }, CancellationToken.None);
+
+        var noteIri = new Iri($"https://{BHost}/ap/v1/objects/note-{Guid.NewGuid():N}");
+        var createIri = new Iri($"https://{BHost}/activities/create-{Guid.NewGuid():N}");
+        var replyNote = new Note
+        {
+            Id = noteIri.Value,
+            Content = ["<p>A reply from Iris</p>"],
+            AttributedTo = [new Link { Href = _aliceActorIri.Uri }],
+            InReplyTo = [new Link { Href = pageIri.Uri }],
+        };
+        var create = new Create
+        {
+            Id = createIri.Value,
+            Actor = [new Link { Href = _aliceActorIri.Uri }],
+            Object = [replyNote],
+        };
+
+        using var signedRequest = SignedOutboxRequest(_aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
+        using var publishResponse = await _bHttp.SendAsync(signedRequest);
+        Assert.Equal(HttpStatusCode.Accepted, publishResponse.StatusCode);
+
+        // Wait for the delivery to A (bob's inbox) to complete.
+        await WaitForAsync(
+            async () => await _aPersistence.Objects.TryGetObjectAsync(noteIri, out _),
+            timeout: TimeSpan.FromSeconds(30));
+
+        // Inspect the STORED Create (the same canonical activity delivered over the wire): it must
+        // carry a non-empty `cc` (Lemmy's CreateOrUpdateNote requires it). The stored form and the
+        // federated form are the same canonical activity (rewritten before the outbox record). The
+        // server mints the Create's id (Decision 055), so locate it in alice's outbox.
+        var outbox = await _bPersistence.Activities.GetOutboxAsync(_aliceActorIri, CancellationToken.None);
+        var storedCreate = outbox
+            .OfType<KristofferStrube.ActivityStreams.Create>()
+            .FirstOrDefault(c => c.Object is { } o && o.Any(obj => obj is Note n && n.Id == noteIri.Value));
+        Assert.NotNull(storedCreate as object);
+        var cc = storedCreate!.Cc;
+        Assert.NotNull(cc);
+        Assert.NotEmpty(cc!);
+    }
+
     // --- Helpers ---
 
     private static IdentityKeys BuildIdentityKeys(KeyPair personKey, Iri personActorIri)
