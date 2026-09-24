@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S78 | OPEN | - | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
+S78 | OPEN-QA | dev1 | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
 ## NEW
 
 S79 | NEW | - | actor doc postsCount counts only Note+Article; misses Page/Question (Lemmy posts, polls)
