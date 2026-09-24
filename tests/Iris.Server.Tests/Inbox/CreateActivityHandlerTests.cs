@@ -426,6 +426,43 @@ public sealed class CreateActivityHandlerTests
         Assert.Equal(remoteReplier, parentAuthorDelivery.ActorIri); // signed as the replier
     }
 
+    // S100: a reply's Create names the parent author in its `to`/`cc` audience, so the S47
+    // named-recipient loop delivers it to the parent author's inbox. The S62 parent-author delivery must
+    // NOT then deliver the SAME Create IRI to the same parent author a second time — the duplicate is
+    // rejected by Lemmy's insert_received_activity idempotency guard with a 400 that dead-letters the
+    // reply. The handler tracks delivered actors and drops the redundant S62 delivery.
+    [Fact]
+    public async Task HandleAsync_ReplyNamesParentInTo_DoesNotDuplicateParentAuthorDelivery()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson); // bob (local) is the recipient/replier
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        // The parent note is authored by a REMOTE actor (alice on a.domain.local).
+        var parentNoteIri = new Iri("https://a.domain.local/ap/v1/objects/parent-789");
+        var parentNote = new Note
+        {
+            Id = parentNoteIri.Value,
+            Content = ["a post on the remote instance"],
+            AttributedTo = [new Link { Href = new Uri(RemotePerson.Value) }],
+        };
+        await persistence.Objects.PutObjectAsync(parentNote);
+
+        // bob replies; the reply names the parent author alice in its `to` (the S47 recipient).
+        var create = BuildCreate(LocalPerson, inReplyTo: parentNoteIri.Value);
+        var replyNote = (Note)create.Object!.First()!;
+        replyNote.To = [new Link { Href = new Uri(RemotePerson.Value) }];
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The parent author's inbox is targeted EXACTLY ONCE (by S47, not also by S62): the same Create
+        // IRI is not sent twice to the same shared inbox.
+        var parentAuthorDeliveries = delivery.Delivered.Where(d => d.InboxIri == RemotePerson.InboxOf()).ToList();
+        Assert.Single(parentAuthorDeliveries);
+        Assert.Same(create, parentAuthorDeliveries[0].Activity);
+    }
+
     [Fact]
     public async Task HandleAsync_ReplyToLocalParent_SkipsParentAuthorDelivery()
     {
