@@ -18,8 +18,12 @@ namespace Iris.Server.Services;
 /// newest first) and merges them into a single **newest-first** feed: items are ordered by (outbox
 /// position, then member IRI) — a stable, deterministic merge that ranks a member's newest post above
 /// its older posts and orders same-position posts by member IRI. The merged items are de-duplicated by
-/// activity IRI (keeping the first, i.e. newest, occurrence). A member with no outbox contributes
-/// nothing; an unknown community or a community with no members yields an empty feed. The
+/// activity IRI (keeping the first, i.e. newest, occurrence) and filtered to <em>content items</em>
+/// (the unified <see cref="Iris.Core.ContentItems.IsContentPost"/> — a <c>Create</c> of a
+/// Note/Article/Page/Question, an <c>Announce</c>, or a bare content object), so non-content items that
+/// reach the merge (a community-delivered <c>Like</c>, a followed actor's <c>Follow</c>/<c>Delete</c>)
+/// do not surface as empty post cards (S82). A member with no outbox contributes nothing; an unknown
+/// community or a community with no members yields an empty feed. The
 /// <see cref="SearchCommunityAsync"/> method runs a case-insensitive substring search over the feed's
 /// items' <c>content</c>/<c>name</c>.
 /// </remarks>
@@ -258,10 +262,18 @@ public sealed class CommunityFeedService : ICommunityFeedService
             await PersistRemoteOutboxItemsAsync(communityIri, remoteOutboxItems, ct).ConfigureAwait(false);
         }
 
+        // S82: the feed is a content surface — it renders post cards. Non-content items that reach the
+        // merge (a community-delivered Like recorded in members' outboxes, or a followed actor's
+        // Follow/Like/Delete) carry no renderable content and would surface as empty post cards.
+        // Filter to content items (the unified ContentItems.IsContentPost: a Create of a
+        // Note/Article/Page/Question, an Announce, or a bare content object) before truncation. This
+        // mirrors the home-feed and outbox ?type=content filters, so the community feed renders exactly
+        // the items a post view can display.
         var feed = merged
             .OrderBy(m => m.Position)
             .ThenBy(m => m.ContributorIri.Value, StringComparer.Ordinal)
             .Select(m => m.Item)
+            .Where(item => ContentItems.IsContentPost(item))
             .ToList();
 
         return TruncateDedup(feed);
