@@ -17,6 +17,7 @@ S124 | OPEN | agent-a | When the user posts, the feed flip completely to only th
 S125 | OPEN | - | Home: signed-in Local tab shows instance public timeline (now authless-only)
 S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
+S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
 ## CLOSED
 
 S121 | CLOSED | qa | Media alt text: render author alt on img (gallery+lightbox) — PASS: live qa-iris-a (wasm t1q33tso4m) s116snd profile shows S118 post with img alt="S118-QA-ALT-TEXT-TEST: A red circle on a blue field" (author alt, not filename); 0 console errors
