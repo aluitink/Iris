@@ -10,7 +10,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S89 | OPEN | - | Post edit persists; signed GET serves stale pre-edit content (object+profile)
+S89 | OPEN-QA | dev1 | Post edit persists; signed GET serves stale pre-edit content (object+profile) — FIXED (dev1 9a71cdd7): (A) object-doc GET emits no-cache for edited objects (non-null `updated`), never-edited keep max-age=60,swr=300; (B) EnrichCollectionItemsAsync re-resolves current content from IObjectStore instead of frozen Create-embedded snapshot (home feed + Your posts); (C) Update branch invalidates outbox?type=content page cache + follow-feed cache. E2E test S89_EditedNote green (signed wire path); full Server suite 1488 pass/0 fail
 S90 | OPEN | - | Mark edited posts: show "edited" label on objects that were updated via Update
 S91 | OPEN | - | Copy post permalink button on object card + clipboard "Copied" success state
 S92 | OPEN | - | Lemmy interop: iris user follows lemmy community; posts reach iris home feed
