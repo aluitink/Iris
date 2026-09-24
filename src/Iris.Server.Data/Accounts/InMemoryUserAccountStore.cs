@@ -83,6 +83,19 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         return Task.CompletedTask;
     }
 
+    public Task UpdateMessagesReadAtAsync(Guid id, DateTimeOffset readAt, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_accounts.TryGetValue(id, out var account))
+            {
+                return Task.FromException(new InvalidOperationException($"No account with id {id}."));
+            }
+            account.MessagesReadAt = readAt;
+        }
+        return Task.CompletedTask;
+    }
+
     public Task<bool> AnyAdminExistsAsync(CancellationToken ct = default)
     {
         lock (_gate)
@@ -157,6 +170,7 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         Role = account.Role,
         ActorId = account.ActorId,
         NotificationsReadAt = account.NotificationsReadAt,
+        MessagesReadAt = account.MessagesReadAt,
         NotificationPrefs = account.NotificationPrefs is null
             ? null
             : new NotificationPreferences
