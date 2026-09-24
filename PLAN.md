@@ -10,13 +10,13 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S98 | OPEN-QA | dev1 | Communities page local-only; no cross-instance community discovery — FIXED (client-only): added a fourth "All known" tab to Communities.razor that loads the federated community surface. The "All on this instance" tab is unchanged (SearchAsync Type=Actor LocalOnly=true -> local Groups via OfType<Group>()); the new "All known" tab issues SearchAsync Type=Actor LocalOnly=false, which the server (S30 A8.2) resolves to the actor-store scan PLUS the community-store's cached remote Groups merged in; after OfType<Group>() that yields this instance's local communities (local Groups live in the same ActorEntity table the actor-store search scans) UNION the cached remote community Groups the instance has seen during federation. Root cause: the page only ever called LocalOnly=true, so cached remote community Groups (persisted by RemoteCommunityPersister on follow/interaction) were never surfaced anywhere in the Communities directory. Tests: none added — the server contract the tab consumes (localOnly=false Actor search surfaces cached remote Group; localOnly=true excludes it) is already covered by GlobalSearchServiceTests.Search_AllKnownCommunities_SurfacesCachedRemoteGroup_NotLocal; full suite 1494 pass/0 fail/25 skip. LIVE dev1: followed dev1-lemmy community pa93interop (Join -> Leave toggled, RemoteCommunityPersister cached it); Communities "All known" tab now lists pa93interop (remote) ALONGSIDE local dev1 communities s21dev1-test/s21fix/s21fix2/s21uiverify, while "All on this instance" tab does NOT list pa93interop (local-only) — cross-instance community discovery now works
 S99 | OPEN | - | No theme/dark-mode setting in Settings (no Appearance section)
 S96 | OPEN | - | Search local-only; add cross-instance post search over followed remote outboxes
 S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 
 ## CLOSED
 
+S98 | CLOSED | qa | Communities page local-only; no cross-instance community discovery — PASS: live qa-iris-a "All known" tab lists qa-lemmy s50qa (remote) + local s50qa-community; "All on this instance" excludes remote; 0 console errors
 S97 | CLOSED | qa | Lemmy post Replies tab empty though header shows N comments (S43 skips walk) — PASS: live qa-iris-a /object?iri=...post/1 Replies tab renders s95qa reply (server ?iri= 200 orderedItems=1); header 1 comments agrees; 0 console errors
 S94 | CLOSED | qa | Iris->Lemmy reply Create 400 dead-lettered; Lemmy inbox rejects the Note reply — PASS: live qa-iris-a s95qa replied to Lemmy /post/1, note to[] carries full-IRI activitystreams#Public, comment id 1 landed (path 0.1, by s95qa)
 S95 | CLOSED | qa | Proxy 404 + unreachable both say could-not-reach; distinguish not-found for 404 — PASS: live qa-iris-a 404->"No account found on host", 502->"Could not reach", real acct resolves; 0 unexpected console errors
@@ -41,7 +41,6 @@ S76 | CLOSED | qa | NRE in Iri.get_Value on empty-IRI mention tag — PASS: live
 S72 | CLOSED | qa | Report button "Reported" state not restored on reload (fix: moderation cache walks /flags; QA PASS: live qa-iris-a, reported s67bob, navigate away/back, button shows "Reported ✓" disabled)
 S73 | CLOSED | qa | community join state lost on nav — PASS: live qa-iris-a join 3 communities, navigate away/back, all show Leave
 S71 | CLOSED | qa | community ns#followersCount reads Follow not CommunityFollower; AP doc 1 vs 5 — PASS: live qa-iris-a AP doc ns#followersCount=5, /followers=5, UI Members(5)
-S66 | CLOSED | qa | federated boost count wrong on receiving instance — NOT REPRODUCED: qa live B-boost of A note shows ns#sharedCount=1 on home A (count correct; likely misread of top-level vs ns# key)
 
 
 
