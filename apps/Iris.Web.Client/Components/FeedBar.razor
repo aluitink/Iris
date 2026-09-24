@@ -10,6 +10,7 @@
                 <div class="feed-bar-tabs">
                     <button type="button" class="tab @(_state.Tab == "posts" ? "tab--active" : "")" @onclick='() => SetTab("posts")' aria-selected="@(_state.Tab == "posts")">Posts</button>
                     <button type="button" class="tab @(_state.Tab == "communities" ? "tab--active" : "")" @onclick='() => SetTab("communities")' aria-selected="@(_state.Tab == "communities")">Communities</button>
+                    <button type="button" class="tab @(_state.Tab == "local" ? "tab--active" : "")" @onclick='() => SetTab("local")' aria-selected="@(_state.Tab == "local")">Local</button>
                 </div>
             }
             <div class="feed-bar-right">
@@ -70,7 +71,7 @@
             try
             {
                 var stored = await Js.InvokeAsync<string>("localStorage.getItem", "iris:homeTab");
-                if (stored is "posts" or "communities")
+                if (stored is "posts" or "communities" or "local")
                 {
                     _state.Tab = stored;
                 }
