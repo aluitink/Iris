@@ -17,6 +17,7 @@ S104 | OPEN | - | Profile, not all tabs show proper content
 S105 | OPEN | - | Home feed post is missing user posts, we should see posts and boosts from followed users and self
 S106 | OPEN | - | Notifications page content causes feed to be too wide on mobile resulting in horizontal scroll
 S107 | OPEN | - | Copied links for a post should generate a front end link instead of an Activity Pub object link
+S108 | OPEN | - | Profile - Your posts pages through a ton of content to find your post, Outbox should be objects the actor produced, posts/likes/boosts, feed is an iris extension view that joins followed content. The outbox should be lean and only contain objects the user posted.
 ## CLOSED
 
 S100 | CLOSED | qa | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — PASS: live qa-iris-a (s101hunt2) follow s50qa -> Lemmy site row 'iris-qa-iris-a.luit.' (len 20, fits varchar(20)), no 'value too long' in logs; reply to /post/1 landed (comment id 2, single copy, person resolved); residual 400 is Lemmy's own announce re-insert (community::announce::receive -> insert_received_activity) = Lemmy-side quirk, comment lands; 0 console errors
