@@ -10,7 +10,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN
 
-S78 | OPEN-QA | dev1 | Profile - Your posts is empty - network call shows 2328 items returned but they do not display.
 ## NEW
 
 S79 | NEW | - | actor doc postsCount counts only Note+Article; misses Page/Question (Lemmy posts, polls)
@@ -20,6 +19,7 @@ S81 | NEW | - | client OutboxFilter + server postsCount are 3 divergent copies o
 
 ## CLOSED
 
+S78 | CLOSED | qa | Profile - Your posts empty (outbox ?type=content filter) — PASS: live qa-iris-a new user post shows in Your posts tab, GET outbox?type=content 200, 0 console errors
 S77 | CLOSED | qa | home feed only showed own content (sort-by-date fix before MaxItems cap) — PASS: live qa-iris-a home feed shows own + followed content sorted newest-first, no console errors, 1483/1483 tests green
 S76 | CLOSED | qa | NRE in Iri.get_Value on empty-IRI mention tag — PASS: live qa-iris-a normal mention renders as link, no console errors, 1506/1506 tests green
 S72 | CLOSED | qa | Report button "Reported" state not restored on reload (fix: moderation cache walks /flags; QA PASS: live qa-iris-a, reported s67bob, navigate away/back, button shows "Reported ✓" disabled)
@@ -51,9 +51,6 @@ S57 | CLOSED | dev2 | cross-post to local community dropped by shared-inbox (PAS
 
 S54 | CLOSED | dev1 | input buttons disabled while typing (oninput binding)
 S52 | CLOSED | dev1 | community post ignored post type (Article/Poll)
-S51 | CLOSED | dev1 | community edit stale updated timestamp
-S49 | CLOSED | dev1 | community feed empty after posting (creator not a follower)
-S47 | CLOSED | dev1 | community edit form silent stale submission
 S53 | CLOSED | dev2 | community-scoped search returned 0 (Pass 345: search + feed return content)
 S55 | CLOSED | dev1 | post edit UI stale (Pass 344: fresh nav + save render current note content)
 S56 | CLOSED | dev2 | anonymous remote actor showed Posts (0) (Pass: anon proxy follow renders post)
