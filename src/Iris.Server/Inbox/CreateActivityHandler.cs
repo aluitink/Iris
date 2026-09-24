@@ -166,6 +166,15 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 .AddToOutboxAsync(recipient, activity, ct)
                 .ConfigureAwait(false);
 
+            // S100: the set of remote actors this Create has already been delivered to. A reply's Create
+            // is reachable by several delivery paths (the follower fan-out below, the S47 named-recipient
+            // loop, and the S62 parent-author delivery). When two paths resolve to the SAME remote actor
+            // (e.g. the parent author is named in the reply's `to`/`cc` AND is the S62 parent author),
+            // delivering the same Create IRI to that actor's shared inbox twice is a duplicate that
+            // Lemmy's insert_received_activity rejects with 400. Recording each delivered actor here lets
+            // the later paths skip an actor the earlier paths already reached.
+            var deliveredTo = new HashSet<string>(StringComparer.Ordinal);
+
             // Then federate the post to the author's remote followers (J-18). A local follower already
             // sees the post in the author's outbox on this instance, so only remote followers need a
             // cross-instance delivery. Each is delivered to its own inbox, signed as the author.
@@ -194,6 +203,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 await _delivery
                     .DeliverToActorAsync(followerIri, activity, recipient, ct)
                     .ConfigureAwait(false);
+                deliveredTo.Add(followerIri.Value);
             }
 
             // S47: deliver the post to the named recipients (the actors in the embedded object's `to`
@@ -222,6 +232,13 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     if (await _persistence.Moderation
                             .IsBlockedAsync(targetIri, recipient, ct)
                             .ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+
+                    // S100: skip a named recipient the follower fan-out above already delivered to (the
+                    // same Create IRI to the same shared inbox would 400 on the peer).
+                    if (!deliveredTo.Add(targetIri.Value))
                     {
                         continue;
                     }
@@ -283,6 +300,15 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 && parentAuthorIri != recipient
                 && !await _localActors.IsLocalActorAsync(parentAuthorIri, ct).ConfigureAwait(false)
                 && !await _persistence.Moderation.IsBlockedAsync(parentAuthorIri, recipient, ct).ConfigureAwait(false)
+                // S100: the parent author has NOT already been delivered to by one of the earlier
+                // delivery paths (the follower fan-out or the S47 named-recipient loop). A reply's
+                // Create names the parent author in its `to`/`cc` audience, so S47 already delivers it
+                // to the parent author's inbox; delivering it again here (S62) sends the SAME Create
+                // IRI to the same shared inbox twice (Lemmy uses one shared inbox per instance), and
+                // the second is rejected by Lemmy's insert_received_activity idempotency guard with a
+                // 400 that dead-letters the reply. A parent author not otherwise reached still gets the
+                // reply (the original S62 case).
+                && !deliveredTo.Contains(parentAuthorIri.Value)
                 && activity.Actor?.FirstOrDefault()?.ResolveObjectIri() is { } replierIri)
             {
                 await _delivery

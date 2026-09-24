@@ -301,7 +301,7 @@ public static class WebAppFactory
         builder.Services.AddActivityPubServer(options =>
         {
             options.BaseUri = baseUri;
-            options.InstanceName = $"iris-{HostLabel(baseString)}";
+            options.InstanceName = BuildInstanceName(baseString);
             // The site actor (InstanceActorIri) is what the instance root serves (138.11); the instance
             // also signs outbound federation as it (InstanceActorId), so both point at the site actor.
             options.InstanceActorIri = instanceActorIri;
@@ -1979,7 +1979,7 @@ public static class WebAppFactory
         SeedActor(persistence, keyStore, new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}"), SeedHandle);
         // 138.11: the site actor (Application at the bare base) — served at the instance root and used to
         // sign outbound federation. Seeded after alice; both keys are registered below.
-        SeedInstanceActor(persistence, keyStore, new Iri(baseNoSlash), $"iris-{HostLabel(baseString)}", InstanceHandle);
+        SeedInstanceActor(persistence, keyStore, new Iri(baseNoSlash), BuildInstanceName(baseString), InstanceHandle);
         // Register the seeded actors' keys so the proxy / DeliveryWorker can sign as them (the site actor
         // is InstanceActorId, so it is the outbound federation signer).
         RegisterSeedKey(services, baseNoSlash);
@@ -2226,6 +2226,23 @@ public static class WebAppFactory
     /// </summary>
     private static string HostLabel(string baseString)
         => Uri.TryCreate(baseString, UriKind.Absolute, out var uri) ? uri.Host : baseString;
+
+    /// <summary>
+    /// Builds the instance's display name for the site actor and NodeInfo metadata. The name is
+    /// <c>iris-{host}</c>, but it MUST fit Lemmy's <c>site.name</c> column, which is
+    /// <c>character varying(20)</c>: Lemmy's <c>objects::instance</c> dereferences the instance's site
+    /// actor (the bare root URL) and stores its <c>name</c> in that column before it will resolve any
+    /// object on the instance. A host longer than 15 chars (e.g. <c>dev2-iris-a.luit.ink</c>, 20) would
+    /// make <c>iris-{host}</c> overflow the column ("value too long for type character varying(20)")
+    /// and block the entire site-deref — so the name is truncated to 20 chars. Truncation is safe: the
+    /// name is a display label only (the actor's <c>preferredUsername</c> and IRI are unaffected).
+    /// </summary>
+    private static string BuildInstanceName(string baseString)
+    {
+        const int MaxLength = 20;
+        var name = $"iris-{HostLabel(baseString)}";
+        return name.Length <= MaxLength ? name : name[..MaxLength];
+    }
 
     /// <summary>
     /// A no-op <c>IAntiforgery</c> that always reports a request as valid and issues dummy (non-crypto)
