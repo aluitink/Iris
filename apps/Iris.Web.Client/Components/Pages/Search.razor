@@ -93,6 +93,13 @@ else
     [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "q")]
     public string? QueryParam { get; set; }
 
+    /// <summary>
+    /// The "Actors only" filter, round-tripped through the URL (<c>?actors=1</c>) so it survives a
+    /// page reload or a shared/bookmarked search URL.
+    /// </summary>
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "actors")]
+    public string? ActorsOnlyParam { get; set; }
+
     private string Query { get; set; } = string.Empty;
     private bool ActorsOnly { get; set; }
     private bool Busy { get; set; }
@@ -108,6 +115,8 @@ else
         {
             Query = QueryParam;
         }
+
+        ActorsOnly = ActorsOnlyParam is "1" or "true" or "yes";
 
         if (Query.Trim().Length > 0 && Client is not null)
         {
@@ -160,6 +169,11 @@ else
         if (!skipNavigate)
         {
             var url = Query.Trim().Length > 0 ? $"/search?q={Uri.EscapeDataString(Query.Trim())}" : "/search";
+            if (ActorsOnly && Query.Trim().Length > 0)
+            {
+                url += "&actors=1";
+            }
+
             Nav.NavigateTo(url, forceLoad: false);
         }
 
