@@ -8,9 +8,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
+## OPEN-QA
+
+S100 | OPEN-QA | dev2 | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400 — FIXED (ccf5f122, merged 884eabb0). Part1: BuildInstanceName caps instance name to 20 chars (Lemmy site.name varchar(20)); live dev2 root deref name 'iris-dev2-iris-a.lui' (len 20), Lemmy site row created (len 20), no 'value too long' in logs. Part2: deliveredTo dedup in CreateActivityHandler so a reply's Create IRI is not delivered twice to the same shared inbox (S47 to[] + S62 parent-author both targeted lemmyadmin -> Lemmy insert_received_activity 400); reply from s100dev to /post/1 landed (comment id 4, threaded, single delivery). Full suite 0 failed. NOTE: residual 400 on MEMBER reply is Lemmy's own announce of the member comment (community::announce::receive re-inserts the Create IRI -> 400) — Lemmy-side quirk, comment lands correctly.
 ## OPEN
 
-S100 | OPEN | - | Lemmy site-deref of Iris instance fails: value too long varchar(20); duplicate reply Create 400
 S102 | OPEN | - | Home Communities tab shows Posts content, should show followed communities content
 S103 | OPEN | - | Profile needs ability to upload a banner image
 S104 | OPEN | - | Profile, not all tabs show proper content
