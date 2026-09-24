@@ -10,11 +10,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
-S114 | OPEN-QA | dev2 | Edit/Delete own posts from feed card: EngagementBar on ObjectView (feed cards) has Like/Boost/Bookmark/Reply/Copy/Moderation but no Edit or Delete for the author's own posts (these exist only on ObjectDetail page). Add Edit + Delete buttons to the EngagementBar more-options menu when the post author is the current user; Edit navigates to /object?iri=...#edit or opens inline editor, Delete confirms + calls DELETE endpoint.
-S111 | OPEN-QA | dev1 | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab — FIXED (UiContext bookmark cache + EngagementBar seeding + Profile ObjectView cards); live dev1: bookmarked post persists aria-pressed=true after reload; Bookmarks tab renders full post card; unbookmark clears; 1527 tests pass
-
 ## OPEN
 ## CLOSED
+
+S114 | CLOSED | qa | Edit/Delete own posts from feed card — PASS: live qa-iris-a (wasm kzz9lgxzn4) own post shows .engagement-more menu w/ Edit+Delete; Edit deep-link -> prefilled editor + Save; Delete confirm -> tombstone "Deleted post"; 0 console errors
+S111 | CLOSED | qa | Bookmarks: save posts to a bookmarks collection; add Bookmark button + profile Bookmarks tab — PASS: live qa-iris-a bookmarked post persists aria-pressed=true after reload; Bookmarks tab renders full post card w/ engagement bar; unbookmark clears; 0 console errors
 
 S112 | CLOSED | qa | Media lightbox: clicking a post image opens full-screen overlay with prev/next nav — PASS: live qa-iris-a created S112-QA-IMAGE-POST (1x1 PNG via compose); clicked .media-gallery-item img in home feed -> .lightbox-overlay opens w/ Close btn (×), URL stayed /home (no object-page nav); Close dismissed overlay (0 elements); same on profile Your-posts tab; deployed /css/app.css .media-gallery-item z-index:1 confirmed live; 0 console errors
 S113 | CLOSED | dev2 | CW rendering: posts with contentWarning show CW banner + hidden content behind Show button — VERIFIED (already implemented): live dev2 CW text post shows .object-sensitive banner (summary "S113-CW-TEST" + "This content may be sensitive." + Show btn), content blur(8px) until Show (filter none after); CW+media post media-gallery-wrap blur(8px) until Show; 0 console errors
