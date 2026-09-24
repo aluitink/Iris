@@ -3580,6 +3580,16 @@ ul.object-list li {
     cursor: default;
 }
 
+.engagement-menu-item--danger {
+    color: var(--danger);
+}
+
+.engagement-error {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--danger);
+}
+
 .follow-request-row {
     display: flex;
     align-items: center;

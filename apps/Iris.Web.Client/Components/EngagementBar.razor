@@ -92,25 +92,47 @@
                 </svg>
             }
         </button>
-        @if (CanModerate)
+        @if (CanModerate || IsOwnPost)
         {
-            <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="_showModeration"
-                 @onclick="() => _showModeration = !_showModeration"
+            <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="@_showMore"
+                 @onclick="() => _showMore = !_showMore"
                  @onkeydown="OnMoreKeyDown">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                     <circle cx="12" cy="5" r="1.5" />
                     <circle cx="12" cy="12" r="1.5" />
                     <circle cx="12" cy="19" r="1.5" />
                 </svg>
-                @if (_showModeration)
+                @if (_showMore)
                 {
                     <div class="engagement-menu" @onclick:stopPropagation>
-                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => BlockAsync()">Block</button>
-                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => MuteAsync()">Mute</button>
-                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => FlagAsync()">Report</button>
+                        @if (IsOwnPost)
+                        {
+                            <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="EditOwnPost">Edit</button>
+                            @if (_confirmingDelete)
+                            {
+                                <button type="button" class="engagement-menu-item engagement-menu-item--danger" disabled="@_busy" @onclick="ConfirmDeleteAsync">
+                                    @(_busy ? "Deleting…" : "Confirm delete")
+                                </button>
+                                <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => _confirmingDelete = false">Cancel</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="engagement-menu-item engagement-menu-item--danger" disabled="@_busy" @onclick="() => _confirmingDelete = true">Delete</button>
+                            }
+                        }
+                        @if (CanModerate)
+                        {
+                            <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => BlockAsync()">Block</button>
+                            <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => MuteAsync()">Mute</button>
+                            <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => FlagAsync()">Report</button>
+                        }
                     </div>
                 }
             </div>
+        }
+        @if (_error is not null)
+        {
+            <div class="engagement-error" role="alert">@_error</div>
         }
     </div>
 }
@@ -192,8 +214,10 @@
     private bool _bookmarked;
     private bool _busy;
     private bool _countsLoaded;
-    private bool _showModeration;
+    private bool _showMore;
     private bool _copied;
+    private bool _confirmingDelete;
+    private string? _error;
     private Iri? _likeIri;
     private Iri? _announceIri;
 
@@ -204,7 +228,7 @@
     {
         if (e.Key is "Enter" or " ")
         {
-            _showModeration = !_showModeration;
+            _showMore = !_showMore;
         }
     }
 
@@ -250,6 +274,13 @@
     /// </summary>
     private bool CanModerate
         => AuthorIri is { } author && Session.ActorId is { } me && author != me;
+
+    /// <summary>
+    /// Whether this post belongs to the signed-in user (the author IRI is the session's actor).
+    /// Only own posts expose the Edit / Delete actions in the more-options menu (S114).
+    /// </summary>
+    private bool IsOwnPost
+        => AuthorIri is { } author && Session.ActorId is { } me && author == me;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -544,7 +575,7 @@
         try
         {
             await client.BlockAsync(me, target);
-            _showModeration = false;
+            _showMore = false;
         }
         finally
         {
@@ -563,7 +594,7 @@
         try
         {
             await mod.MuteAsync(me, target);
-            _showModeration = false;
+            _showMore = false;
         }
         finally
         {
@@ -582,7 +613,64 @@
         try
         {
             await client.FlagAsync(me, target);
-            _showModeration = false;
+            _showMore = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Opens the object's detail page in edit mode (the page's inline editor, S114). The bar itself
+    /// stays put — editing happens on the object page where the full editor + save flow already live.
+    ///
+    /// The #edit hash is passed in the initial URL so it's present before ObjectDetail's first render;
+    /// the page enters edit mode once the object loads and strips the hash via history.replaceState.
+    /// (NavigateTo preserves the ?iri= query even with a fragment — only a *subsequent* hash-only
+    /// NavigateTo drops it — so passing the hash up front is the race-free path.)
+    /// </summary>
+    private void EditOwnPost()
+    {
+        if (ReplyIri is not { } iri)
+        {
+            return;
+        }
+
+        Nav.NavigateTo($"object?iri={Uri.EscapeDataString(iri.Value)}#edit", forceLoad: false);
+    }
+
+    /// <summary>
+    /// Deletes the post the bar is rendered for (the content object's IRI, not the Create activity —
+    /// the server tombstones by the object's IRI), after a one-step confirm in the menu (S114).
+    /// On success the card's post is gone; the feed re-renders it as a tombstone on the next fetch.
+    /// </summary>
+    private async Task ConfirmDeleteAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client || ReplyIri is not { } iri)
+        {
+            return;
+        }
+
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await client.DeleteAsync(me, iri);
+            if (result.IsSuccess)
+            {
+                _confirmingDelete = false;
+                _showMore = false;
+                StateHasChanged();
+            }
+            else
+            {
+                _error = $"Delete failed (HTTP {(int)result.StatusCode}).";
+            }
+        }
+        catch
+        {
+            _error = "The post couldn't be deleted. Please try again.";
         }
         finally
         {

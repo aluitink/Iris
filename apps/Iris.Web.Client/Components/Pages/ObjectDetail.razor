@@ -232,6 +232,9 @@ else if (ObjectDoc is null)
     [Inject]
     private HttpClient Http { get; set; } = default!;
 
+    [Inject]
+    private IJSRuntime Js { get; set; } = default!;
+
     [SupplyParameterFromQuery(Name = "iri")]
     public string? IriParam { get; set; }
 
@@ -567,6 +570,37 @@ else if (ObjectDoc is null)
             obj.IsPreRenderedHtmlContent() ? content : global::Iris.Core.Rendering.Markdown.ToHtml(content));
     }
 
+    protected override void OnInitialized()
+    {
+        // S114: the feed card's Edit action deep-links here with a #edit hash. The hash is present in
+        // the initial URL (NavigateTo keeps it, so the page finds the object via ?iri= on first render).
+        // Once the object has loaded and the post is ours, OnParametersSetAsync calls
+        // TryEnterEditModeFromHashAsync, which enters edit mode and strips the hash via
+        // history.replaceState (no navigation — NavigateTo on a hash-only change makes Blazor WASM
+        // drop the ?iri= query on the resulting full load). _editHashConsumed makes it idempotent.
+    }
+
+    private bool _editHashConsumed;
+
+    private async Task TryEnterEditModeFromHashAsync()
+    {
+        if (_editHashConsumed || ObjectDoc is null || !IsOwnPost)
+        {
+            return;
+        }
+
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (uri.Fragment is not string fragment || fragment != "#edit")
+        {
+            return;
+        }
+
+        _editHashConsumed = true;
+        // Strip the #edit hash without triggering a Blazor navigation (which would drop ?iri=).
+        await Js.InvokeVoidAsync("history.replaceState", null, "", uri.GetLeftPart(UriPartial.Path));
+        await InvokeAsync(() => BeginEditAsync());
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         await Session.EnsureReadyAsync();
@@ -640,6 +674,11 @@ else if (ObjectDoc is null)
         {
             LoadError = "Failed to load object. It may not exist or the server is unreachable.";
         }
+
+        // S114: now that the object has loaded (ObjectDoc is set), honor the #edit deep-link the feed
+        // card's Edit action sets. IsOwnPost is only meaningful once ObjectDoc is present, so this must
+        // run AFTER the load above (not before the early-return guard).
+        await TryEnterEditModeFromHashAsync();
 
         if (ObjectDoc is not null && ObjectDoc is not Actor && !IsTombstone)
         {
