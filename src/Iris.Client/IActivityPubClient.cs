@@ -478,6 +478,32 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default);
 
     /// <summary>
+    /// Updates a content object the actor previously authored as <paramref name="actorId"/> (the
+    /// "edit own post" half of F-02, generalized past <see cref="Note"/>): builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Update"/> whose embedded object carries the updated
+    /// content and publishes it through the signed pipeline to the actor's own outbox. The server's
+    /// <c>UpdateActivityHandler</c> refreshes the stored object in place and propagates the update to
+    /// remote followers. This is the client's one-call "edit post" for any content type (the caller
+    /// supplies the updated object — the <see cref="KristofferStrube.ActivityStreams.Update"/> and the
+    /// delivery target are derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor editing the object (must be the object's author and
+    /// match the client's signing identity so the request is signed as that actor).</param>
+    /// <param name="updatedObject">The updated object carrying the new content. Its <c>id</c> must be the
+    /// object's IRI (the id the server minted when it was posted) so the server can match it to the
+    /// stored object; a mismatch is a no-op.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the
+    /// response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Update"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the author's own outbox) and is signed by the pipeline. A <c>202</c> means the outbox accepted
+    /// the update. Only the author may edit their object: the server rejects an update from an actor
+    /// that is not the stored object's <c>attributedTo</c>.
+    /// </remarks>
+    public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default);
+
+    /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity (actor = <paramref name="actorId"/>,
     /// object = <paramref name="targetId"/>) and publishes it through the signed pipeline to

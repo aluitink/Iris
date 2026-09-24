@@ -784,6 +784,9 @@ public sealed class CreateActivityHandlerTests
         public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => StubDelivery();
 
+        public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default)
+            => StubDelivery();
+
         public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => StubDelivery();
 

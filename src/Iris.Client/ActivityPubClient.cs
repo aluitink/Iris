@@ -672,6 +672,27 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return DeliverAsync(actorId.OutboxOf(), update, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(updatedObject);
+
+        // A content-object edit (generalized past <see cref="UpdateNoteAsync"/>): the Update carries the
+        // updated object (with the object's IRI as the id) and is published to the author's own outbox.
+        // The server's UpdateActivityHandler refreshes the stored object in place (so a later GET serves
+        // the new content) and propagates the update to remote followers. Because the embedded object is
+        // stored directly (with its concrete type — Note, Article, … — preserved by the serializer),
+        // editing an Article keeps it an Article; a type mismatch against the stored object is a no-op
+        // on the server (the S83 "Article edit silently fails" root cause was building a bare Note).
+        var update = new KristofferStrube.ActivityStreams.Update
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [updatedObject],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), update, ct);
+    }
+
     /// <summary>
     /// Extracts the deterministic IRI suffix (the final path segment) from an object IRI so a stable,
     /// unique-per-object activity IRI can be minted (a delete at

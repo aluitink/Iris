@@ -120,6 +120,50 @@ public sealed class EditOwnPostIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdateObject_RefreshesStoredArticleContent()
+    {
+        var client = BuildSignedClient(_actorIri, _actorKey);
+
+        // Post an Article (the long-form content type) directly through the signed outbox pipeline.
+        var article = new KristofferStrube.ActivityStreams.Article
+        {
+            AttributedTo = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(_actorIri.Value) }],
+            To = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(Public.Value) }],
+            Content = ["Original article"],
+            Published = DateTime.UtcNow,
+        };
+        var create = new KristofferStrube.ActivityStreams.Create
+        {
+            Id = $"{_actorIri.Value}/creates/{Guid.NewGuid():N}",
+            Actor = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(_actorIri.Value) }],
+            Object = [article],
+        };
+        var posted = await client.DeliverAsync(_actorIri.OutboxOf(), create);
+        Assert.True(posted.IsSuccess, $"Post should succeed, got HTTP {(int)posted.StatusCode}: {posted.Body}");
+
+        var (objectIri, originalStored) = await FindCreatedNoteAsync("Original article");
+        Assert.NotNull(objectIri);
+        Assert.True(originalStored is KristofferStrube.ActivityStreams.Article, "the stored object must be an Article");
+
+        // S83: edit the Article through the type-preserving UpdateObjectAsync (an Article stays an
+        // Article). The server must refresh the stored content in place.
+        var updated = new KristofferStrube.ActivityStreams.Article
+        {
+            Id = objectIri!.Value.Value,
+            Content = ["Edited article"],
+            AttributedTo = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(_actorIri.Value) }],
+            To = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(Public.Value) }],
+        };
+        var result = await client.UpdateObjectAsync(_actorIri, updated);
+        Assert.True(result.IsSuccess, $"Update should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
+
+        var (_, stored) = await FindCreatedNoteAsync("Edited article");
+        Assert.NotNull(stored);
+        Assert.Equal("Edited article", JoinContent(stored));
+        Assert.True(stored is KristofferStrube.ActivityStreams.Article, "the stored object must remain an Article after the edit");
+    }
+
+    [Fact]
     public async Task UpdateNote_PreservesSensitiveAndSummary()
     {
         var client = BuildSignedClient(_actorIri, _actorKey);

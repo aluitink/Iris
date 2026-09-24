@@ -11,7 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN
 
 S85 | OPEN-QA | dev2 | Notifications page never refreshes while open: reload on UnreadCountChanged (live dev2: s85b follow → s85a page stayed "No notifications yet" while API showed 1/unread=1; fix re-fetches list on UnreadCountChanged; 2499/2499 tests green)
-S83 | OPEN | - | Article edit silently fails (Note edit works)
+S83 | OPEN-QA | dev2 | Article edit silently fails (Note edit works) (fix: type-preserving UpdateObjectAsync; 1512 tests green)
 S87 | OPEN | - | Profile edit Save makes no API call (bio+checkbox changes lost silently)
 
 ## CLOSED

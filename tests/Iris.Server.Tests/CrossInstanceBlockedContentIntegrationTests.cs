@@ -499,6 +499,9 @@ public sealed class CrossInstanceBlockedContentIntegrationTests : IAsyncLifetime
         public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> UpdateObjectAsync(Iri actorId, IObject updatedObject, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
