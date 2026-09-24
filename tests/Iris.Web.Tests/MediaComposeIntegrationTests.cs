@@ -164,6 +164,58 @@ public sealed class MediaComposeIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task NoteWithMediaAndAltText_ReadBoundarySurfacesAltForGalleryRenderer()
+    {
+        // S121: the gallery/lightbox render the author-supplied alt text (the ActivityStreams `alt`
+        // term) onto the <img>. This test proves the read boundary that feeds MediaGallery
+        // (GetRichAttachments) surfaces that alt — the exact value the renderer emits as `alt="@ImageAlt(...)"`.
+        var media = await UploadAsync();
+        var client = BuildSignedClient(_actorIri, _actorKey);
+        var note = ComposeNote.Build(
+            _actorIri,
+            "S121 alt rendered in gallery",
+            to: [Public],
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName, "A red circle on a blue field")]);
+
+        var result = await client.PostNoteAsync(_actorIri, note);
+        Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
+
+        var (_, obj) = await FindCreatedNoteAsync("S121 alt rendered in gallery");
+        Assert.NotNull(obj);
+
+        // The rich-attachment read boundary (what MediaGallery consumes) carries the alt text.
+        var rich = obj!.GetRichAttachments();
+        Assert.Single(rich);
+        Assert.Equal("A red circle on a blue field", rich[0].Alt);
+    }
+
+    [Fact]
+    public async Task NoteWithMediaNoAltText_ReadBoundaryAltIsNull()
+    {
+        // S121: a note posted without alt text surfaces a null Alt from the read boundary, so the
+        // renderer falls back to the attachment name / media URL (the historical behavior).
+        var media = await UploadAsync();
+        var client = BuildSignedClient(_actorIri, _actorKey);
+        var note = ComposeNote.Build(
+            _actorIri,
+            "S121 no alt falls back to name",
+            to: [Public],
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName)]);
+
+        var result = await client.PostNoteAsync(_actorIri, note);
+        Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
+
+        var (_, obj) = await FindCreatedNoteAsync("S121 no alt falls back to name");
+        Assert.NotNull(obj);
+
+        var rich = obj!.GetRichAttachments();
+        Assert.Single(rich);
+        Assert.Null(rich[0].Alt);
+        // The renderer falls back to the name when Alt is null.
+        Assert.Equal("pixel.png", rich[0].Name);
+    }
+
+    [Fact]
     public async Task NoteWithMediaAndBlankAltText_CarriesNoAltInPublicDocument()
     {
         var media = await UploadAsync();

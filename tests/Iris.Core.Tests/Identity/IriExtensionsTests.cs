@@ -1320,6 +1320,59 @@ public class IriExtensionsTests
     }
 
     [Fact]
+    public void GetRichAttachments_ImageWithAlt_SurfacesAltForRenderer()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Image",
+                    "name": "photo.jpg",
+                    "url": "https://cdn.example.com/media/1.jpg",
+                    "alt": "A red bicycle leaning on a fence"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Image", attachments[0].Type);
+        Assert.Equal("photo.jpg", attachments[0].Name);
+        Assert.Equal("A red bicycle leaning on a fence", attachments[0].Alt);
+    }
+
+    [Fact]
+    public void GetRichAttachments_ImageWithoutAlt_AltIsNullOrEmptyDrops()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Image",
+                    "name": "photo.jpg",
+                    "url": "https://cdn.example.com/media/1.jpg"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Null(attachments[0].Alt);
+    }
+
+    [Fact]
     public void GetRichAttachments_FromDocument_ReturnsDocumentType()
     {
         var json = """

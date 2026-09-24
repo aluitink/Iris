@@ -771,6 +771,7 @@ public static class IriExtensions
             string? name = null;
             Iri? preview = null;
             string? mediaType = ResolveAttachmentMediaType(attachment);
+            string? alt = ResolveAttachmentAlt(attachment);
 
             if (attachment is IObject { } ao)
             {
@@ -823,7 +824,7 @@ public static class IriExtensions
                 }
             }
 
-            list.Add(new RichAttachment(type, name, resolvedIri, preview, mediaType));
+            list.Add(new RichAttachment(type, name, resolvedIri, preview, mediaType, alt));
         }
 
         return list;
@@ -848,6 +849,27 @@ public static class IriExtensions
         if (attachment is IObject { } obj && obj is KristofferStrube.ActivityStreams.Object { MediaType: { Length: > 0 } om })
         {
             return om;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads the <c>alt</c> (alternative text) off an attachment, written into <c>ExtensionData</c> by
+    /// <c>ComposeNote</c> (the ActivityStreams library does not model <c>alt</c> as a property — Rule 6,
+    /// the same representation as <c>mediaType</c>/<c>sensitive</c>/<c>source</c>). Returns the alt text
+    /// when present and non-blank; null otherwise.
+    /// </summary>
+    /// <param name="attachment">The attachment to read. May be null.</param>
+    /// <returns>The alternative text, or null.</returns>
+    private static string? ResolveAttachmentAlt(IObjectOrLink? attachment)
+    {
+        if (attachment is IObject { ExtensionData: { } ext } && ext.TryGetValue("alt", out var altEl))
+        {
+            var text = altEl.ValueKind == JsonValueKind.String
+                ? altEl.GetString()
+                : null;
+            return string.IsNullOrWhiteSpace(text) ? null : text;
         }
 
         return null;
@@ -1474,7 +1496,8 @@ public sealed record PollData(
 /// <param name="Url">The attachment's media URL.</param>
 /// <param name="Preview">The attachment's preview image URL, when present (for Audio/Video).</param>
 /// <param name="MediaType">The MIME type of the media (e.g. <c>"video/mp4"</c>, <c>"application/pdf"</c>), when the attachment carries one. Lets a renderer pick the right player without sniffing the URL.</param>
-public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview, string? MediaType = null);
+/// <param name="Alt">The image's alternative text (the ActivityStreams <c>alt</c> term), when present. Rendered as the <c>&lt;img alt&gt;</c> for accessibility.</param>
+public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview, string? MediaType = null, string? Alt = null);
 
 /// <summary>
 /// An object store seam for dial-base IRI normalization at the Iris boundary: a minimal

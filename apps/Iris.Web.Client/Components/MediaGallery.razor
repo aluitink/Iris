@@ -32,7 +32,7 @@
             else
             {
                 <div class="media-gallery-item" @onclick="() => OpenLightbox(idx)">
-                    <img src="@Rewrite(att.Url.Value)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" @onerror="() => ImageFailed(idx)" />
+                    <img src="@Rewrite(att.Url.Value)" alt="@ImageAlt(att)" title="@ImageAlt(att)" loading="lazy" @onerror="() => ImageFailed(idx)" />
                 </div>
             }
         }
@@ -124,7 +124,7 @@
             }
             else
             {
-                <img class="lightbox-img" src="@Rewrite(_images[cur].Url.Value)" alt="@(_images[cur].Name ?? _images[cur].Url.Value)" @onerror="() => ImageFailed(cur)" />
+                <img class="lightbox-img" src="@Rewrite(_images[cur].Url.Value)" alt="@ImageAlt(_images[cur])" title="@ImageAlt(_images[cur])" @onerror="() => ImageFailed(cur)" />
             }
             @if (cur < _images.Count - 1)
             {
@@ -258,6 +258,15 @@
 
     private static string? MediaPoster(RichAttachment att)
         => att.Preview is { } p ? Rewrite(p.Value) : null;
+
+    /// <summary>
+    /// The <c>&lt;img alt&gt;</c> for an image attachment: the author-supplied alternative text
+    /// (<c>RichAttachment.Alt</c>, the ActivityStreams <c>alt</c> term) when present, falling back to the
+    /// attachment name and then the media URL (the historical behavior) so every image has a non-empty
+    /// accessible name.
+    /// </summary>
+    private static string ImageAlt(RichAttachment att)
+        => att.Alt is { Length: > 0 } ? att.Alt : att.Name is { Length: > 0 } ? att.Name : att.Url.Value;
 
     private static string IconFor(string? type) => type?.ToLowerInvariant() switch
     {
