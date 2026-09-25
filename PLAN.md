@@ -8,9 +8,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
-## OPEN-QA
-S126 | OPEN-QA | agent-a | Directory People: sort (default/name) + host filter to find accounts — dev1 verified: commit 8cf43d4e, live dev1-iris-a /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/dev1-iris-a.luit.ink/dev1-iris-b.luit.ink/dev1-lemmy.luit.ink); Name sort alphabetical (alice, carol, d2feeda...); host filter dev1-iris-b shows only iris-b accounts (d2feedb, s24devb, s28b, s33b, s37b, s41b, s43b, s46b, s70vb, s72bob); 0 console errors
-
 ## OPEN
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
@@ -20,6 +17,7 @@ S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is render
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED
 
+S126 | CLOSED | qa | Directory People: sort (default/name) + host filter to find accounts — PASS: live qa-iris-a (fresh WASM) /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/mastodon.social/qa-iris-a.luit.ink/qa-iris-b.luit.ink/qa-lemmy.luit.ink); Name sort alphabetical (ab, alice, gnomon, hunt89, ii-a1...); host filter qa-iris-b shows only 7 iris-b accounts (ii-b1, probep, s56qa, s56qav, s67bob, s68qa, s68vb); filters hidden in "This instance" mode; 0 console errors
 S125 | CLOSED | qa | Home: signed-in Local tab shows instance public timeline (now authless-only) — PASS: live qa-iris-a Local tab fetches /ap/v1/public/feed, shows posts from s116rcv (S124-TEST-POST-FROM-RCV), s116snd (S118-QA-ALT-TEXT-POST, S119-QA-DM-REPLY-1, S116-QA-DM-ROUNDTRIP-2); 1 console error (404 on S119 DM note, unrelated); 0 S125-related errors
 S124 | CLOSED | qa | Feed flip after post — FALSE POSITIVE (stale WASM cache, same root cause as S122): live qa-iris-a (wasm t1q33tso4m) s116rcv follows s116snd, posts S124-TEST-POST-FROM-RCV; feed shows both s116rcv's post (newest) + s116snd's S118 post (1h ago), ordered by publish time; server logs confirm 4 items built (Create=4); 0 console errors
 S121 | CLOSED | qa | Media alt text: render author alt on img (gallery+lightbox) — PASS: live qa-iris-a (wasm t1q33tso4m) s116snd profile shows S118 post with img alt="S118-QA-ALT-TEXT-TEST: A red circle on a blue field" (author alt, not filename); 0 console errors
