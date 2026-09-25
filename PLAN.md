@@ -13,9 +13,10 @@ S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly 
 
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
+S130 | OPEN-QA | dev2 | Notifications Likes: remove the redundant inner "Liked" frame (who/verb/time already in the notif header)
+
 ## OPEN
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
-S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
 S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED

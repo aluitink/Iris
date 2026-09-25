@@ -54,6 +54,16 @@ public partial class ObjectView
     [Parameter]
     public bool SuppressBoostTime { get; set; }
 
+    /// <summary>
+    /// Suppress the Like card's "Liked" header frame (the "Liked" label, the liker's handle, and the
+    /// like time) while still rendering the liked post below it. Set by <c>NotificationRow</c> for a
+    /// Like, where the notification header already carries who liked + verb + time — the inner frame
+    /// would otherwise duplicate it (S130). Left false everywhere else (e.g. the profile's Likes outbox
+    /// tab) where the "Liked" frame is the only indicator.
+    /// </summary>
+    [Parameter]
+    public bool SuppressLikeHeader { get; set; }
+
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
 

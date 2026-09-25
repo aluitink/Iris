@@ -349,15 +349,18 @@
                 // A Like or Announce (boost): render the boosted/liked post as a full object card (author,
                 // content, media, engagement) instead of a compact preview, so the notification shows the
                 // actual post that was liked/boosted. The activity is passed (not just its object) so the
-                // card keeps the "Liked" / "Boosted by" indicator. The notification header already carries
-                // the boost/like time, so the indicator line's own time is suppressed (SuppressBoostTime)
-                // while the boosted post below keeps its own timestamp — the same way posts render under
-                // reply/post notifications.
+                // card can resolve the liked/boosted post. The notification header already carries who
+                // acted + verb + time, so the card's own activity-level indicator is suppressed to avoid
+                // a redundant "Liked" / "Boosted by" line duplicated in the middle: SuppressLikeHeader
+                // drops the Like card's "Liked" frame (S130) and SuppressBoostTime drops the Announce
+                // "Boosted by" time; the embedded post below keeps its own timestamp — the same way posts
+                // render under reply/post notifications.
                 builder.OpenElement(0, "div");
                 builder.AddAttribute(1, "class", "notification-card__object");
                 builder.OpenComponent(2, typeof(ObjectView));
                 builder.AddComponentParameter(3, nameof(ObjectView.Item), (IObjectOrLink)activity);
                 builder.AddComponentParameter(4, nameof(ObjectView.SuppressBoostTime), true);
+                builder.AddComponentParameter(5, nameof(ObjectView.SuppressLikeHeader), true);
                 builder.CloseComponent();
                 builder.CloseElement();
             }
