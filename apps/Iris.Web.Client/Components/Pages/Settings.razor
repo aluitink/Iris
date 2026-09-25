@@ -406,6 +406,54 @@ else
                     }
                 </div>
             </details>
+
+            <details class="settings-subsection" open>
+                <summary class="settings-subsection-summary">Motion</summary>
+                <div class="settings-subsection-body">
+                    <p class="muted">Reduce motion disables loading spinners and hover animations
+                        across the app.</p>
+                    <label class="notif-pref-row" style="margin-top: 0.5rem;">
+                        <input type="checkbox" checked="@ReduceMotion"
+                               @onchange="@(e => SetReduceMotionAsync(e is ChangeEventArgs and var ev ? (ev.Value?.ToString() == "True") : false))" />
+                        <span>Reduce motion</span>
+                    </label>
+                    @if (ReduceMotionSaving)
+                    {
+                        <p class="muted" role="status" style="margin-top: 0.25rem;">Saving…</p>
+                    }
+                    @if (ReduceMotionSaved)
+                    {
+                        <div class="success" style="margin-top: 0.25rem;" role="status">Motion preference saved.</div>
+                    }
+                </div>
+            </details>
+
+            <details class="settings-subsection" open>
+                <summary class="settings-subsection-summary">Text size</summary>
+                <div class="settings-subsection-body">
+                    <p class="muted">Larger text increases the base font size across the app.</p>
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem; max-width: 20rem; margin-top: 0.75rem;">
+                        <label class="notif-pref-row">
+                            <input type="radio" name="textsize" value="standard" checked="@TextSize.Equals("standard")"
+                                   @onchange="@(() => SetTextSizeAsync("standard"))" />
+                            <span>Standard</span>
+                        </label>
+                        <label class="notif-pref-row">
+                            <input type="radio" name="textsize" value="larger" checked="@TextSize.Equals("larger")"
+                                   @onchange="@(() => SetTextSizeAsync("larger"))" />
+                            <span>Larger</span>
+                        </label>
+                    </div>
+                    @if (TextSizeSaving)
+                    {
+                        <p class="muted" role="status" style="margin-top: 0.5rem;">Saving…</p>
+                    }
+                    @if (TextSizeSaved)
+                    {
+                        <div class="success" style="margin-top: 0.5rem;" role="status">Text size saved.</div>
+                    }
+                </div>
+            </details>
         </div>
     }
     else if (ActiveTab == "danger")
@@ -490,6 +538,12 @@ else
     private string Theme { get; set; } = "dark";
     private bool ThemeSaving { get; set; }
     private bool ThemeSaved { get; set; }
+    private bool ReduceMotion { get; set; }
+    private bool ReduceMotionSaving { get; set; }
+    private bool ReduceMotionSaved { get; set; }
+    private string TextSize { get; set; } = "standard";
+    private bool TextSizeSaving { get; set; }
+    private bool TextSizeSaved { get; set; }
     private KeyInfo? KeyInfoValue { get; set; }
     private bool KeyInfoLoaded { get; set; }
 
@@ -917,6 +971,8 @@ else
         public HashSet<string> DisabledTypes { get; set; } = [];
         public HashSet<string> MutedActors { get; set; } = [];
         public string? Theme { get; set; }
+        public bool ReduceMotion { get; set; }
+        public string? TextSize { get; set; }
     }
 
     /// <summary>
@@ -939,6 +995,10 @@ else
     {
         public const string GetTheme = "window.irisThemeGet";
         public const string SetTheme = "window.irisThemeSet";
+        public const string GetMotion = "window.irisMotionGet";
+        public const string SetMotion = "window.irisMotionSet";
+        public const string GetTextSize = "window.irisTextSizeGet";
+        public const string SetTextSize = "window.irisTextSizeSet";
     }
 
     private async Task LoadNotifPrefsAsync()
@@ -978,6 +1038,14 @@ else
                 if (doc.RootElement.TryGetProperty("theme", out var th))
                 {
                     prefs.Theme = th.GetString();
+                }
+                if (doc.RootElement.TryGetProperty("reduceMotion", out var rm))
+                {
+                    prefs.ReduceMotion = rm.GetBoolean();
+                }
+                if (doc.RootElement.TryGetProperty("textSize", out var ts))
+                {
+                    prefs.TextSize = ts.GetString();
                 }
                 NotifPrefs = prefs;
             }
@@ -1029,6 +1097,8 @@ else
         }
 
         ApplyThemeToDocument(stored);
+        ApplyReduceMotion();
+        ApplyTextSize();
     }
 
     private void ApplyThemeToDocument(string theme)
@@ -1074,6 +1144,8 @@ else
                 disabledTypes = NotifPrefs.DisabledTypes.ToList(),
                 mutedActors = NotifPrefs.MutedActors.ToList(),
                 theme,
+                reduceMotion = NotifPrefs.ReduceMotion,
+                textSize = NotifPrefs.TextSize ?? TextSize ?? "standard",
             });
             var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
@@ -1094,6 +1166,174 @@ else
         finally
         {
             ThemeSaving = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ApplyReduceMotion()
+    {
+        var stored = NotifPrefs?.ReduceMotion ?? false;
+        if (stored != ReduceMotion)
+        {
+            ReduceMotion = stored;
+        }
+        try
+        {
+            if (stored)
+            {
+                JS.InvokeVoidAsync("document.documentElement.classList.add", "reduce-motion");
+            }
+            else
+            {
+                JS.InvokeVoidAsync("document.documentElement.classList.remove", "reduce-motion");
+            }
+            JS.InvokeVoidAsync(JsThemeReader.SetMotion, stored);
+        }
+        catch { }
+    }
+
+    private void ApplyTextSize()
+    {
+        var stored = NotifPrefs?.TextSize;
+        if (stored is not "standard" && stored is not "larger")
+        {
+            stored = "standard";
+        }
+        if (stored != TextSize)
+        {
+            TextSize = stored;
+        }
+        try
+        {
+            if (stored == "larger")
+            {
+                JS.InvokeVoidAsync("document.documentElement.classList.add", "text-larger");
+            }
+            else
+            {
+                JS.InvokeVoidAsync("document.documentElement.classList.remove", "text-larger");
+            }
+            JS.InvokeVoidAsync(JsThemeReader.SetTextSize, stored);
+        }
+        catch { }
+    }
+
+    private async Task SetReduceMotionAsync(bool reduce)
+    {
+        if (NotifPrefs is null || ReduceMotionSaving)
+        {
+            return;
+        }
+
+        ReduceMotionSaving = true;
+        ReduceMotionSaved = false;
+        NotifError = null;
+
+        ReduceMotion = reduce;
+        try
+        {
+            if (reduce)
+            {
+                _ = JS.InvokeVoidAsync("document.documentElement.classList.add", "reduce-motion");
+            }
+            else
+            {
+                _ = JS.InvokeVoidAsync("document.documentElement.classList.remove", "reduce-motion");
+            }
+            _ = JS.InvokeVoidAsync(JsThemeReader.SetMotion, reduce);
+        }
+        catch { }
+
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                disabledTypes = NotifPrefs.DisabledTypes.ToList(),
+                mutedActors = NotifPrefs.MutedActors.ToList(),
+                theme = NotifPrefs.Theme ?? Theme ?? "dark",
+                reduceMotion = reduce,
+                textSize = NotifPrefs.TextSize ?? TextSize ?? "standard",
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
+            if (response.IsSuccessStatusCode)
+            {
+                NotifPrefs.ReduceMotion = reduce;
+                ReduceMotionSaved = true;
+            }
+            else
+            {
+                NotifError = $"Reduce motion preference couldn't be saved (HTTP {(int)response.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            NotifError = "Your reduce motion preference couldn't be saved. Please try again.";
+        }
+        finally
+        {
+            ReduceMotionSaving = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SetTextSizeAsync(string size)
+    {
+        if (NotifPrefs is null || TextSizeSaving)
+        {
+            return;
+        }
+
+        TextSizeSaving = true;
+        TextSizeSaved = false;
+        NotifError = null;
+
+        TextSize = size;
+        try
+        {
+            if (size == "larger")
+            {
+                _ = JS.InvokeVoidAsync("document.documentElement.classList.add", "text-larger");
+            }
+            else
+            {
+                _ = JS.InvokeVoidAsync("document.documentElement.classList.remove", "text-larger");
+            }
+            _ = JS.InvokeVoidAsync(JsThemeReader.SetTextSize, size);
+        }
+        catch { }
+
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                disabledTypes = NotifPrefs.DisabledTypes.ToList(),
+                mutedActors = NotifPrefs.MutedActors.ToList(),
+                theme = NotifPrefs.Theme ?? Theme ?? "dark",
+                reduceMotion = NotifPrefs.ReduceMotion,
+                textSize = size,
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
+            if (response.IsSuccessStatusCode)
+            {
+                NotifPrefs.TextSize = size;
+                TextSizeSaved = true;
+            }
+            else
+            {
+                NotifError = $"Text size preference couldn't be saved (HTTP {(int)response.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            NotifError = "Your text size preference couldn't be saved. Please try again.";
+        }
+        finally
+        {
+            TextSizeSaving = false;
         }
 
         StateHasChanged();
@@ -1140,6 +1380,8 @@ else
                 disabledTypes = NotifPrefs.DisabledTypes.ToList(),
                 mutedActors = NotifPrefs.MutedActors.ToList(),
                 theme = NotifPrefs.Theme ?? Theme ?? "dark",
+                reduceMotion = NotifPrefs.ReduceMotion,
+                textSize = NotifPrefs.TextSize ?? TextSize ?? "standard",
             });
             var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);

@@ -4469,3 +4469,17 @@ body > #app {
 .feed-bar-bell:hover {
     color: var(--text);
 }
+
+/* S135: Reduce motion — disable all transitions and animations */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+    transition-duration: 0.001s !important;
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+}
+
+/* S135: Larger text — scale the base font size up */
+.text-larger {
+    font-size: 1.125rem;
+}

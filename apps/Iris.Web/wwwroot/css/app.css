@@ -1340,6 +1340,19 @@ ul.object-list li {
     margin-bottom: var(--space-1);
 }
 
+/* S133: audience hint on non-public posts (Followers-only / Direct); hidden for public posts */
+.object-visibility-badge {
+    display: inline-block;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-muted, var(--text));
+    background: color-mix(in srgb, var(--text-muted, var(--text)) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--text-muted, var(--text)) 25%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.5em;
+    margin-bottom: var(--space-1);
+}
+
 /* 138.25 follow-up: locked indicator on the object detail page */
 .object-locked-indicator {
     display: inline-flex;
@@ -1693,6 +1706,27 @@ ul.object-list li {
     color: var(--muted);
     font-size: var(--font-size-xs);
     font-style: italic;
+}
+
+.object-article-meta {
+    margin-top: var(--space-25);
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.object-article-language {
+    display: inline-block;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-style: normal;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0 var(--space-2);
+    line-height: 1.4;
 }
 
 .object-media {
@@ -2092,6 +2126,17 @@ ul.object-list li {
    post-type selector next to it. Shown for new posts (not replies, whose audience stays public) and
    hidden for community posts (whose audience is the community's own). */
 .compose-visibility-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+/* The compose language selector (S127): the post's inLanguage tag. Styled to match the type/visibility
+   selectors beside it. Shown for new posts (not replies, which inherit the thread's language). */
+.compose-language-select {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -3126,6 +3171,16 @@ ul.object-list li {
     color: var(--muted);
     font-style: italic;
     line-height: 1.4;
+}
+
+/* S131 — the parent note rendered as a full object card under the "Replying to" line. */
+.compose-reply-object {
+    margin: 0 0 var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
 }
 
 .compose-thread-root {
@@ -4413,4 +4468,18 @@ body > #app {
 
 .feed-bar-bell:hover {
     color: var(--text);
+}
+
+/* S135: Reduce motion — disable all transitions and animations */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+    transition-duration: 0.001s !important;
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+}
+
+/* S135: Larger text — scale the base font size up */
+.text-larger {
+    font-size: 1.125rem;
 }

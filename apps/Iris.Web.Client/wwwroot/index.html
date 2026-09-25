@@ -10,15 +10,17 @@
     <link rel="stylesheet" href="css/app.css" />
     <title>Iris</title>
     <script>
-    // Theme (S99): apply the user's saved Appearance before first paint so the app does not
-    // flash dark for users who chose light. The setting is stored per-browser in localStorage
-    // (key "iris-theme"); the server-side copy is the source of truth, re-read on load.
-    // The two window.* functions are the JS interop surface the Blazor Settings page calls.
+    // Theme (S99) + Reduce motion / Text size (S135): apply the user's saved Appearance
+    // before first paint so the app does not flash the wrong theme or animate for users
+    // who chose reduced motion. Settings are stored per-browser in localStorage; the
+    // server-side copy is the source of truth, re-read on load.
     (function () {
-        var KEY = "iris-theme";
+        var THEME_KEY = "iris-theme";
+        var MOTION_KEY = "iris-reduce-motion";
+        var TEXT_KEY = "iris-text-size";
         window.irisThemeGet = function () {
             try {
-                var saved = localStorage.getItem(KEY);
+                var saved = localStorage.getItem(THEME_KEY);
                 return saved === "light" ? "light" : "dark";
             } catch (e) {
                 return "dark";
@@ -28,16 +30,60 @@
             try {
                 if (theme === "light") {
                     document.documentElement.setAttribute("data-theme", "light");
-                    localStorage.setItem(KEY, "light");
+                    localStorage.setItem(THEME_KEY, "light");
                 } else {
                     document.documentElement.removeAttribute("data-theme");
-                    localStorage.setItem(KEY, "dark");
+                    localStorage.setItem(THEME_KEY, "dark");
+                }
+            } catch (e) { /* private mode: ignore */ }
+        };
+        window.irisMotionGet = function () {
+            try {
+                return localStorage.getItem(MOTION_KEY) === "true";
+            } catch (e) {
+                return false;
+            }
+        };
+        window.irisMotionSet = function (reduce) {
+            try {
+                if (reduce) {
+                    document.documentElement.classList.add("reduce-motion");
+                    localStorage.setItem(MOTION_KEY, "true");
+                } else {
+                    document.documentElement.classList.remove("reduce-motion");
+                    localStorage.setItem(MOTION_KEY, "false");
+                }
+            } catch (e) { /* private mode: ignore */ }
+        };
+        window.irisTextSizeGet = function () {
+            try {
+                var saved = localStorage.getItem(TEXT_KEY);
+                return saved === "larger" ? "larger" : "standard";
+            } catch (e) {
+                return "standard";
+            }
+        };
+        window.irisTextSizeSet = function (size) {
+            try {
+                if (size === "larger") {
+                    document.documentElement.classList.add("text-larger");
+                    localStorage.setItem(TEXT_KEY, "larger");
+                } else {
+                    document.documentElement.classList.remove("text-larger");
+                    localStorage.setItem(TEXT_KEY, "standard");
                 }
             } catch (e) { /* private mode: ignore */ }
         };
         var current = window.irisThemeGet();
         if (current === "light") {
             document.documentElement.setAttribute("data-theme", "light");
+        }
+        if (window.irisMotionGet()) {
+            document.documentElement.classList.add("reduce-motion");
+        }
+        var ts = window.irisTextSizeGet();
+        if (ts === "larger") {
+            document.documentElement.classList.add("text-larger");
         }
     })();
     </script>

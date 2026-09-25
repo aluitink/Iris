@@ -1275,6 +1275,8 @@ public static class WebAppFactory
                 disabledTypes = prefs.DisabledTypes.ToList(),
                 mutedActors = prefs.MutedActors.ToList(),
                 theme = prefs.Theme,
+                reduceMotion = prefs.ReduceMotion ?? false,
+                textSize = prefs.TextSize ?? "standard",
             });
         }).RequireAuthorization();
 
@@ -1296,15 +1298,22 @@ public static class WebAppFactory
                 ? "light"
                 : "dark";
 
+            // S135: text size is a fixed choice; anything other than "larger" is standard.
+            var textSize = string.Equals(body.TextSize, "larger", StringComparison.OrdinalIgnoreCase)
+                ? "larger"
+                : "standard";
+
             var prefs = new NotificationPreferences
             {
                 DisabledTypes = [.. (body.DisabledTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t))],
                 MutedActors = [.. (body.MutedActors ?? []).Where(a => !string.IsNullOrWhiteSpace(a))],
                 Theme = theme,
+                ReduceMotion = body.ReduceMotion ?? false,
+                TextSize = textSize,
             };
 
             await accounts.UpdateNotificationPrefsAsync(accountId, prefs, ct);
-            return Results.Ok(new { success = true, theme });
+            return Results.Ok(new { success = true, theme, reduceMotion = body.ReduceMotion ?? false, textSize });
         }).RequireAuthorization();
     }
 
@@ -2510,7 +2519,9 @@ public sealed record AdminPasswordResetRequest(string? Password);
 /// <param name="DisabledTypes">Activity types the user has opted out of.</param>
 /// <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
 /// <param name="Theme">The UI appearance theme: <c>"light"</c> or <c>"dark"</c> (S99).</param>
-public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors, string? Theme);
+/// <param name="ReduceMotion">Whether the user has requested reduced motion (S135).</param>
+/// <param name="TextSize">The user's preferred text size: <c>"standard"</c> or <c>"larger"</c> (S135).</param>
+public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors, string? Theme, bool? ReduceMotion, string? TextSize);
 
 /// <summary>Request body for <c>POST /local/v1/admin/users/{id}/role</c> (88.5).</summary>
 /// <param name="Role">The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</param>

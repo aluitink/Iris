@@ -35,6 +35,18 @@ public sealed class NotificationPreferences
     /// unrecognized values fall back to the default (dark), so existing rows keep rendering dark.
     /// </summary>
     public string? Theme { get; set; }
+
+    /// <summary>
+    /// Whether the user has requested reduced motion (S135): disables CSS transitions/animations
+    /// via a root class. Null or false means animations are on.
+    /// </summary>
+    public bool? ReduceMotion { get; set; }
+
+    /// <summary>
+    /// The user's preferred text size (S135): <c>"standard"</c> or <c>"larger"</c>. Null or
+    /// unrecognized values fall back to standard.
+    /// </summary>
+    public string? TextSize { get; set; }
 }
 
 /// <summary>

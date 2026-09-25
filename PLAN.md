@@ -8,9 +8,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
+## OPEN-QA
+S135 | OPEN-QA | dev1 | Appearance: Reduce motion + Larger text (accessibility) — dev1 verified: reduce-motion root class disables transitions; text-larger root class scales font; both persisted across reload; 0 console errors; 1502 passed
+
 ## OPEN
 S134 | OPEN | - | Notification-row per-actor Mute/Block: notification rows attributed to an actor (Like/Follow/Mention/Boost) have no quick moderation — add a small Mute + Block action on the row (hidden for follow-request rows and self), calling ILocalModerationClient.MuteAsync / IActivityPubClient.BlockAsync. Verify: a Like notification from actor X shows Mute → click mutes X (appears in Settings→Muted, X's posts vanish from home); a Block action blocks X; 0 console errors.
-S135 | OPEN | - | Appearance: Reduce motion + Larger text (accessibility): Settings→Appearance only offers dark/light theme — add a "Reduce motion" toggle (root class that disables CSS transitions/animations) and a text-size setting (Standard/Larger) scaling the base font-size via a root class. Verify: enable Reduce motion → loading spinners + hover transitions stop animating; set Larger → text scales up across the app; persisted across reload; 0 console errors.
 ## CLOSED
 
 S127 | CLOSED | qa | Compose: post language selector; language shown on post card + in feed — PASS: live qa-iris-a Spanish post shows "es" badge on feed card + object page; 0 console errors
