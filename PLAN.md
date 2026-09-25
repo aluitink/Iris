@@ -10,9 +10,9 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
-
-S130 | OPEN-QA | dev1 | Notifications Likes: remove redundant Liked wrapper frame — dev1 verified: commit 10d130a8, ObjectView Like branch with SuppressLikeHeader=true now renders resolved post directly (no object-item wrapper, no object-like-resolved frame); s130like sees s125qa like notification → post card renders with author/time/content/engagement directly; 0 console errors; 139 tests green
 ## CLOSED
+
+S130 | CLOSED | qa | Notifications Likes: remove redundant Liked wrapper frame — PASS: live qa-iris-a (fresh build) s116snd sees s116rcv like notification in Likes tab → post card renders directly with author/time/content/engagement buttons, no "Liked" header or wrapper frame; 0 console errors
 
 S132 | CLOSED | qa | Messages folded into Home as 4th tab — PASS: live qa-iris-a (fresh build) /messages redirects to /home with Messages tab active; FeedBar has Posts/Local/Communities/Messages tabs; MessagesPanel shows DM list with All/Received/Sent sub-filters + Mark all as read; s116snd sees 3 DMs (Sent to s119qa, Received from s119qa, Sent to s116rcv); 0 console errors
 S131 | CLOSED | qa | compose?ReplyTo renders raw markup — PASS: live qa-iris-a (fresh build) compose?replyTo=<HTML note> renders preview with clickable @s116snd mention link + "S119-QA-DM-TEST-1" text (not raw HTML); HTML detected via IsPreRenderedHtmlContent, rendered as MarkupString; 0 console errors
