@@ -148,23 +148,26 @@ public partial class ObjectView
     /// <summary>
     /// The language tag (<c>iris:language</c>) the server rendered on the content object (138.25).
     /// Falls back to the standard ActivityStreams <c>inLanguage</c> extension when the <c>iris:</c>
-    /// term is absent.
+    /// term is absent. Reads from <see cref="ActivityEmbeddedObject"/> when the item is an activity
+    /// (a feed's <c>Create</c>) and from <see cref="Obj"/> for a bare object (the object page), so the
+    /// tag surfaces both in the feed and on the post's own page.
     /// </summary>
     private string? ObjectLanguage
     {
         get
         {
+            var contentObject = ActivityEmbeddedObject ?? Obj;
             var ns = Session.IrisNamespaceBase?.Value;
             if (ns is not null)
             {
-                var irisLang = Obj?.GetLanguage(ns);
+                var irisLang = contentObject?.GetLanguage(ns);
                 if (!string.IsNullOrWhiteSpace(irisLang))
                 {
                     return irisLang;
                 }
             }
 
-            return Obj?.GetInLanguage();
+            return contentObject?.GetInLanguage();
         }
     }
 

@@ -1695,6 +1695,27 @@ ul.object-list li {
     font-style: italic;
 }
 
+.object-article-meta {
+    margin-top: var(--space-25);
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.object-article-language {
+    display: inline-block;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-xs);
+    font-style: normal;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0 var(--space-2);
+    line-height: 1.4;
+}
+
 .object-media {
     margin-top: var(--space-45);
 }
@@ -2092,6 +2113,17 @@ ul.object-list li {
    post-type selector next to it. Shown for new posts (not replies, whose audience stays public) and
    hidden for community posts (whose audience is the community's own). */
 .compose-visibility-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+/* The compose language selector (S127): the post's inLanguage tag. Styled to match the type/visibility
+   selectors beside it. Shown for new posts (not replies, which inherit the thread's language). */
+.compose-language-select {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);

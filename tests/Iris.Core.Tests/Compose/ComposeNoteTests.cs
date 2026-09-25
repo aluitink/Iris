@@ -95,6 +95,41 @@ public class ComposeNoteTests
     }
 
     [Fact]
+    public void Build_SetsInLanguageInExtensionData_WhenLanguageProvided()
+    {
+        var note = ComposeNote.Build(Alice, "content", language: "fr-CA");
+
+        Assert.True(note.ExtensionData!.TryGetValue("inLanguage", out var element));
+        Assert.Equal(JsonValueKind.String, element.ValueKind);
+        Assert.Equal("fr-CA", element.GetString());
+        // The same representation the reader-side GetInLanguage reads (the feed surfaces it).
+        Assert.Equal("fr-CA", ((IObject)note).GetInLanguage());
+    }
+
+    [Fact]
+    public void Build_OmitsInLanguage_WhenLanguageNullOrWhitespace()
+    {
+        var note = ComposeNote.Build(Alice, "content");
+        Assert.False(note.ExtensionData is { Count: > 0 });
+        Assert.Null(((IObject)note).GetInLanguage());
+
+        var blankNote = ComposeNote.Build(Alice, "content", language: "   ");
+        Assert.False(blankNote.ExtensionData is { Count: > 0 });
+        Assert.Null(((IObject)blankNote).GetInLanguage());
+    }
+
+    [Fact]
+    public void Build_InLanguage_RoundTripsThroughWire()
+    {
+        var note = ComposeNote.Build(Alice, "content", language: "ja");
+        var json = JsonSerializer.Serialize(note);
+        var roundTripped = JsonSerializer.Deserialize<Note>(json);
+
+        Assert.Equal("ja", roundTripped!.ExtensionData?["inLanguage"].GetString());
+        Assert.Equal("ja", ((IObject)roundTripped).GetInLanguage());
+    }
+
+    [Fact]
     public void Build_SetsTo_WhenAudienceProvided()
     {
         var @public = new Iri("https://www.w3.org/ns/activitystreams#Public");
