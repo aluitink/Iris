@@ -312,9 +312,33 @@
     }
     else if (Item is Like)
     {
-        <div class="object-item">
-            @if (!SuppressLikeHeader)
+        @if (SuppressLikeHeader)
+        {
+            if (LikedRenderTarget is { } likedDirect)
             {
+                <ObjectView Item="likedDirect" />
+            }
+            else if (LikeTargetIri is { } likeTargetDirect)
+            {
+                <div class="object-item">
+                    <div class="object-like-target">
+                        <a href="@ObjectHref(likeTargetDirect)" title="@likeTargetDirect" class="object-post-link">
+                            @if (LikedContent is { } lcDirect && !string.IsNullOrEmpty(lcDirect.Value))
+                            {
+                                <div class="object-content">@lcDirect</div>
+                            }
+                            else
+                            {
+                                <span class="object-iri">@likeTargetDirect.Value</span>
+                            }
+                        </a>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="object-item">
                 <div class="object-header">
                     <span class="object-action">Liked</span>
                     @if (ActivityActorIri is { } actor)
@@ -327,40 +351,34 @@
                     }
                     @if (IsLikeOfReply)
                     {
-                        // 152 — the liked post was itself a reply; the card renders the ORIGINAL post it
-                        // answers to, so note that context under the "Liked" header.
                         <span class="object-action object-like-reply-hint">
                             @("replying to " + (ReplyContextLabel(LikedReplyParent) ?? "original post"))
                         </span>
                     }
                 </div>
-            }
-            @if (LikedRenderTarget is { } liked)
-            {
-                // 119.1 — the liked object was resolved: render it as a full, nested object card
-                // (author, content, media, engagement) under the "Liked" header, so the Likes tab
-                // shows the actual liked post rather than a bare link. 152 — when the liked post is a
-                // reply this is the ORIGINAL post it answers to (the render target), not the reply.
-                <div class="object-like-resolved">
-                    <ObjectView Item="liked" />
-                </div>
-            }
-            else if (LikeTargetIri is { } likeTarget)
-            {
-                <div class="object-like-target">
-                    <a href="@ObjectHref(likeTarget)" title="@likeTarget" class="object-post-link">
-                        @if (LikedContent is { } lc && !string.IsNullOrEmpty(lc.Value))
-                        {
-                            <div class="object-content">@lc</div>
-                        }
-                        else
-                        {
-                            <span class="object-iri">@likeTarget.Value</span>
-                        }
-                    </a>
-                </div>
-            }
-        </div>
+                @if (LikedRenderTarget is { } liked)
+                {
+                    <div class="object-like-resolved">
+                        <ObjectView Item="liked" />
+                    </div>
+                }
+                else if (LikeTargetIri is { } likeTarget)
+                {
+                    <div class="object-like-target">
+                        <a href="@ObjectHref(likeTarget)" title="@likeTarget" class="object-post-link">
+                            @if (LikedContent is { } lc && !string.IsNullOrEmpty(lc.Value))
+                            {
+                                <div class="object-content">@lc</div>
+                            }
+                            else
+                            {
+                                <span class="object-iri">@likeTarget.Value</span>
+                            }
+                        </a>
+                    </div>
+                }
+            </div>
+        }
     }
     else if (Item is Follow)
     {
