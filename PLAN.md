@@ -9,15 +9,18 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
 ## OPEN-QA
-S129 | OPEN-QA | dev1 | Notifications - Follows: after Accept or Decline, show decision state instead of buttons — dev1 verified: commit 202d07a5, s125qa (manuallyApprovesFollowers) sees s130like follow request in /notifications; Accept → "✓ Follow accepted" (edge Kind 0 recorded, Kind 17 removed); Decline → "✗ Follow declined" (Kind 17 removed, no Follow edge); decision tracked in static ConcurrentDictionary keyed by Follow activity IRI; server-side filter in /local/v1/notifications hides decided follow reqs for manually-approving accounts; 0 console errors; 139 tests green
+S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly — dev1 verified: commit 2a41a43e, BuildSearchPageDocument now carries type/local in page links; live dev1-iris-a /ap/v1/search?type=Actor&limit=20 page 1 next=?type=Actor&offset=20, page 2 next=?type=Actor&offset=40, page 3 next=NONE (totalItems=60 all pages); local=true also carried; 0 console errors; 1641 tests green
 
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
+S131 | OPEN-QA | dev2 | compose?ReplyTo: render the parent note as a visible object card (not raw markup)
+
 ## OPEN
-S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
-S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
+S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED
+
+S130 | CLOSED | qa | Notifications Likes: remove redundant Liked wrapper frame — PASS: live qa-iris-a (fresh build) s116rcv notifications show "S116 Snd liked a post" with post card directly (author s116rcv, content S130-QA-TEST-POST, engagement bar) without second "Liked" frame; 0 console errors
 
 S128 | CLOSED | qa | Directory infinite scroll loads last page repeatedly — PASS: live qa-iris-a (fresh build 1905c2f0) /ap/v1/search?type=Actor&limit=20 all 4 pages return totalItems=63, next links carry type=Actor (page 1→offset=20, page 2→offset=40, page 3→offset=60, page 4→NONE); UI "All known" scroll loads 55 cards, no sentinel after last page, no repeated content; 0 console errors
 S126 | CLOSED | qa | Directory People: sort (default/name) + host filter to find accounts — PASS: live qa-iris-a (fresh WASM) /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/mastodon.social/qa-iris-a.luit.ink/qa-iris-b.luit.ink/qa-lemmy.luit.ink); Name sort alphabetical (ab, alice, gnomon, hunt89, ii-a1...); host filter qa-iris-b shows only 7 iris-b accounts (ii-b1, probep, s56qa, s56qav, s67bob, s68qa, s68vb); filters hidden in "This instance" mode; 0 console errors
