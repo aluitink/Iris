@@ -23,7 +23,15 @@
             <p class="compose-reply-to">
                 Replying to <a href="@ReplyToHref">@ReplyToAuthor</a>
             </p>
-            @if (ReplyToPreview is { Length: > 0 })
+            @if (ReplyToObject is { } replyObj)
+            {
+                // S131 — render the parent note as a full object card (like the streams) instead of
+                // a raw truncated text preview.
+                <div class="compose-reply-object">
+                    <ObjectView Item="replyObj" />
+                </div>
+            }
+            else if (ReplyToPreview is { Length: > 0 })
             {
                 <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
             }
@@ -372,6 +380,12 @@
     private string? ReplyToPreview { get; set; }
 
     /// <summary>
+    /// The full parent note (fetched asynchronously), rendered as a visible object card while
+    /// composing a reply (S131). Null until the fetch resolves.
+    /// </summary>
+    private IObjectOrLink? ReplyToObject { get; set; }
+
+    /// <summary>
     /// The author handle of the thread root (the parent's parent), when the parent is itself a reply.
     /// </summary>
     private string? ThreadRootAuthor { get; set; }
@@ -491,6 +505,7 @@
         _fetchedIri = iri.Value;
         ReplyToAuthor = "…";
         ReplyToPreview = null;
+        ReplyToObject = null;
         ThreadRootAuthor = null;
         ThreadRootPreview = null;
 
@@ -504,6 +519,9 @@
             var note = await client.GetObjectAsync(iri);
             if (note is KristofferStrube.ActivityStreams.Object obj)
             {
+                // S131 — keep the full parent note so it can render as a visible object card
+                // (author, formatted content, media) instead of a raw truncated text preview.
+                ReplyToObject = obj;
                 if (obj.Content is { } content)
                 {
                     var text = string.Join(" ", content);

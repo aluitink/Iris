@@ -13,9 +13,10 @@ S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly 
 
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
+S131 | OPEN-QA | dev2 | compose?ReplyTo: render the parent note as a visible object card (not raw markup)
+
 ## OPEN
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
-S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED
 
