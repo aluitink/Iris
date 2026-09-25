@@ -30,6 +30,10 @@
             </div>
             @if (ActivityContentObject is { } contentObj)
             {
+                @if (ActivityVisibilityLabel is { } avLabel)
+                {
+                    <span class="object-visibility-badge" title="@avLabel">@avLabel</span>
+                }
                 @if (ActivityAudienceIris.Count > 0)
                 {
                     <div class="object-recipient">
@@ -455,6 +459,10 @@
                     <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
                 }
             </div>
+            @if (VisibilityLabel is { } vLabel)
+            {
+                <span class="object-visibility-badge" title="@vLabel">@vLabel</span>
+            }
             @if (AudienceIris.Count > 0)
             {
                 <div class="object-recipient">
