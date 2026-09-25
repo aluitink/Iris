@@ -222,7 +222,7 @@
                 // children sit above the overlay via z-index.
                 <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open boosted post"></a>
             }
-            @if (ActivityActorIri is { } booster)
+            @if (!SuppressLikeHeader && ActivityActorIri is { } booster)
             {
                 <div class="object-boost-by">
                     <span class="object-action">Boosted by</span>
@@ -313,25 +313,28 @@
     else if (Item is Like)
     {
         <div class="object-item">
-            <div class="object-header">
-                <span class="object-action">Liked</span>
-                @if (ActivityActorIri is { } actor)
-                {
-                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
-                }
-                @if (!SuppressTime && ActivityPublished is { } pub)
-                {
-                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
-                }
-                @if (IsLikeOfReply)
-                {
-                    // 152 — the liked post was itself a reply; the card renders the ORIGINAL post it
-                    // answers to, so note that context under the "Liked" header.
-                    <span class="object-action object-like-reply-hint">
-                        @("replying to " + (ReplyContextLabel(LikedReplyParent) ?? "original post"))
-                    </span>
-                }
-            </div>
+            @if (!SuppressLikeHeader)
+            {
+                <div class="object-header">
+                    <span class="object-action">Liked</span>
+                    @if (ActivityActorIri is { } actor)
+                    {
+                        <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                    }
+                    @if (!SuppressTime && ActivityPublished is { } pub)
+                    {
+                        <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                    }
+                    @if (IsLikeOfReply)
+                    {
+                        // 152 — the liked post was itself a reply; the card renders the ORIGINAL post it
+                        // answers to, so note that context under the "Liked" header.
+                        <span class="object-action object-like-reply-hint">
+                            @("replying to " + (ReplyContextLabel(LikedReplyParent) ?? "original post"))
+                        </span>
+                    }
+                </div>
+            }
             @if (LikedRenderTarget is { } liked)
             {
                 // 119.1 — the liked object was resolved: render it as a full, nested object card

@@ -54,6 +54,15 @@ public partial class ObjectView
     [Parameter]
     public bool SuppressBoostTime { get; set; }
 
+    /// <summary>
+    /// Suppress the "Liked" / "Boosted by" header line on a Like or Announce card, rendering only the
+    /// resolved post content below. Set by <c>NotificationRow</c> where the notification header already
+    /// shows "X liked your post" with the time, so the inner card shows the post directly without a
+    /// redundant wrapper frame.
+    /// </summary>
+    [Parameter]
+    public bool SuppressLikeHeader { get; set; }
+
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
 
