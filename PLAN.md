@@ -8,9 +8,6 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
-## OPEN-QA
-S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly — dev1 verified: commit 2a41a43e, BuildSearchPageDocument now carries type/local in page links; live dev1-iris-a /ap/v1/search?type=Actor&limit=20 page 1 next=?type=Actor&offset=20, page 2 next=?type=Actor&offset=40, page 3 next=NONE (totalItems=60 all pages); local=true also carried; 0 console errors; 1641 tests green
-
 ## OPEN
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
@@ -19,6 +16,7 @@ S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is render
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED
 
+S128 | CLOSED | qa | Directory infinite scroll loads last page repeatedly — PASS: live qa-iris-a (fresh build 1905c2f0) /ap/v1/search?type=Actor&limit=20 all 4 pages return totalItems=63, next links carry type=Actor (page 1→offset=20, page 2→offset=40, page 3→offset=60, page 4→NONE); UI "All known" scroll loads 55 cards, no sentinel after last page, no repeated content; 0 console errors
 S126 | CLOSED | qa | Directory People: sort (default/name) + host filter to find accounts — PASS: live qa-iris-a (fresh WASM) /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/mastodon.social/qa-iris-a.luit.ink/qa-iris-b.luit.ink/qa-lemmy.luit.ink); Name sort alphabetical (ab, alice, gnomon, hunt89, ii-a1...); host filter qa-iris-b shows only 7 iris-b accounts (ii-b1, probep, s56qa, s56qav, s67bob, s68qa, s68vb); filters hidden in "This instance" mode; 0 console errors
 S125 | CLOSED | qa | Home: signed-in Local tab shows instance public timeline (now authless-only) — PASS: live qa-iris-a Local tab fetches /ap/v1/public/feed, shows posts from s116rcv (S124-TEST-POST-FROM-RCV), s116snd (S118-QA-ALT-TEXT-POST, S119-QA-DM-REPLY-1, S116-QA-DM-ROUNDTRIP-2); 1 console error (404 on S119 DM note, unrelated); 0 S125-related errors
 S124 | CLOSED | qa | Feed flip after post — FALSE POSITIVE (stale WASM cache, same root cause as S122): live qa-iris-a (wasm t1q33tso4m) s116rcv follows s116snd, posts S124-TEST-POST-FROM-RCV; feed shows both s116rcv's post (newest) + s116snd's S118 post (1h ago), ordered by publish time; server logs confirm 4 items built (Create=4); 0 console errors
