@@ -9,12 +9,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
 ## OPEN-QA
-S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly — dev1 verified: commit 2a41a43e, BuildSearchPageDocument now carries type/local in page links; live dev1-iris-a /ap/v1/search?type=Actor&limit=20 page 1 next=?type=Actor&offset=20, page 2 next=?type=Actor&offset=40, page 3 next=NONE (totalItems=60 all pages); local=true also carried; 0 console errors; 1641 tests green
+S129 | OPEN-QA | dev1 | Notifications - Follows: after Accept or Decline, show decision state instead of buttons — dev1 verified: commit 202d07a5, s125qa (manuallyApprovesFollowers) sees s130like follow request in /notifications; Accept → "✓ Follow accepted" (edge Kind 0 recorded, Kind 17 removed); Decline → "✗ Follow declined" (Kind 17 removed, no Follow edge); decision tracked in static ConcurrentDictionary keyed by Follow activity IRI; server-side filter in /local/v1/notifications hides decided follow reqs for manually-approving accounts; 0 console errors; 139 tests green
 
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
 ## OPEN
-S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
 S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
 S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
