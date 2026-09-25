@@ -1,0 +1,321 @@
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using System.Text.Json
+@using KristofferStrube.ActivityStreams
+
+@if (FilterBar)
+{
+    <div class="page-header-row">
+        <div class="tab-bar" role="tablist" aria-label="Message filters">
+            @foreach (var (value, label) in FilterOptions)
+            {
+                <a href="#@(value)" id="tab-msg-@value" role="tab"
+                   aria-selected="@(_selectedFilter == value ? "true" : "false")"
+                   aria-controls="panel-messages"
+                   class="tab @(_selectedFilter == value ? "tab--active" : "")"
+                   @onclick:preventDefault @onclick="() => OnSelectFilter(value)">@label</a>
+            }
+        </div>
+        <button class="btn btn--secondary" @onclick="OnMarkAllReadAsync" disabled="@_markingRead">
+            @(_markingRead ? "Marking…" : "Mark all as read")
+        </button>
+    </div>
+}
+else
+{
+    <div class="page-header-row">
+        <button class="btn btn--secondary" @onclick="OnMarkAllReadAsync" disabled="@_markingRead">
+            @(_markingRead ? "Marking…" : "Mark all as read")
+        </button>
+    </div>
+}
+
+@if (_loading && _items is null)
+{
+    <p class="muted">Loading messages…</p>
+}
+else if (_items is null || _items.Count == 0)
+{
+    <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <p>No messages yet.</p>
+        <p>Direct messages you send and receive show up here.</p>
+        <a class="button button--secondary" href="/directory">Find someone to message</a>
+    </div>
+}
+else
+{
+    <div class="notif-cards">
+        @for (var i = 0; i < _items.Count; i++)
+        {
+            var item = _items[i];
+            var activity = DeserializeActivity(item);
+            var isSent = IsSent(activity);
+            var counterpart = CounterpartOf(activity, isSent);
+            var published = PublishedOf(activity);
+            <div class="notif-card-wrapper">
+                <div class="message-card">
+                    <div class="notification-card__header">
+                        <span class="message-card__direction @(isSent ? "message-card__direction--sent" : "message-card__direction--received")">
+                            @(isSent ? "Sent" : "Received")
+                        </span>
+                        <div class="notification-card__meta">
+                            @if (counterpart is { } cp)
+                            {
+                                <a href="@cp.ToString()" title="@cp" class="notification-card__name">
+                                    @HandleOf(cp)
+                                </a>
+                            }
+                            @if (published is { } pub)
+                            {
+                                <span class="notification-card__time" title="@pub.ToString("o")">@RelativeTime(pub)</span>
+                            }
+                        </div>
+                    </div>
+                    <div class="notification-card__body">
+                        <ObjectView Item="@activity" SuppressParentContext="true" />
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_nextPage is not null)
+    {
+        <div class="notif-pagination">
+            <button class="btn btn--secondary" @onclick="OnLoadMoreAsync" disabled="@_loading">
+                @(_loading ? "Loading…" : "Load more")
+            </button>
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private MessagesService MessagesService { get; set; } = default!;
+
+    [Parameter]
+    public bool FilterBar { get; set; }
+
+    private static readonly (string Value, string Label)[] FilterOptions =
+    [
+        ("all", "All"),
+        ("received", "Received"),
+        ("sent", "Sent"),
+    ];
+
+    private bool _markingRead;
+    private bool _loading;
+    private List<JsonElement>? _items;
+    private int _offset;
+    private string? _nextPage;
+    private string _selectedFilter = "all";
+    private DateTimeOffset? _readAt;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        await LoadMessagesAsync(reset: true);
+    }
+
+    private void OnSelectFilter(string value)
+    {
+        if (_selectedFilter == value)
+        {
+            return;
+        }
+
+        _selectedFilter = value;
+        _ = LoadMessagesAsync(reset: true);
+    }
+
+    private async Task OnMarkAllReadAsync()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _markingRead = true;
+        StateHasChanged();
+        try
+        {
+            await MessagesService.MarkAllReadAsync();
+            _readAt = DateTimeOffset.UtcNow;
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _markingRead = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadMessagesAsync(bool reset)
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            if (reset)
+            {
+                _offset = 0;
+                _items = [];
+                _nextPage = null;
+            }
+
+            var page = await MessagesService.GetMessagesAsync(limit: 20, offset: _offset);
+            _items ??= [];
+            foreach (var element in page.Items)
+            {
+                var activity = DeserializeActivity(element);
+                if (activity is null)
+                {
+                    continue;
+                }
+
+                if (!Keep(activity))
+                {
+                    continue;
+                }
+
+                _items.Add(element);
+                _offset++;
+            }
+
+            _nextPage = _items.Count < page.TotalItems ? page.NextPage : null;
+            _readAt = page.ReadAt;
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnLoadMoreAsync() => await LoadMessagesAsync(reset: false);
+
+    private bool Keep(Activity? activity)
+    {
+        if (activity is null)
+        {
+            return false;
+        }
+
+        if (_selectedFilter is "all")
+        {
+            return true;
+        }
+
+        var sent = IsSent(activity);
+        return _selectedFilter == "sent" ? sent : !sent;
+    }
+
+    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    private Activity? DeserializeActivity(JsonElement element)
+    {
+        try
+        {
+            return element.Deserialize<Activity>(_jsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private bool IsSent(Activity? activity)
+    {
+        if (activity is null || activity.Actor is null || !activity.Actor.Any())
+        {
+            return false;
+        }
+
+        var actorIri = activity.Actor.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is null)
+        {
+            return false;
+        }
+
+        var selfIri = Session.ActorId;
+        return selfIri is not null && string.Equals(actorIri.ToString(), selfIri.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private Iri? CounterpartOf(Activity? activity, bool isSent)
+    {
+        if (activity is null)
+        {
+            return null;
+        }
+
+        if (isSent)
+        {
+            var embedded = activity.Object?.FirstOrDefault() as IObject;
+            var audience = embedded?.GetAudienceIris() ?? [];
+            return audience.Any() ? audience.First() : null;
+        }
+
+        return activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+    }
+
+    private static DateTime? PublishedOf(Activity? activity)
+    {
+        if (activity is null)
+        {
+            return null;
+        }
+
+        if (activity.Published is { } pub)
+        {
+            return pub;
+        }
+
+        return activity.Object is IObject obj ? obj.Published : null;
+    }
+
+    private static string HandleOf(Iri iri)
+    {
+        var value = iri.ToString();
+        var path = value.Contains('/') ? value[(value.LastIndexOf('/') + 1)..] : value;
+        return path;
+    }
+
+    private static string RelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt;
+        if (diff.TotalSeconds < 60)
+        {
+            return "just now";
+        }
+        if (diff.TotalMinutes < 60)
+        {
+            return $"{(int)diff.TotalMinutes}m ago";
+        }
+        if (diff.TotalHours < 24)
+        {
+            return $"{(int)diff.TotalHours}h ago";
+        }
+        if (diff.TotalDays < 7)
+        {
+            return $"{(int)diff.TotalDays}d ago";
+        }
+        return dt.ToString("MMM d");
+    }
+}

@@ -12,7 +12,8 @@ public sealed class HomeTabState
     private event Action? TabChanged;
 
     /// <summary>
-    /// The active tab: <c>"posts"</c>, <c>"local"</c>, or <c>"communities"</c>. Defaults to <c>"posts"</c>.
+    /// The active tab: <c>"posts"</c>, <c>"local"</c>, <c>"communities"</c>, or <c>"messages"</c>.
+    /// Defaults to <c>"posts"</c>.
     /// </summary>
     public string Tab
     {
