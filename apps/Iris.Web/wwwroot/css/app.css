@@ -2241,6 +2241,39 @@ ul.object-list li {
     border-color: var(--muted);
 }
 
+.compose-attach-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-25);
+}
+
+.compose-attach-alt {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    margin-top: var(--space-2);
+    max-width: 16rem;
+}
+
+.compose-attach-alt-label {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+}
+
+.compose-attach-alt-input {
+    font-size: var(--font-size-sm);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text);
+}
+
+.compose-attach-alt-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
 .compose-hint {
     margin-top: var(--space-45);
     font-size: var(--font-size-sm);
@@ -2742,6 +2775,34 @@ ul.object-list li {
 
 .directory-scope-btn--active:hover {
     color: var(--btn-fg);
+}
+
+.directory-filters {
+    display: inline-flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.directory-select {
+    appearance: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    padding: var(--space-35) var(--space-3);
+    cursor: pointer;
+    transition: border-color 0.12s ease;
+}
+
+.directory-select:hover {
+    border-color: var(--muted);
+}
+
+.directory-select:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .directory-cards {
@@ -3463,6 +3524,19 @@ ul.object-list li {
 .compose-community-to {
     margin: 0;
     font-size: var(--font-size-base);
+}
+
+.compose-dm-context {
+    margin-bottom: var(--space-3);
+}
+
+.compose-dm-to {
+    margin: 0;
+    font-size: var(--font-size-base);
+}
+
+.message-button {
+    white-space: nowrap;
 }
 
 .page-header-row {
