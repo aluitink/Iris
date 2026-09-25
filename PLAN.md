@@ -10,9 +10,10 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 
+S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
+
 ## OPEN
 S126 | OPEN | - | Directory People: sort (most active/newest) + host filter to find accounts
-S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
 S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
 S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.

@@ -98,6 +98,12 @@ public static class ComposeNote
     /// factory lets a client point hashtag tags at its own hashtag page (e.g.
     /// <c>{origin}/search?q=%23hello</c>).
     /// </param>
+    /// <param name="language">
+    /// The note's language tag (an ISO 639-1 / BCP 47 tag, e.g. <c>"en"</c>, <c>"fr-CA"</c>) — the
+    /// ActivityStreams <c>inLanguage</c> term. Set on the note via <c>ExtensionData</c> (the library does
+    /// not model <c>inLanguage</c> as a property; the feed's <see cref="IriExtensions.GetInLanguage"/>
+    /// reads it back and the post card surfaces it). Ignored (not set) when null/whitespace.
+    /// </param>
     /// <returns>
     /// The composed <see cref="Note"/> (type <c>Note</c>, set by the constructor), ready to be published
     /// through the signed pipeline.
@@ -114,7 +120,8 @@ public static class ComposeNote
         IEnumerable<MediaAttachment>? media = null,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<string>? hashtags = null,
-        Func<string, string?>? hashtagHrefFactory = null)
+        Func<string, string?>? hashtagHrefFactory = null,
+        string? language = null)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -155,6 +162,14 @@ public static class ComposeNote
             // the `sensitive` flag (Mastodon/Pleroma convention): a note can carry a content warning
             // without being marked sensitive.
             note.Summary = [summary];
+        }
+
+        if (language is { Length: > 0 } lang && !string.IsNullOrWhiteSpace(lang))
+        {
+            // `inLanguage` is a standard AS term the library leaves in ExtensionData (Rule 6) — the same
+            // representation GetInLanguage reads back, so the post card + feed can surface the language.
+            note.ExtensionData ??= new Dictionary<string, JsonElement>();
+            note.ExtensionData["inLanguage"] = JsonSerializer.SerializeToElement(lang.Trim());
         }
 
         if (to is not null)

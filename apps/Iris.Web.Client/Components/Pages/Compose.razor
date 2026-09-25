@@ -135,6 +135,13 @@
                     <option value="direct">Direct</option>
                 </select>
             }
+            <select class="compose-language-select" @bind="Language" disabled="@Busy" title="Language of this post">
+                <option value="">Auto</option>
+                @foreach (var (langCode, label) in SupportedLanguages)
+                {
+                    <option value="@langCode">@label</option>
+                }
+            </select>
         }
         @if (ReplyToIri is null)
         {
@@ -1224,7 +1231,64 @@
     /// </summary>
     private string Visibility { get; set; } = "public";
 
+    /// <summary>
+    /// The chosen language tag (an ISO 639-1 / BCP 47 code) for the new post, serialized as the
+    /// ActivityStreams <c>inLanguage</c> term. Empty (the default) means "no language set" — the post is
+    /// not tagged with a language. The post card + feed surface the tag via <see cref="IriExtensions.GetInLanguage"/>.
+    /// Applies to Note / Article / community posts (replies inherit the thread's language and are not
+    /// re-tagged here).
+    /// </summary>
+    private string Language { get; set; } = string.Empty;
+
     private const int MaxChars = 500;
+
+    /// <summary>
+    /// The languages offered by the compose language selector (an ISO 639-1 / BCP 47 code paired with an
+    /// English display label). A curated set of the most common post languages; the <c>Auto</c> option
+    /// (empty value) leaves the post untagged. The full BCP 47 space is intentionally not enumerated —
+    /// the selector covers the common cases and the tag is stored verbatim, so a future free-text entry
+    /// could be layered on without changing the wire shape.
+    /// </summary>
+    private static readonly (string Code, string Label)[] SupportedLanguages =
+    [
+        ("en", "English"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("pt", "Portuguese"),
+        ("nl", "Dutch"),
+        ("sv", "Swedish"),
+        ("no", "Norwegian"),
+        ("da", "Danish"),
+        ("fi", "Finnish"),
+        ("is", "Icelandic"),
+        ("pl", "Polish"),
+        ("cs", "Czech"),
+        ("sk", "Slovak"),
+        ("hu", "Hungarian"),
+        ("ro", "Romanian"),
+        ("bg", "Bulgarian"),
+        ("el", "Greek"),
+        ("ru", "Russian"),
+        ("uk", "Ukrainian"),
+        ("tr", "Turkish"),
+        ("ar", "Arabic"),
+        ("he", "Hebrew"),
+        ("fa", "Persian"),
+        ("hi", "Hindi"),
+        ("bn", "Bengali"),
+        ("ur", "Urdu"),
+        ("zh", "Chinese"),
+        ("zh-Hans", "Chinese (Simplified)"),
+        ("zh-Hant", "Chinese (Traditional)"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("vi", "Vietnamese"),
+        ("th", "Thai"),
+        ("id", "Indonesian"),
+        ("ms", "Malay"),
+    ];
 
     /// <summary>
     /// The compose visibility hint (S15): reflects the selected content type and visibility level so
@@ -1608,7 +1672,8 @@
                     media: media.Count > 0 ? media : null,
                     mentions: mentionArg,
                     hashtags: hashtagArg,
-                    hashtagHrefFactory: hashtagHref);
+                    hashtagHrefFactory: hashtagHref,
+                    language: Language);
                 result = await client.PostNoteAsync(actorId, note);
             }
 
@@ -1620,6 +1685,7 @@
                 Content = string.Empty;
                 IsSensitive = false;
                 SensitiveSummary = string.Empty;
+                Language = string.Empty;
                 Attachments = [];
                 AttachmentAltText = [];
                 PollQuestion = string.Empty;
@@ -1661,6 +1727,23 @@
 
         var html = Markdown.ToHtml(rawContent);
         return MentionLinkify.Linkify(html, mentions, hashtags);
+    }
+
+    /// <summary>
+    /// Sets the chosen <see cref="Language"/> tag as the object's ActivityStreams <c>inLanguage</c> term
+    /// (written to <c>ExtensionData</c> — Rule 6, the same representation <see cref="IriExtensions.GetInLanguage"/>
+    /// reads back so the post card + feed can surface it). A no-op when no language is chosen (the post
+    /// stays untagged, matching the "Auto" default).
+    /// </summary>
+    private void SetInLanguage(KristofferStrube.ActivityStreams.IObject obj)
+    {
+        if (obj is null || string.IsNullOrWhiteSpace(Language))
+        {
+            return;
+        }
+
+        obj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        obj.ExtensionData["inLanguage"] = System.Text.Json.JsonSerializer.SerializeToElement(Language.Trim());
     }
 
     /// <summary>
@@ -1778,6 +1861,8 @@
             }
         }
 
+        SetInLanguage(page);
+
         if (media.Count > 0)
         {
             page.Attachment = BuildCommunityAttachments(media);
@@ -1871,6 +1956,8 @@
                 }
             }
 
+            SetInLanguage(article);
+
             if (media.Count > 0)
             {
                 article.Attachment = BuildCommunityAttachments(media);
@@ -1911,6 +1998,8 @@
                     note.Summary = [s];
                 }
             }
+
+            SetInLanguage(note);
 
             if (media.Count > 0)
             {
@@ -1997,6 +2086,8 @@
             article.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
             article.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(audience.CcLinks.Select(l => l.Href?.AbsoluteUri ?? string.Empty).ToList());
         }
+
+        SetInLanguage(article);
 
         if (media.Count > 0)
         {
