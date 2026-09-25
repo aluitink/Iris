@@ -8,14 +8,12 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
-## OPEN-QA
-S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
-
 ## OPEN
 S134 | OPEN | - | Notification-row per-actor Mute/Block: notification rows attributed to an actor (Like/Follow/Mention/Boost) have no quick moderation — add a small Mute + Block action on the row (hidden for follow-request rows and self), calling ILocalModerationClient.MuteAsync / IActivityPubClient.BlockAsync. Verify: a Like notification from actor X shows Mute → click mutes X (appears in Settings→Muted, X's posts vanish from home); a Block action blocks X; 0 console errors.
 S135 | OPEN | - | Appearance: Reduce motion + Larger text (accessibility): Settings→Appearance only offers dark/light theme — add a "Reduce motion" toggle (root class that disables CSS transitions/animations) and a text-size setting (Standard/Larger) scaling the base font-size via a root class. Verify: enable Reduce motion → loading spinners + hover transitions stop animating; set Larger → text scales up across the app; persisted across reload; 0 console errors.
 ## CLOSED
 
+S127 | CLOSED | qa | Compose: post language selector; language shown on post card + in feed — PASS: live qa-iris-a Spanish post shows "es" badge on feed card + object page; 0 console errors
 S133 | CLOSED | qa | Post visibility indicator: Followers-only/Direct badge — PASS: live qa-iris-a followers-only post → "Followers-only" badge on profile+object page; DM → "Direct" badge + "To s116rcv"; public post → no badge; 0 console errors
 S130 | CLOSED | qa | Notifications Likes: remove redundant Liked wrapper frame — PASS: live qa-iris-a (fresh build) s116snd sees s116rcv like notification in Likes tab → post card renders directly with author/time/content/engagement buttons, no "Liked" header or wrapper frame; 0 console errors
 
@@ -44,6 +42,5 @@ S110 | CLOSED | qa | Home feed made one /flags call per ObjectView (N posts = N 
 S109 | CLOSED | qa | Video in feed streams redirects to object page on play click instead of playing in-place — PASS: live qa-iris-a video post in home feed; .media-player computed z-index:1/position:relative, .object-card-link (stretched) z-index:0/absolute; clicked video center -> URL stayed /home (no object-page nav); served app.css .media-player in z-index:1 group, stale .object-media gone; 0 console errors
 S107 | CLOSED | qa | Copied links for a post should generate a front end link instead of an Activity Pub object link — PASS: live qa-iris-a Copy link on 2 posts copies front-end /object?iri= URL (not AP IRI), matches stretched "Open post" href, opens object view; 0 console errors
 S106 | CLOSED | qa | Notifications page too wide on mobile (horizontal scroll) — PASS: live qa-iris-a 390px no h-scroll (docScrollW=390), long display name ellipsized, .notif-card-wrapper min-width:0; desktop 1280px unchanged; 0 console errors
-S105 | CLOSED | qa | Home feed post is missing user posts; profile "Your posts" tab should show only own posts — PASS: live qa-iris-a (s105qa follows s105follow; s105qa own post S105-QA-OWN-POST-3MVW8 + s105follow posts S105-FOLLOW-POST-7XK9Z pre-follow & S105-FOLLOW-POST-2-AFTERFOLLOW-9TQP4 post-follow). Server GET /ap/v1/u/s105qa/outbox?type=content totalItems=1 (own Create only, attributedTo s105qa); unfiltered outbox keeps followed/foreign (Follow + own Create, s105follow posts federate via inbox); Profile "Your posts" tab = 1 listitem (own post only, no s105follow posts); home feed shows all 3 (own+followed, not regressed); 0 console errors.
 
 
