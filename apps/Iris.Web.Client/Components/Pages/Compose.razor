@@ -23,18 +23,18 @@
             <p class="compose-reply-to">
                 Replying to <a href="@ReplyToHref">@ReplyToAuthor</a>
             </p>
-            @if (ReplyToPreview is { Length: > 0 })
+            @if (ReplyToPreview is { } replyPreview)
             {
-                <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
+                <blockquote class="compose-reply-preview">@replyPreview</blockquote>
             }
             @if (ThreadRootAuthor is { Length: > 0 })
             {
                 <div class="compose-thread-root">
                     <span class="compose-thread-root-label">Thread started by</span>
                     <span class="compose-thread-root-author">@ThreadRootAuthor</span>
-                    @if (ThreadRootPreview is { Length: > 0 })
+                    @if (ThreadRootPreview is { } threadPreview)
                     {
-                        <blockquote class="compose-reply-preview">@ThreadRootPreview</blockquote>
+                        <blockquote class="compose-reply-preview">@threadPreview</blockquote>
                     }
                 </div>
             }
@@ -361,8 +361,9 @@
 
     /// <summary>
     /// A truncated preview of the parent note's content (for context while composing a reply).
+    /// Rendered as HTML when the source is pre-rendered HTML, else as linkified plain text.
     /// </summary>
-    private string? ReplyToPreview { get; set; }
+    private MarkupString? ReplyToPreview { get; set; }
 
     /// <summary>
     /// The author handle of the thread root (the parent's parent), when the parent is itself a reply.
@@ -372,7 +373,7 @@
     /// <summary>
     /// A truncated preview of the thread root's content, when the parent is itself a reply.
     /// </summary>
-    private string? ThreadRootPreview { get; set; }
+    private MarkupString? ThreadRootPreview { get; set; }
 
     private string? _fetchedIri;
 
@@ -499,11 +500,7 @@
             {
                 if (obj.Content is { } content)
                 {
-                    var text = string.Join(" ", content);
-                    if (text.Length > 0)
-                    {
-                        ReplyToPreview = Truncate(text, 200);
-                    }
+                    ReplyToPreview = RenderPreview(obj, content, 200);
                 }
 
                 if (obj.AttributedTo is { } attributed)
@@ -542,11 +539,7 @@
             {
                 if (rootObj.Content is { } content)
                 {
-                    var text = string.Join(" ", content);
-                    if (text.Length > 0)
-                    {
-                        ThreadRootPreview = Truncate(text, 150);
-                    }
+                    ThreadRootPreview = RenderPreview(rootObj, content, 150);
                 }
 
                 if (rootObj.AttributedTo is { } attributed)
@@ -569,6 +562,42 @@
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max] + "…";
+
+    private static MarkupString? RenderPreview(
+        KristofferStrube.ActivityStreams.Object obj,
+        IEnumerable<string> content,
+        int maxChars)
+    {
+        if (obj.IsPreRenderedHtmlContent())
+        {
+            var html = string.Join(" ", content);
+            if (html.Length == 0)
+            {
+                return null;
+            }
+            return new MarkupString(Truncate(html, maxChars));
+        }
+
+        var text = string.Join(" ", content);
+        if (text.Length == 0)
+        {
+            return null;
+        }
+
+        var authorIri = obj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        string? origin = authorIri is { } a
+            && Uri.TryCreate(a.Value, UriKind.Absolute, out var u)
+            && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps)
+            ? u.GetLeftPart(UriPartial.Authority)
+            : null;
+
+        var rendered = MentionLinkify.LinkifyPlain(
+            text,
+            origin,
+            obj.GetMentionIris(),
+            obj.GetHashtagTags());
+        return new MarkupString(Truncate(rendered, maxChars));
+    }
 
     /// <summary>
     /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text, returning each
