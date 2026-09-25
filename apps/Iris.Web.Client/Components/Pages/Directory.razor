@@ -67,6 +67,22 @@ else
             <button type="button" class="directory-scope-btn @(_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOnly" aria-pressed="@_localOnly">This instance</button>
             <button type="button" class="directory-scope-btn @(!_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOff" aria-pressed="@(!_localOnly)">All known</button>
         </div>
+        @if (ActiveTab == "people" && !_localOnly)
+        {
+            <div class="directory-filters">
+                <select class="directory-select" @bind="_sortOrder" @bind:after="OnFilterChanged" aria-label="Sort by">
+                    <option value="default">Default</option>
+                    <option value="name">Name</option>
+                </select>
+                <select class="directory-select" @bind="_hostFilter" @bind:after="OnFilterChanged" aria-label="Filter by host">
+                    <option value="">All hosts</option>
+                    @foreach (var host in _knownHosts)
+                    {
+                        <option value="@host">@host</option>
+                    }
+                </select>
+            </div>
+        }
     </div>
 
     @if (Busy)
@@ -189,8 +205,76 @@ else
     private bool HasMore { get; set; }
     private bool LoadingMore { get; set; }
 
-    private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
+    private List<Actor> People
+    {
+        get
+        {
+            var people = Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
+            if (_hostFilter.Length > 0)
+            {
+                people = people.Where(a => GetHost(a.Id) == _hostFilter).ToList();
+            }
+            return people;
+        }
+    }
     private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
+
+    private string _sortOrder = "default";
+    private string _hostFilter = string.Empty;
+    private List<string> _knownHosts = [];
+
+    private void OnFilterChanged()
+    {
+        RebuildHostList();
+        Actors = SortActors();
+    }
+
+    private void RebuildHostList()
+    {
+        if (_localOnly)
+        {
+            _knownHosts = [];
+            return;
+        }
+
+        var hosts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Actors is not null)
+        {
+            foreach (var a in Actors)
+            {
+                if (a is Group)
+                {
+                    continue;
+                }
+
+                var host = GetHost(a.Id);
+                if (host.Length > 0)
+                {
+                    hosts.Add(host);
+                }
+            }
+        }
+
+        _knownHosts = hosts.OrderBy(h => h, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string GetHost(string? id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            return string.Empty;
+        }
+
+        var idx = id.IndexOf("://", StringComparison.Ordinal);
+        if (idx < 0)
+        {
+            return string.Empty;
+        }
+
+        var rest = id[(idx + 3)..];
+        var slash = rest.IndexOf('/');
+        return slash > 0 ? rest[..slash] : rest;
+    }
 
     private string _externalQuery = string.Empty;
     private bool _externalBusy;
@@ -546,9 +630,20 @@ else
     }
 
     private IReadOnlyList<Actor> SortActors()
-        => (Actors ?? [])
-            .OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    {
+        var list = Actors ?? [];
+
+        if (ActiveTab != "people")
+        {
+            return list.OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        return _sortOrder switch
+        {
+            "name" => list.OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase).ToList(),
+            _ => list.ToList(),
+        };
+    }
 
     private async Task DisposePageEnumeratorAsync()
     {
