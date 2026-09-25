@@ -10,6 +10,12 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 
 ## OPEN-QA
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
+
+S133 | OPEN-QA | dev2 | Post visibility indicator: Followers-only/Direct badge on post card + object page, hidden for public — dev2 verified: ObjectView.razor.cs ClassifyVisibility(to,cc) -> null/Followers-only/Direct; .object-visibility-badge on Create + direct-object cards; live dev2 s112lb: followers-only post -> "Followers-only" badge on profile+home feed+object page; DM -> "Direct" badge + "To alice" line; public post -> no badge; 0 console errors; 1502 passed
+
+## OPEN
+S134 | OPEN | - | Notification-row per-actor Mute/Block: notification rows attributed to an actor (Like/Follow/Mention/Boost) have no quick moderation — add a small Mute + Block action on the row (hidden for follow-request rows and self), calling ILocalModerationClient.MuteAsync / IActivityPubClient.BlockAsync. Verify: a Like notification from actor X shows Mute → click mutes X (appears in Settings→Muted, X's posts vanish from home); a Block action blocks X; 0 console errors.
+S135 | OPEN | - | Appearance: Reduce motion + Larger text (accessibility): Settings→Appearance only offers dark/light theme — add a "Reduce motion" toggle (root class that disables CSS transitions/animations) and a text-size setting (Standard/Larger) scaling the base font-size via a root class. Verify: enable Reduce motion → loading spinners + hover transitions stop animating; set Larger → text scales up across the app; persisted across reload; 0 console errors.
 ## CLOSED
 
 S130 | CLOSED | qa | Notifications Likes: remove redundant Liked wrapper frame — PASS: live qa-iris-a (fresh build) s116snd sees s116rcv like notification in Likes tab → post card renders directly with author/time/content/engagement buttons, no "Liked" header or wrapper frame; 0 console errors

@@ -791,6 +791,53 @@ public partial class ObjectView
     }
 
     /// <summary>
+    /// S133 — the audience label for a direct-object card (a <c>Note</c>/<c>Article</c> rendered on its
+    /// own): <c>null</c> for public posts (no badge), "Followers-only" when the audience is the author's
+    /// followers with no public, or "Direct" when specific actors are named. The card renders the badge
+    /// only when this is non-null, so public posts (the overwhelming majority) stay clean.
+    /// </summary>
+    private string? VisibilityLabel => ClassifyVisibility(Obj?.To, Obj?.Cc);
+
+    /// <summary>
+    /// S133 — the audience label for a <c>Create</c> card (the embedded note's <c>to</c>/<c>cc</c>): same
+    /// rules as <see cref="VisibilityLabel"/>, reading the embedded object's audience.
+    /// </summary>
+    private string? ActivityVisibilityLabel => ClassifyVisibility(ActivityEmbeddedObject?.To, ActivityEmbeddedObject?.Cc);
+
+    /// <summary>
+    /// S133 — classifies a note's <c>to</c>/<c>cc</c> audience into a display label. <c>null</c> when the
+    /// post is public (the <c>as:Public</c> sentinel is in <c>to</c>, or the audience is empty — the
+    /// default-public case). "Followers-only" when there is no public and the audience is just the
+    /// author's followers collection (an unlisted post). "Direct" when there is no public and at least
+    /// one concrete actor (or community) is named in <c>to</c> (a private, directed post).
+    /// </summary>
+    private static string? ClassifyVisibility(IEnumerable<IObjectOrLink>? to, IEnumerable<IObjectOrLink>? cc)
+    {
+        bool IsPublic(IObjectOrLink? e) => e?.ResolveObjectIri() is { } i && i.IsPublicAudience();
+        bool IsFollowers(IObjectOrLink? e) => e?.ResolveObjectIri() is { } i && i.IsFollowersCollection();
+
+        if (to is not null && to.Any(IsPublic))
+        {
+            return null; // public — no badge
+        }
+
+        var toConcrete = to is null ? 0 : to.Count(e => e?.ResolveObjectIri() is { } i && !i.IsFollowersCollection());
+        var hasFollowers = (to is not null && to.Any(IsFollowers)) || (cc is not null && cc.Any(IsFollowers));
+
+        if (toConcrete > 0)
+        {
+            return "Direct"; // named recipients, no public — a private, directed post
+        }
+
+        if (hasFollowers)
+        {
+            return "Followers-only"; // only the author's followers, no public — unlisted
+        }
+
+        return null; // no audience at all (or unresolvable) — treat as public, no badge
+    }
+
+    /// <summary>
     /// 121.7 — The boosted object for an <c>Announce</c>: the embedded object (when the feed item
     /// carries the full object) or the fetched object (when the target is a bare link and has been
     /// resolved in <see cref="OnInitializedAsync"/>). Null when neither is available.
