@@ -8,9 +8,11 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - Quality bar: `dotnet test` green, live-verified on a dev stack before an item leaves OPEN-QA.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
+## OPEN-QA
+S128 | OPEN-QA | agent-a | Directory infinite scroll loads last page repeatedly — dev1 verified: commit 2a41a43e, BuildSearchPageDocument now carries type/local in page links; live dev1-iris-a /ap/v1/search?type=Actor&limit=20 page 1 next=?type=Actor&offset=20, page 2 next=?type=Actor&offset=40, page 3 next=NONE (totalItems=60 all pages); local=true also carried; 0 console errors; 1641 tests green
+
 ## OPEN
 S127 | OPEN | - | Compose: post language selector; language shown on post card + in feed
-S128 | OPEN | - | It seems the Directory last page will load over and over again - causing repeated content for the infinity scroll
 S129 | OPEN | - | Notifications - Follows - Accept or Decline, the follow remains in a state that shows Accept or Decline. We could add an Iris extension property to track if it has been accepted or declined locally.
 S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
 S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
