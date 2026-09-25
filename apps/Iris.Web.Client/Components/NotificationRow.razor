@@ -56,16 +56,32 @@
         @RenderCardBody()
     </div>
 
-    @if (IsPendingFollowRequest)
+    @if (Activity is { Type: { } ft } && ft.FirstOrDefault() == "Follow")
     {
-        <div class="notification-card__actions">
-            <button class="btn btn-primary btn-sm" @onclick="OnAcceptFollow" disabled="@_deciding">
-                @(_deciding && _decidingAction == "accept" ? "Accepting…" : "Accept")
-            </button>
-            <button class="btn btn-sm" @onclick="OnRejectFollow" disabled="@_deciding">
-                @(_deciding && _decidingAction == "reject" ? "Declining…" : "Decline")
-            </button>
-        </div>
+        @if (FollowDecision is null)
+        {
+            <div class="notification-card__actions">
+                <button class="btn btn-primary btn-sm" @onclick="OnAcceptFollow" disabled="@_deciding">
+                    @(_deciding && _decidingAction == "accept" ? "Accepting…" : "Accept")
+                </button>
+                <button class="btn btn-sm" @onclick="OnRejectFollow" disabled="@_deciding">
+                    @(_deciding && _decidingAction == "reject" ? "Declining…" : "Decline")
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="notification-card__decision">
+                @if (FollowDecision == "accepted")
+                {
+                    <span class="notification-card__decision-accepted">✓ Follow accepted</span>
+                }
+                else
+                {
+                    <span class="notification-card__decision-declined">✗ Follow declined</span>
+                }
+            </div>
+        }
     }
 </div>
 
@@ -111,11 +127,24 @@
     private string? _decidingAction;
 
     /// <summary>
+    /// Per-circuit cache of follow decisions (keyed by the Follow activity's IRI value). Tracks
+    /// whether a follow request has been accepted or declined in this session so the notification
+    /// card can show the decision state instead of the Accept / Decline buttons.
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _followDecisions = new();
+
+    /// <summary>
+    /// The decision state for this follow notification: "accepted", "declined", or null (pending).
+    /// </summary>
+    private string? FollowDecision =>
+        Activity is { Id: { } id } ? _followDecisions.TryGetValue(id, out var d) ? d : null : null;
+
+    /// <summary>
     /// Whether this notification is a pending inbound Follow (the actor sent a follow request that has
     /// not yet been accepted or rejected). Such rows show Accept / Decline buttons.
     /// </summary>
     private bool IsPendingFollowRequest =>
-        Activity is { Type: { } t } && t.FirstOrDefault() == "Follow";
+        Activity is { Type: { } t } && t.FirstOrDefault() == "Follow" && FollowDecision is null;
 
     private async Task OnAcceptFollow()
     {
@@ -136,6 +165,10 @@
                 var result = await mod.AcceptFollowRequestAsync(selfIri, requesterIri);
                 if (result.IsSuccess)
                 {
+                    if (Activity.Id is { } actId)
+                    {
+                        _followDecisions[actId] = "accepted";
+                    }
                     _deciding = false;
                     _decidingAction = null;
                     IsNew = false;
@@ -171,6 +204,10 @@
                 var result = await mod.RejectFollowRequestAsync(selfIri, requesterIri);
                 if (result.IsSuccess)
                 {
+                    if (Activity.Id is { } actId)
+                    {
+                        _followDecisions[actId] = "declined";
+                    }
                     _deciding = false;
                     _decidingAction = null;
                     IsNew = false;
