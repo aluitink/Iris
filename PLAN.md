@@ -11,8 +11,7 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 ## OPEN-QA
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
-## OPEN
-S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
+S130 | OPEN-QA | dev1 | Notifications Likes: remove redundant Liked wrapper frame — dev1 verified: commit 10d130a8, ObjectView Like branch with SuppressLikeHeader=true now renders resolved post directly (no object-item wrapper, no object-like-resolved frame); s130like sees s125qa like notification → post card renders with author/time/content/engagement directly; 0 console errors; 139 tests green
 ## CLOSED
 
 S132 | CLOSED | qa | Messages folded into Home as 4th tab — PASS: live qa-iris-a (fresh build) /messages redirects to /home with Messages tab active; FeedBar has Posts/Local/Communities/Messages tabs; MessagesPanel shows DM list with All/Received/Sent sub-filters + Mark all as read; s116snd sees 3 DMs (Sent to s119qa, Received from s119qa, Sent to s116rcv); 0 console errors
