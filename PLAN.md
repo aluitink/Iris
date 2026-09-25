@@ -9,18 +9,15 @@ Ledger for the agent loop. One line per item. Rules: docs/PROTOCOL.md.
 - This file is the only shared working doc. Keep it under the caps in docs/PROTOCOL.md.
 
 ## OPEN-QA
-S129 | OPEN-QA | dev1 | Notifications - Follows: after Accept or Decline, show decision state instead of buttons — dev1 verified: commit 202d07a5, s125qa (manuallyApprovesFollowers) sees s130like follow request in /notifications; Accept → "✓ Follow accepted" (edge Kind 0 recorded, Kind 17 removed); Decline → "✗ Follow declined" (Kind 17 removed, no Follow edge); decision tracked in static ConcurrentDictionary keyed by Follow activity IRI; server-side filter in /local/v1/notifications hides decided follow reqs for manually-approving accounts; 0 console errors; 139 tests green
-
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
-
-S131 | OPEN-QA | dev1 | compose?ReplyTo renders raw markup — dev1 verified: commit 04ff3ed3, reply preview now uses IsPreRenderedHtmlContent to detect HTML vs plain text; HTML posts render with clickable @mention and #hashtag links (MarkupString); plain text posts linkified via MentionLinkify.LinkifyPlain; tested with s45a note (<p> with mention+hashtag) → preview shows "S45 live verify: hello @s45b #qatag" as rendered links; tested with plain text s130like note → renders correctly; 0 console errors; 139 tests green
-
-S132 | OPEN-QA | dev1 | Messages folded into Home as 4th tab — dev1 verified: commit cc43859a, /messages now redirects to /home with Messages tab active; FeedBar has Posts/Local/Communities/Messages tabs; MessagesPanel component renders DM list with All/Received/Sent sub-filters + Mark all as read; HomeTabState supports "messages" tab; tested live: clicking Messages tab shows DM panel with filters; /messages URL redirects to /home with Messages content; 0 console errors; 139 tests green
 
 ## OPEN
 S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
 ## CLOSED
 
+S132 | CLOSED | qa | Messages folded into Home as 4th tab — PASS: live qa-iris-a (fresh build) /messages redirects to /home with Messages tab active; FeedBar has Posts/Local/Communities/Messages tabs; MessagesPanel shows DM list with All/Received/Sent sub-filters + Mark all as read; s116snd sees 3 DMs (Sent to s119qa, Received from s119qa, Sent to s116rcv); 0 console errors
+S131 | CLOSED | qa | compose?ReplyTo renders raw markup — PASS: live qa-iris-a (fresh build) compose?replyTo=<HTML note> renders preview with clickable @s116snd mention link + "S119-QA-DM-TEST-1" text (not raw HTML); HTML detected via IsPreRenderedHtmlContent, rendered as MarkupString; 0 console errors
+S129 | CLOSED | qa | Notifications follows: track accept/decline state — PASS: live qa-iris-a (fresh build) s116snd (manuallyApprovesFollowers=true) sees s116rcv follow request in /notifications; Accept → "✓ Follow accepted" (edge Kind 0 created, Kind 17 removed); Decline → "✗ Follow declined" (Kind 17 removed, no Follow edge); 0 console errors
 S128 | CLOSED | qa | Directory infinite scroll loads last page repeatedly — PASS: live qa-iris-a (fresh build 1905c2f0) /ap/v1/search?type=Actor&limit=20 all 4 pages return totalItems=63, next links carry type=Actor (page 1→offset=20, page 2→offset=40, page 3→offset=60, page 4→NONE); UI "All known" scroll loads 55 cards, no sentinel after last page, no repeated content; 0 console errors
 S126 | CLOSED | qa | Directory People: sort (default/name) + host filter to find accounts — PASS: live qa-iris-a (fresh WASM) /directory "All known" shows Sort by (Default/Name) + Filter by host (All hosts/mastodon.social/qa-iris-a.luit.ink/qa-iris-b.luit.ink/qa-lemmy.luit.ink); Name sort alphabetical (ab, alice, gnomon, hunt89, ii-a1...); host filter qa-iris-b shows only 7 iris-b accounts (ii-b1, probep, s56qa, s56qav, s67bob, s68qa, s68vb); filters hidden in "This instance" mode; 0 console errors
 S125 | CLOSED | qa | Home: signed-in Local tab shows instance public timeline (now authless-only) — PASS: live qa-iris-a Local tab fetches /ap/v1/public/feed, shows posts from s116rcv (S124-TEST-POST-FROM-RCV), s116snd (S118-QA-ALT-TEXT-POST, S119-QA-DM-REPLY-1, S116-QA-DM-ROUNDTRIP-2); 1 console error (404 on S119 DM note, unrelated); 0 S125-related errors
