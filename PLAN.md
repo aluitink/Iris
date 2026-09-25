@@ -13,9 +13,10 @@ S129 | OPEN-QA | dev1 | Notifications - Follows: after Accept or Decline, show d
 
 S127 | OPEN-QA | dev2 | Compose: post language selector; language shown on post card + in feed
 
+S131 | OPEN-QA | dev1 | compose?ReplyTo renders raw markup — dev1 verified: commit 04ff3ed3, reply preview now uses IsPreRenderedHtmlContent to detect HTML vs plain text; HTML posts render with clickable @mention and #hashtag links (MarkupString); plain text posts linkified via MentionLinkify.LinkifyPlain; tested with s45a note (<p> with mention+hashtag) → preview shows "S45 live verify: hello @s45b #qatag" as rendered links; tested with plain text s130like note → renders correctly; 0 console errors; 139 tests green
+
 ## OPEN
 S130 | OPEN | - | Notifications - Likes - The likes show who liked the post and when, then wraps the post in another like frame - we can get rid of the Liked sub frame in the middle.
-S131 | OPEN | - | compose?ReplyTo - the replying to shows the post but is rendering raw markup, it should render a visible card like in the streams.
 S132 | OPEN | - | Messages - This page might be redundant, we could fold this info into the main home page - add the tabs and allow the user to use them as a filter. We don't need to mark as read.
 ## CLOSED
 
