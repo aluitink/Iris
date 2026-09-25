@@ -12530,7 +12530,7 @@ public static class ActivityPubServerExtensions
         // search handler's BuildCommunityIri).
         var baseUrl = (options.BaseUri?.Value ?? $"{context.Request.Scheme}://{context.Request.Host}").TrimEnd('/');
         var collectionIri = new Iri($"{baseUrl}{ActivityPubServerConstants.RoutePrefix}/search");
-        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, IrisExtensionNamespace(options));
+        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, IrisExtensionNamespace(options), type, localOnly);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
@@ -12984,6 +12984,10 @@ public static class ActivityPubServerExtensions
     /// <param name="namespaceBase">The <c>iris:</c> namespace base IRI (the configurable
     /// <see cref="ActivityPubServerOptions.NamespaceIri"/>, or the canonical default when unset) used to
     /// form the <c>iris:searchQuery</c> extension term.</param>
+    /// <param name="type">An optional type filter (e.g. "Actor") carried in page links so pagination
+    /// preserves the filter.</param>
+    /// <param name="localOnly">When true, carries <c>local=true</c> in page links so pagination
+    /// preserves the local-only filter.</param>
     /// <returns>The serialized JSON-LD document for the requested page.</returns>
     private static string BuildSearchPageDocument(
         Iri collectionIri,
@@ -12991,7 +12995,9 @@ public static class ActivityPubServerExtensions
         int limit,
         IReadOnlyList<IObjectOrLink> items,
         string? query,
-        string namespaceBase)
+        string namespaceBase,
+        string? type = null,
+        bool localOnly = false)
     {
         var total = items.Count;
         var start = offset;
@@ -13015,7 +13021,12 @@ public static class ActivityPubServerExtensions
         // unfiltered results. The query is percent-escaped so the links are valid IRIs; the server
         // un-escapes it again when a page-2+ request arrives.
         var trimmedQuery = hasQuery ? query!.Trim() : string.Empty;
-        var queryPart = hasQuery ? $"?q={Uri.EscapeDataString(trimmedQuery)}" : string.Empty;
+        var typePart = string.IsNullOrWhiteSpace(type) ? string.Empty : $"&type={Uri.EscapeDataString(type!)}";
+        var localPart = localOnly ? "&local=true" : string.Empty;
+        var extraParams = typePart + localPart;
+        var queryPart = hasQuery
+            ? $"?q={Uri.EscapeDataString(trimmedQuery)}{extraParams}"
+            : extraParams.Length > 0 ? $"?{extraParams[1..]}" : string.Empty;
         // A page link at a given offset: the collection base + the query part + the offset/limit.
         static string PageLink(string baseIri, string queryPart, int offset, int limit)
             => string.IsNullOrEmpty(queryPart)
